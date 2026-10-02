@@ -3,6 +3,7 @@ from holoclip.evaluation import (
     EvaluationRun,
     FeedbackRecord,
     KnownClip,
+    build_run,
     compute_metrics,
     known_clip_hit,
 )
@@ -99,3 +100,26 @@ def test_known_clip_recall() -> None:
 
     assert metrics.known_clips == 2
     assert metrics.known_clip_recall == 0.5
+
+
+def test_build_run_can_store_media_path() -> None:
+    run = build_run(
+        stream_id="stream",
+        transcript_path="data/transcripts/stream.json",
+        media_path="D:/video/stream.mkv",
+        candidates=[candidate(10, 20, "candidate")],
+    )
+
+    assert run.media_path == "D:/video/stream.mkv"
+
+
+def test_evaluation_run_is_backward_compatible_without_media_path() -> None:
+    run = EvaluationRun.model_validate(
+        {
+            "stream_id": "legacy",
+            "transcript_path": "legacy.json",
+            "candidates": [],
+        }
+    )
+
+    assert run.media_path is None
