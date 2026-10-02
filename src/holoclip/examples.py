@@ -16,6 +16,19 @@ class ClipPerformance(BaseModel):
     normalized_score: float | None = None
 
 
+class WeakNegativeExample(BaseModel):
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+    transcript_excerpt: str
+    reason: str = "adjacent_unselected"
+
+    @model_validator(mode="after")
+    def validate_range(self) -> WeakNegativeExample:
+        if self.end <= self.start:
+            raise ValueError("negative end must be greater than start")
+        return self
+
+
 class HumanClipExample(BaseModel):
     id: str
     clip_url: str
@@ -46,6 +59,9 @@ class HumanClipExample(BaseModel):
     development: str = ""
     payoff: str = ""
     why_selected: str = ""
+    weak_negatives: list[WeakNegativeExample] = Field(default_factory=list)
+    structure_method: str | None = None
+    structure_model: str | None = None
 
     performance: ClipPerformance | None = None
     clipped_by_count: int = Field(default=1, ge=1)
