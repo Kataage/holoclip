@@ -35,20 +35,43 @@ def build_adjacent_weak_negatives(
         return []
 
     source_end = max(segment.end for segment in source_segments)
-    windows: list[tuple[float, float]] = []
+    windows: list[tuple[float, float, str]] = []
 
-    before_end = max(0.0, example.source_start - gap_seconds)
+    selected_ranges = (
+        sorted(
+            [
+                (segment.source_start, segment.source_end)
+                for segment in example.alignment_segments
+            ],
+            key=lambda item: item[0],
+        )
+        if example.alignment_segments
+        else [(example.source_start, example.source_end)]
+    )
+
+    first_start = selected_ranges[0][0]
+    last_end = selected_ranges[-1][1]
+
+    before_end = max(0.0, first_start - gap_seconds)
     before_start = max(0.0, before_end - window_seconds)
     if before_end > before_start:
-        windows.append((before_start, before_end))
+        windows.append((before_start, before_end, "adjacent_unselected_before"))
 
-    after_start = min(source_end, example.source_end + gap_seconds)
+    for left, right in zip(selected_ranges, selected_ranges[1:], strict=False):
+        gap_start = left[1] + gap_seconds
+        gap_end = right[0] - gap_seconds
+        if gap_end <= gap_start:
+            continue
+        window_end = min(gap_end, gap_start + window_seconds)
+        windows.append((gap_start, window_end, "removed_between_selected_segments"))
+
+    after_start = min(source_end, last_end + gap_seconds)
     after_end = min(source_end, after_start + window_seconds)
     if after_end > after_start:
-        windows.append((after_start, after_end))
+        windows.append((after_start, after_end, "adjacent_unselected_after"))
 
     negatives: list[WeakNegativeExample] = []
-    for start, end in windows:
+    for start, end, reason in windows:
         excerpt = _excerpt(source_segments, start=start, end=end)
         if not excerpt.strip():
             continue
@@ -57,9 +80,39 @@ def build_adjacent_weak_negatives(
                 start=start,
                 end=end,
                 transcript_excerpt=excerpt,
+                reason=reason,
             )
         )
     return negatives
+
+
+def _aligned_source_context(
+    example: HumanClipExample,
+    source_segments: list[TranscriptSegment],
+) -> str:
+    if example.alignment_segments:
+        parts: list[str] = []
+        for index, segment in enumerate(example.alignment_segments, start=1):
+            excerpt = _excerpt(
+                source_segments,
+                start=max(0.0, segment.source_start - 30.0),
+                end=segment.source_end + 30.0,
+                max_chars=3500,
+            )
+            parts.append(
+                f"--- aligned source segment {index} "
+                f"{segment.source_start:.1f}-{segment.source_end:.1f} ---\n{excerpt}"
+            )
+        return "\n".join(parts)[:9000]
+
+    if example.source_start is None or example.source_end is None:
+        return ""
+    return _excerpt(
+        source_segments,
+        start=max(0.0, example.source_start - 45.0),
+        end=example.source_end + 45.0,
+        max_chars=9000,
+    )
 
 
 def _structure_messages(
@@ -117,11 +170,7 @@ async def enrich_human_clip_example(
     if example.source_start is None or example.source_end is None:
         raise ValueError("example must be source-aligned before enrichment")
 
-    source_context = _excerpt(
-        source_segments,
-        start=max(0.0, example.source_start - 45.0),
-        end=example.source_end + 45.0,
-    )
+    source_context = _aligned_source_context(example, source_segments)
     payload = await llm.chat_json(
         _structure_messages(example, source_context),
         model=model,
