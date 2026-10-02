@@ -49,7 +49,13 @@ Save one analyzed stream as an evaluation run:
 
     holoclip analyze transcript.json --stream-id stream-001 --save-run data/evaluation/runs/stream-001.json
 
-Each saved candidate gets a stable candidate ID. Record feedback:
+Each saved candidate gets a stable candidate ID. The easiest review flow is:
+
+    holoclip review data/evaluation/runs/stream-001.json
+
+It shows one candidate at a time. Press a/m/r for accept/maybe/reject, s to skip, or q to stop. Already-labeled candidates are skipped by default.
+
+Direct labeling is also available:
 
     holoclip label stream-001 CANDIDATE_ID accept
     holoclip label stream-001 OTHER_ID maybe --reason "boundaries need work"
