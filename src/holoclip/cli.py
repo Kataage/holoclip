@@ -21,6 +21,7 @@ from holoclip.evaluation import (
     load_runs,
     save_run,
 )
+from holoclip.media import play_media_segment
 from holoclip.models import ReviewDecision
 from holoclip.providers.llm.nvidia_nim import (
     NvidiaNimAuthorizationError,
@@ -197,6 +198,7 @@ def discover(
                 stream_id=resolved_stream_id,
                 transcript_path=str(transcript_path),
                 candidates=candidates,
+                media_path=str(media.resolve()),
             ),
             run_path,
         )
@@ -330,10 +332,36 @@ def review(
         "--include-labeled",
         help="Show candidates that already have feedback.",
     ),
+    media: Path | None = typer.Option(
+        None,
+        "--media",
+        exists=True,
+        readable=True,
+        help="Override the source media path used for candidate preview.",
+    ),
+    preview_padding: float = typer.Option(
+        10.0,
+        "--preview-padding",
+        min=0.0,
+        max=120.0,
+        help="Seconds of context before and after a preview.",
+    ),
+    context_padding: float = typer.Option(
+        20.0,
+        "--context-padding",
+        min=0.0,
+        max=300.0,
+        help="Seconds of transcript context before and after a candidate.",
+    ),
 ) -> None:
     """Review one saved run with single-key-style choices."""
     run = load_run(run_file)
     latest = latest_feedback_index(load_feedback(feedback_file))
+    transcript_path = Path(run.transcript_path)
+    transcript_segments = (
+        load_transcript(transcript_path) if transcript_path.exists() else []
+    )
+    preview_media = media or (Path(run.media_path) if run.media_path else None)
 
     decision_map = {
         "a": ReviewDecision.ACCEPT,
@@ -363,14 +391,52 @@ def review(
             typer.echo(f"現在の評価: {existing.decision.value}")
 
         while True:
-            choice = typer.prompt("[a]採用 [m]微妙 [r]ボツ [s]スキップ [q]終了").strip().lower()
+            choice = typer.prompt(
+                "[p]再生 [c]前後字幕 [a]採用 [m]微妙 [r]ボツ [s]スキップ [q]終了"
+            ).strip().lower()
+            if choice == "p":
+                if preview_media is None:
+                    typer.echo(
+                        "元動画パスがありません。--media path\\to\\video で指定してください。"
+                    )
+                    continue
+                try:
+                    play_media_segment(
+                        preview_media,
+                        start=candidate.start,
+                        end=candidate.end,
+                        padding_seconds=preview_padding,
+                    )
+                except (FileNotFoundError, RuntimeError, ValueError) as exc:
+                    typer.echo(f"プレビュー再生に失敗しました: {exc}")
+                continue
+            if choice == "c":
+                if not transcript_segments:
+                    typer.echo(f"字幕を読み込めません: {transcript_path}")
+                    continue
+                context_start = max(0.0, candidate.start - context_padding)
+                context_end = candidate.end + context_padding
+                typer.echo("")
+                typer.echo(
+                    f"--- 前後字幕 {_clock(context_start)} - {_clock(context_end)} ---"
+                )
+                shown = 0
+                for segment in transcript_segments:
+                    if segment.end <= context_start or segment.start >= context_end:
+                        continue
+                    typer.echo(f"[{_clock(segment.start)}] {segment.text}")
+                    shown += 1
+                if shown == 0:
+                    typer.echo("(この範囲の字幕はありません)")
+                typer.echo("---")
+                continue
             if choice == "q":
                 return
             if choice == "s":
                 break
             decision = decision_map.get(choice)
             if decision is None:
-                typer.echo("a / m / r / s / q のいずれかを入力してください。")
+                typer.echo("p / c / a / m / r / s / q のいずれかを入力してください。")
                 continue
 
             append_feedback(
