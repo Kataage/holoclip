@@ -22,7 +22,10 @@ from holoclip.evaluation import (
     save_run,
 )
 from holoclip.models import ReviewDecision
-from holoclip.providers.llm.nvidia_nim import NvidiaNimClient
+from holoclip.providers.llm.nvidia_nim import (
+    NvidiaNimAuthorizationError,
+    NvidiaNimClient,
+)
 from holoclip.transcript import chunk_segments, load_transcript, save_transcript
 from holoclip.transcription import transcribe_media
 
@@ -100,7 +103,16 @@ def analyze(
 
         return [candidate.model_dump(mode="json") for candidate in candidates]
 
-    result = asyncio.run(_run())
+    try:
+        result = asyncio.run(_run())
+    except NvidiaNimAuthorizationError as exc:
+        typer.echo(f"NVIDIA NIM error: {exc}", err=True)
+        typer.echo(
+            "The API key was loaded, but hosted inference access is not authorized. "
+            "For personal NVIDIA Build accounts this can indicate missing Public API Endpoints access.",
+            err=True,
+        )
+        raise typer.Exit(2) from exc
     typer.echo(json.dumps({"candidates": result}, ensure_ascii=False, indent=2))
 
 
@@ -165,10 +177,68 @@ def discover(
         )
         return [candidate.model_dump(mode="json") for candidate in candidates]
 
-    result = asyncio.run(_run())
+    try:
+        result = asyncio.run(_run())
+    except NvidiaNimAuthorizationError as exc:
+        typer.echo(f"NVIDIA NIM error: {exc}", err=True)
+        typer.echo(f"Transcript is safe at: {transcript_path}", err=True)
+        typer.echo(
+            "After NVIDIA hosted inference access is fixed, rerun analysis without retranscribing:",
+            err=True,
+        )
+        typer.echo(
+            f'uv run holoclip analyze "{transcript_path}" '
+            f'--stream-id "{resolved_stream_id}" --save-run "{run_path}"',
+            err=True,
+        )
+        raise typer.Exit(2) from exc
+
     typer.echo(f"saved transcript: {transcript_path}")
     typer.echo(f"saved evaluation run: {run_path}")
     typer.echo(json.dumps({"candidates": result}, ensure_ascii=False, indent=2))
+
+
+@app.command()
+def doctor() -> None:
+    """Check NVIDIA NIM account/model access without processing media."""
+    _load_env_file()
+    settings = NimSettings.from_env()
+
+    async def _run() -> tuple[int, bool]:
+        async with NvidiaNimClient(settings) as client:
+            models = await client.list_models()
+            data = models.get("data", [])
+            model_ids = {
+                str(item.get("id"))
+                for item in data
+                if isinstance(item, dict) and item.get("id")
+            }
+            configured_present = (
+                settings.model in model_ids and settings.fast_model in model_ids
+            )
+            await client.chat(
+                [{"role": "user", "content": "Reply with OK only."}],
+                model=settings.fast_model,
+                temperature=0.0,
+                max_tokens=8,
+            )
+            return len(model_ids), configured_present
+
+    try:
+        model_count, configured_present = asyncio.run(_run())
+    except NvidiaNimAuthorizationError as exc:
+        typer.echo(f"NVIDIA NIM inference: FAIL ({exc})")
+        typer.echo(
+            "If GET /v1/models works but chat inference returns 403, the account may be "
+            "missing NVIDIA Build Public API Endpoints access."
+        )
+        raise typer.Exit(2) from exc
+
+    typer.echo(f"NVIDIA NIM models: OK ({model_count} listed)")
+    typer.echo(
+        "Configured GLM models: " + ("FOUND" if configured_present else "NOT FOUND")
+    )
+    typer.echo("NVIDIA NIM inference: OK")
 
 
 @app.command()
