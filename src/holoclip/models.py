@@ -12,7 +12,7 @@ class TranscriptSegment(BaseModel):
     speaker: str | None = None
 
     @model_validator(mode="after")
-    def validate_range(self) -> "TranscriptSegment":
+    def validate_range(self) -> TranscriptSegment:
         if self.end <= self.start:
             raise ValueError("segment end must be greater than start")
         return self
@@ -48,7 +48,7 @@ class ClipCandidate(BaseModel):
     warnings: list[CandidateWarning] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_range(self) -> "ClipCandidate":
+    def validate_range(self) -> ClipCandidate:
         if self.end <= self.start:
             raise ValueError("candidate end must be greater than start")
         return self
