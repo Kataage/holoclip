@@ -14,8 +14,10 @@ from holoclip.evaluation import (
     append_feedback,
     build_run,
     compute_metrics,
+    latest_feedback_index,
     load_feedback,
     load_known_clips,
+    load_run,
     load_runs,
     save_run,
 )
@@ -106,6 +108,83 @@ def label(
         feedback_file,
     )
     typer.echo(f"saved {decision.value}: {stream_id}/{candidate_id}")
+
+
+def _clock(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+@app.command()
+def review(
+    run_file: Path = typer.Argument(..., exists=True, readable=True),
+    feedback_file: Path = typer.Option(
+        Path("data/evaluation/feedback.jsonl"),
+        "--feedback-file",
+    ),
+    include_labeled: bool = typer.Option(
+        False,
+        "--include-labeled",
+        help="Show candidates that already have feedback.",
+    ),
+) -> None:
+    """Review one saved run with single-key-style choices."""
+    run = load_run(run_file)
+    latest = latest_feedback_index(load_feedback(feedback_file))
+
+    decision_map = {
+        "a": ReviewDecision.ACCEPT,
+        "m": ReviewDecision.MAYBE,
+        "r": ReviewDecision.REJECT,
+    }
+
+    pending = 0
+    for item in run.candidates:
+        existing = latest.get((run.stream_id, item.id))
+        if existing is not None and not include_labeled:
+            continue
+
+        pending += 1
+        candidate = item.candidate
+        typer.echo("")
+        typer.echo(f"#{item.rank}  {item.id}")
+        typer.echo(f"{_clock(candidate.start)} - {_clock(candidate.end)}")
+        typer.echo(candidate.working_title)
+        typer.echo(f"理由: {candidate.why_interesting}")
+        typer.echo(f"前振り: {candidate.setup}")
+        typer.echo(f"展開: {candidate.development}")
+        typer.echo(f"オチ: {candidate.payoff}")
+        if candidate.warnings:
+            typer.echo("注意: " + ", ".join(value.value for value in candidate.warnings))
+        if existing is not None:
+            typer.echo(f"現在の評価: {existing.decision.value}")
+
+        while True:
+            choice = typer.prompt("[a]採用 [m]微妙 [r]ボツ [s]スキップ [q]終了").strip().lower()
+            if choice == "q":
+                return
+            if choice == "s":
+                break
+            decision = decision_map.get(choice)
+            if decision is None:
+                typer.echo("a / m / r / s / q のいずれかを入力してください。")
+                continue
+
+            append_feedback(
+                FeedbackRecord(
+                    stream_id=run.stream_id,
+                    candidate_id=item.id,
+                    decision=decision,
+                ),
+                feedback_file,
+            )
+            typer.echo(f"saved: {decision.value}")
+            break
+
+    if pending == 0:
+        typer.echo("未評価の候補はありません。")
 
 
 @app.command()
