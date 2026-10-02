@@ -418,3 +418,56 @@ New URL ingests also preserve the original resolved source URL (including a YouT
 timestamp when present), source-resolution reason/score/context, and whether the source was
 auto-detected. The audit report compares that declared timestamp hint with the first aligned
 source segment when available.
+
+
+## Clip policy gates
+
+Holoclip treats clipping restrictions as first-class data rather than a hard-coded
+member blacklist. Restrictions can be scoped to a source video, a channel, or an
+exact time range, and each rule keeps a reason and optional evidence URL/text.
+
+Before learning from a human-made clip, Holoclip now checks:
+
+- explicit no-clipping text in the original source title or description
+- yt-dlp availability metadata that indicates restricted/paid content
+- source/channel rules in `data/policy/clip_rules.jsonl`
+- range rules after transcript alignment
+- possible spoken restrictions such as `ここは切り抜かないで` near an aligned range
+
+Hard `block` findings cannot be overridden. Automatic spoken-marker findings are
+`review`: they stop unattended processing, but can be continued after manual
+inspection with `--allow-policy-review`.
+
+Check a source before acquisition:
+
+~~~powershell
+uv run holoclip policy-check "https://www.youtube.com/watch?v=VIDEO_ID"
+~~~
+
+Add a source-level rule:
+
+~~~powershell
+uv run holoclip policy-add ^
+  --id "example-source-ban" ^
+  --decision block ^
+  --reason "Talent explicitly requested that this stream not be clipped" ^
+  --source-id "VIDEO_ID" ^
+  --evidence-url "https://..."
+~~~
+
+Add an exact prohibited range:
+
+~~~powershell
+uv run holoclip policy-add ^
+  --id "example-range-ban" ^
+  --decision block ^
+  --reason "Talent requested this section not be clipped" ^
+  --source-id "VIDEO_ID" ^
+  --start 1234 ^
+  --end 1380 ^
+  --evidence-url "https://..."
+~~~
+
+Rules should record the narrowest scope supported by the evidence. A stream-specific
+request must not be promoted into a permanent member-wide ban without evidence for
+that broader scope.
