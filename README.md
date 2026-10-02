@@ -29,9 +29,7 @@ Python 3.12+ and FFmpeg on PATH are required.
 ~~~powershell
 git clone https://github.com/Kataage/holoclip.git
 cd holoclip
-python -m venv .venv
-.venv\Scripts\activate
-python -m pip install -e ".[dev]"
+uv sync --python 3.12 --extra dev
 copy .env.example .env
 ~~~
 
@@ -49,7 +47,7 @@ No paid-provider fallback exists.
 For local media:
 
 ~~~powershell
-holoclip discover path\to\stream.mp4
+uv run holoclip discover path\to\stream.mp4
 ~~~
 
 This automatically:
@@ -63,15 +61,29 @@ This automatically:
 Then review the generated candidates:
 
 ~~~powershell
-holoclip review data\evaluation\runs\stream.json
+uv run holoclip review data\evaluation\runs\stream.json
 ~~~
 
-Press a/m/r for accept/maybe/reject, s to skip, or q to stop.
+During review:
+
+- `p`: play only the proposed source segment (with a small context pad) using FFplay
+- `c`: show surrounding transcript
+- `a`: accept
+- `m`: maybe
+- `r`: reject
+- `s`: skip
+- `q`: stop
+
+New evaluation runs created by `discover` remember the source media path. For an older run, supply it explicitly:
+
+~~~powershell
+uv run holoclip review data\evaluation\runs\stream.json --media path\to\stream.mkv
+~~~
 
 ## Transcription only
 
 ~~~powershell
-holoclip transcribe path\to\stream.mp4
+uv run holoclip transcribe path\to\stream.mp4
 ~~~
 
 By default, long media is converted to 15-minute 16 kHz mono MP3 chunks before upload. This keeps local compute low and keeps individual uploads comfortably small.
@@ -79,7 +91,7 @@ By default, long media is converted to 15-minute 16 kHz mono MP3 chunks before u
 ## Analyze an existing transcript
 
 ~~~powershell
-holoclip analyze path\to\transcript.json --top-k 5
+uv run holoclip analyze path\to\transcript.json --top-k 5
 ~~~
 
 The transcript format is:
@@ -103,7 +115,7 @@ Timestamps are seconds from the start of the source.
 Calculate current metrics:
 
 ~~~powershell
-holoclip metrics --runs-dir data\evaluation\runs
+uv run holoclip metrics --runs-dir data\evaluation\runs
 ~~~
 
 See docs/evaluation.md for the validation protocol.

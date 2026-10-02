@@ -18,6 +18,7 @@ class EvaluationCandidate(BaseModel):
 class EvaluationRun(BaseModel):
     stream_id: str
     transcript_path: str
+    media_path: str | None = None
     candidates: list[EvaluationCandidate]
 
 
@@ -63,10 +64,12 @@ def build_run(
     stream_id: str,
     transcript_path: str,
     candidates: list[ClipCandidate],
+    media_path: str | None = None,
 ) -> EvaluationRun:
     return EvaluationRun(
         stream_id=stream_id,
         transcript_path=transcript_path,
+        media_path=media_path,
         candidates=[
             EvaluationCandidate(
                 id=make_candidate_id(stream_id, candidate),

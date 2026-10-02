@@ -19,6 +19,44 @@ def require_ffmpeg() -> str:
     return executable
 
 
+def require_ffplay() -> str:
+    executable = shutil.which("ffplay")
+    if executable is None:
+        raise RuntimeError("ffplay was not found on PATH")
+    return executable
+
+
+def play_media_segment(
+    media_path: Path,
+    *,
+    start: float,
+    end: float,
+    padding_seconds: float = 10.0,
+) -> None:
+    if not media_path.exists():
+        raise FileNotFoundError(media_path)
+    if end <= start:
+        raise ValueError("preview end must be greater than start")
+
+    ffplay = require_ffplay()
+    preview_start = max(0.0, start - padding_seconds)
+    preview_end = end + padding_seconds
+    duration = preview_end - preview_start
+    command = [
+        ffplay,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-autoexit",
+        "-ss",
+        f"{preview_start:.3f}",
+        "-t",
+        f"{duration:.3f}",
+        str(media_path),
+    ]
+    subprocess.run(command, check=False)
+
+
 def split_media_audio(
     media_path: Path,
     output_dir: Path,
