@@ -101,20 +101,20 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
             "source_resolution_score": 0.9,
         },
     )
-    draft, _ = build_retrieval_document_drafts([example])
-    positive = next(
-        item for item in draft if item.kind is RetrievalDocumentKind.POSITIVE
-    )
-    document = RetrievalDocument(
-        **positive.model_dump(),
-        embedding_model="embed",
-        embedding_version=RETRIEVAL_VERSION,
-        embedding=[1.0, 0.0],
-    )
+    drafts, _ = build_retrieval_document_drafts([example])
+    documents = [
+        RetrievalDocument(
+            **draft.model_dump(),
+            embedding_model="embed",
+            embedding_version=RETRIEVAL_VERSION,
+            embedding=[1.0, float(index + 1)],
+        )
+        for index, draft in enumerate(drafts)
+    ]
 
     report = build_human_example_audit(
         example,
-        retrieval_documents=[document],
+        retrieval_documents=documents,
     )
 
     assert len(report.alignment_segments) == 2
