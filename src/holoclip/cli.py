@@ -8,7 +8,7 @@ from pathlib import Path
 import typer
 
 from holoclip.analysis.candidate_detector import CandidateDetector
-from holoclip.config import NimSettings
+from holoclip.config import GroqTranscriptionSettings, NimSettings
 from holoclip.evaluation import (
     FeedbackRecord,
     append_feedback,
@@ -23,7 +23,8 @@ from holoclip.evaluation import (
 )
 from holoclip.models import ReviewDecision
 from holoclip.providers.llm.nvidia_nim import NvidiaNimClient
-from holoclip.transcript import chunk_segments, load_transcript
+from holoclip.transcript import chunk_segments, load_transcript, save_transcript
+from holoclip.transcription import transcribe_media
 
 
 app = typer.Typer(no_args_is_help=True)
@@ -38,6 +39,28 @@ def _load_env_file(path: Path = Path(".env")) -> None:
             continue
         key, value = line.split("=", 1)
         os.environ.setdefault(key.strip(), value.strip())
+
+
+async def _detect_candidates(
+    segments: list,
+    *,
+    settings: NimSettings,
+    top_k: int,
+    window_minutes: float,
+    overlap_minutes: float,
+):
+    chunks = chunk_segments(
+        segments,
+        window_seconds=window_minutes * 60.0,
+        overlap_seconds=overlap_minutes * 60.0,
+    )
+    async with NvidiaNimClient(settings) as client:
+        detector = CandidateDetector(
+            client,
+            fast_model=settings.fast_model,
+            strong_model=settings.model,
+        )
+        return await detector.run(chunks, top_k=top_k)
 
 
 @app.command()
@@ -57,32 +80,94 @@ def analyze(
     _load_env_file()
     settings = NimSettings.from_env()
     segments = load_transcript(transcript)
-    chunks = chunk_segments(
-        segments,
-        window_seconds=window_minutes * 60.0,
-        overlap_seconds=overlap_minutes * 60.0,
+
+    async def _run() -> list[dict[str, object]]:
+        candidates = await _detect_candidates(
+            segments,
+            settings=settings,
+            top_k=top_k,
+            window_minutes=window_minutes,
+            overlap_minutes=overlap_minutes,
+        )
+
+        if save_run_path is not None:
+            run = build_run(
+                stream_id=stream_id or transcript.stem,
+                transcript_path=str(transcript),
+                candidates=candidates,
+            )
+            save_run(run, save_run_path)
+
+        return [candidate.model_dump(mode="json") for candidate in candidates]
+
+    result = asyncio.run(_run())
+    typer.echo(json.dumps({"candidates": result}, ensure_ascii=False, indent=2))
+
+
+@app.command()
+def transcribe(
+    media: Path = typer.Argument(..., exists=True, readable=True),
+    output: Path | None = typer.Option(None, "--output"),
+) -> None:
+    """Create a timed Japanese transcript from local media with Groq Whisper."""
+    _load_env_file()
+    settings = GroqTranscriptionSettings.from_env()
+    target = output or Path("data/transcripts") / f"{media.stem}.json"
+
+    segments = asyncio.run(transcribe_media(media, settings))
+    save_transcript(segments, target)
+    typer.echo(f"saved transcript: {target}")
+    typer.echo(f"segments: {len(segments)}")
+
+
+@app.command()
+def discover(
+    media: Path = typer.Argument(..., exists=True, readable=True),
+    stream_id: str | None = typer.Option(None),
+    top_k: int = typer.Option(5, min=1, max=20),
+    window_minutes: float = typer.Option(10.0, min=2.0, max=30.0),
+    overlap_minutes: float = typer.Option(2.0, min=0.0, max=10.0),
+    transcript_output: Path | None = typer.Option(None, "--transcript-output"),
+    run_output: Path | None = typer.Option(None, "--run-output"),
+) -> None:
+    """Transcribe local media, discover clip candidates, and save an evaluation run."""
+    _load_env_file()
+    nim_settings = NimSettings.from_env()
+    groq_settings = GroqTranscriptionSettings.from_env()
+    resolved_stream_id = stream_id or media.stem
+    transcript_path = (
+        transcript_output
+        or Path("data/transcripts") / f"{resolved_stream_id}.json"
+    )
+    run_path = (
+        run_output
+        or Path("data/evaluation/runs") / f"{resolved_stream_id}.json"
     )
 
     async def _run() -> list[dict[str, object]]:
-        async with NvidiaNimClient(settings) as client:
-            detector = CandidateDetector(
-                client,
-                fast_model=settings.fast_model,
-                strong_model=settings.model,
-            )
-            candidates = await detector.run(chunks, top_k=top_k)
+        segments = await transcribe_media(media, groq_settings)
+        save_transcript(segments, transcript_path)
 
-            if save_run_path is not None:
-                run = build_run(
-                    stream_id=stream_id or transcript.stem,
-                    transcript_path=str(transcript),
-                    candidates=candidates,
-                )
-                save_run(run, save_run_path)
-
-            return [candidate.model_dump(mode="json") for candidate in candidates]
+        candidates = await _detect_candidates(
+            segments,
+            settings=nim_settings,
+            top_k=top_k,
+            window_minutes=window_minutes,
+            overlap_minutes=overlap_minutes,
+        )
+        save_run(
+            build_run(
+                stream_id=resolved_stream_id,
+                transcript_path=str(transcript_path),
+                candidates=candidates,
+            ),
+            run_path,
+        )
+        return [candidate.model_dump(mode="json") for candidate in candidates]
 
     result = asyncio.run(_run())
+    typer.echo(f"saved transcript: {transcript_path}")
+    typer.echo(f"saved evaluation run: {run_path}")
     typer.echo(json.dumps({"candidates": result}, ensure_ascii=False, indent=2))
 
 
