@@ -50,6 +50,10 @@ class HumanExampleIngestResult(BaseModel):
     aligned: bool
     enriched: bool
     retrieval_index: IndexBuildStats | None = None
+    acquisition_provider: str | None = None
+    acquisition_provider_version: str | None = None
+    acquisition_provider_channel: str | None = None
+    acquisition_js_runtime: str | None = None
 
 
 async def _transcript_for_media(
@@ -199,6 +203,14 @@ async def ingest_human_example_from_urls(
             f"ingested via SourceProvider={type(source_provider).__name__}; "
             "training acquisition profile=audio"
         ),
+        acquisition_provenance={
+            "provider": clip_source.metadata.provider,
+            "provider_version": clip_source.metadata.provider_version,
+            "provider_channel": clip_source.metadata.provider_channel,
+            "js_runtime": clip_source.metadata.js_runtime,
+            "clip_profile": clip_source.profile.value,
+            "source_profile": original_source.profile.value,
+        },
     )
     upsert_human_clip_examples(examples_store, [example])
 
@@ -246,4 +258,8 @@ async def ingest_human_example_from_urls(
         aligned=accepted,
         enriched=enriched,
         retrieval_index=index_stats,
+        acquisition_provider=clip_source.metadata.provider,
+        acquisition_provider_version=clip_source.metadata.provider_version,
+        acquisition_provider_channel=clip_source.metadata.provider_channel,
+        acquisition_js_runtime=clip_source.metadata.js_runtime,
     )
