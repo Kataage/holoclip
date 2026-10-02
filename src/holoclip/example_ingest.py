@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from holoclip.alignment import align_clip_to_source
+from holoclip.alignment import ALIGNMENT_METHOD, align_clip_to_source
 from holoclip.config import GroqTranscriptionSettings
 from holoclip.examples import (
     HumanClipExample,
@@ -181,7 +181,7 @@ async def ingest_human_example_from_urls(
         source_start=alignment.source_start if accepted else None,
         source_end=alignment.source_end if accepted else None,
         alignment_confidence=alignment.confidence,
-        alignment_method="transcript-anchor-v2",
+        alignment_method=ALIGNMENT_METHOD,
         alignment_matched_anchors=alignment.matched_anchors,
         alignment_segments=(
             [

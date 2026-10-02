@@ -21,6 +21,7 @@ class AlignmentAuditSegment(BaseModel):
     confidence: float
     matched_anchors: int
     source_gap_from_previous: float | None = None
+    source_delta_from_previous: float | None = None
     clip_excerpt: str = ""
     source_excerpt: str = ""
 
@@ -174,11 +175,28 @@ def build_human_example_audit(
     audit_segments: list[AlignmentAuditSegment] = []
     previous_source_end: float | None = None
     for index, segment in enumerate(example.alignment_segments, start=1):
-        source_gap = (
-            max(0.0, segment.source_start - previous_source_end)
+        source_delta = (
+            segment.source_start - previous_source_end
             if previous_source_end is not None
             else None
         )
+        source_gap = (
+            max(0.0, source_delta)
+            if source_delta is not None
+            else None
+        )
+        if source_delta is not None and source_delta < -3.0:
+            warnings.append(
+                "non-monotonic alignment: "
+                f"segment #{index} starts {abs(source_delta):.1f}s before "
+                "the previous aligned source range ended"
+            )
+        if segment.matched_anchors == 1 and segment.confidence < 0.62:
+            warnings.append(
+                "weak isolated alignment: "
+                f"segment #{index} has one anchor and confidence "
+                f"{segment.confidence:.3f}"
+            )
         audit_segments.append(
             AlignmentAuditSegment(
                 index=index,
@@ -189,6 +207,7 @@ def build_human_example_audit(
                 confidence=segment.confidence,
                 matched_anchors=segment.matched_anchors,
                 source_gap_from_previous=source_gap,
+                source_delta_from_previous=source_delta,
                 clip_excerpt=_excerpt(
                     clip_transcript,
                     segment.clip_start,
@@ -361,7 +380,15 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
                 ),
             ]
         )
-        if segment.source_gap_from_previous is not None:
+        if segment.source_delta_from_previous is not None:
+            lines.append(
+                "source delta from previous: "
+                f"{segment.source_delta_from_previous:+.1f}s"
+            )
+        if (
+            segment.source_gap_from_previous is not None
+            and segment.source_gap_from_previous > 0
+        ):
             lines.append(
                 f"source gap from previous: {segment.source_gap_from_previous:.1f}s"
             )

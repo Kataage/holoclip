@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from holoclip.alignment import align_clip_to_source, normalize_match_text
+from holoclip.alignment import (
+    AlignmentAnchor,
+    AlignmentSegment,
+    _filter_spurious_segments,
+    align_clip_to_source,
+    normalize_match_text,
+)
 from holoclip.models import TranscriptSegment
 
 
@@ -88,3 +94,134 @@ def test_align_clip_to_source_detects_multiple_cut_segments() -> None:
     assert result.segments[1].clip_start == pytest.approx(30, abs=1)
     assert result.segments[1].source_start == pytest.approx(1200, abs=1)
     assert result.segments[1].source_end == pytest.approx(1230, abs=2)
+
+
+
+def test_filter_spurious_singleton_source_regression() -> None:
+    def aligned_segment(
+        *,
+        clip_start: float,
+        clip_end: float,
+        source_start: float,
+        source_end: float,
+        confidence: float,
+        matched_anchors: int,
+    ) -> AlignmentSegment:
+        anchors = [
+            AlignmentAnchor(
+                clip_start=clip_start + index,
+                source_start=source_start + index,
+                similarity=confidence,
+                clip_text=f"clip-{index}",
+                source_text=f"source-{index}",
+            )
+            for index in range(matched_anchors)
+        ]
+        return AlignmentSegment(
+            clip_start=clip_start,
+            clip_end=clip_end,
+            source_start=source_start,
+            source_end=source_end,
+            confidence=confidence,
+            matched_anchors=matched_anchors,
+            median_offset=source_start - clip_start,
+            anchors=anchors,
+        )
+
+    segments = [
+        aligned_segment(
+            clip_start=0,
+            clip_end=145,
+            source_start=1997,
+            source_end=2142,
+            confidence=0.797,
+            matched_anchors=11,
+        ),
+        aligned_segment(
+            clip_start=158,
+            clip_end=164,
+            source_start=574,
+            source_end=580,
+            confidence=0.554,
+            matched_anchors=1,
+        ),
+        aligned_segment(
+            clip_start=164,
+            clip_end=413,
+            source_start=2175,
+            source_end=2423,
+            confidence=0.798,
+            matched_anchors=12,
+        ),
+    ]
+
+    filtered = _filter_spurious_segments(segments)
+
+    assert len(filtered) == 2
+    assert [item.source_start for item in filtered] == [1997, 2175]
+
+
+def test_filter_keeps_strong_or_multi_anchor_reordered_segment() -> None:
+    strong = AlignmentSegment(
+        clip_start=20,
+        clip_end=40,
+        source_start=100,
+        source_end=120,
+        confidence=0.90,
+        matched_anchors=3,
+        median_offset=80,
+        anchors=[
+            AlignmentAnchor(
+                clip_start=20 + index,
+                source_start=100 + index,
+                similarity=0.9,
+                clip_text="clip",
+                source_text="source",
+            )
+            for index in range(3)
+        ],
+    )
+    before = AlignmentSegment(
+        clip_start=0,
+        clip_end=20,
+        source_start=500,
+        source_end=520,
+        confidence=0.9,
+        matched_anchors=3,
+        median_offset=500,
+        anchors=[
+            AlignmentAnchor(
+                clip_start=index,
+                source_start=500 + index,
+                similarity=0.9,
+                clip_text="clip",
+                source_text="source",
+            )
+            for index in range(3)
+        ],
+    )
+    after = AlignmentSegment(
+        clip_start=40,
+        clip_end=60,
+        source_start=600,
+        source_end=620,
+        confidence=0.9,
+        matched_anchors=3,
+        median_offset=560,
+        anchors=[
+            AlignmentAnchor(
+                clip_start=40 + index,
+                source_start=600 + index,
+                similarity=0.9,
+                clip_text="clip",
+                source_text="source",
+            )
+            for index in range(3)
+        ],
+    )
+
+    assert _filter_spurious_segments([before, strong, after]) == [
+        before,
+        strong,
+        after,
+    ]

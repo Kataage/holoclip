@@ -8,6 +8,9 @@ from pydantic import BaseModel, Field
 from holoclip.models import TranscriptSegment
 
 
+ALIGNMENT_METHOD = "transcript-anchor-v3"
+
+
 class AlignmentAnchor(BaseModel):
     clip_start: float
     source_start: float
@@ -259,6 +262,54 @@ def _segment_path(
     return segments
 
 
+
+def _filter_spurious_segments(
+    segments: list[AlignmentSegment],
+    *,
+    isolated_max_confidence: float = 0.62,
+    source_order_tolerance_seconds: float = 3.0,
+) -> list[AlignmentSegment]:
+    """Drop weak one-anchor segments that are clear source-order outliers.
+
+    Human-made clips can intentionally reorder material, so this is deliberately
+    conservative: only an interior singleton is removed, only when both neighboring
+    segments form a coherent forward sequence and the singleton sits outside that
+    sequence. Strong or multi-anchor segments are never removed by this heuristic.
+    """
+    if len(segments) < 3:
+        return segments
+
+    kept: list[AlignmentSegment] = []
+    for index, segment in enumerate(segments):
+        if index == 0 or index == len(segments) - 1:
+            kept.append(segment)
+            continue
+
+        previous = segments[index - 1]
+        following = segments[index + 1]
+        weak_singleton = (
+            segment.matched_anchors == 1
+            and segment.confidence < isolated_max_confidence
+        )
+        neighbors_forward = (
+            following.source_start + source_order_tolerance_seconds
+            >= previous.source_end
+        )
+        before_previous = (
+            segment.source_end + source_order_tolerance_seconds
+            < previous.source_start
+        )
+        after_following = (
+            segment.source_start
+            > following.source_end + source_order_tolerance_seconds
+        )
+
+        if weak_singleton and neighbors_forward and (before_previous or after_following):
+            continue
+        kept.append(segment)
+
+    return kept
+
 def align_clip_to_source(
     clip_segments: list[TranscriptSegment],
     source_segments: list[TranscriptSegment],
@@ -312,6 +363,10 @@ def align_clip_to_source(
         source,
         cut_offset_tolerance_seconds=cut_offset_tolerance_seconds,
     )
+    if not segments:
+        raise ValueError("no coherent transcript alignment segments found")
+
+    segments = _filter_spurious_segments(segments)
     if not segments:
         raise ValueError("no coherent transcript alignment segments found")
 
