@@ -196,7 +196,8 @@ async def ingest_human_example_from_urls(
         source_transcript_path=str(source_transcript_path),
         transcript_excerpt=excerpt,
         notes=(
-            "ingested via SourceProvider=yt-dlp; training acquisition profile=audio"
+            f"ingested via SourceProvider={type(source_provider).__name__}; "
+            "training acquisition profile=audio"
         ),
     )
     upsert_human_clip_examples(examples_store, [example])
