@@ -195,3 +195,30 @@ changed with `--min-confidence`.
 This alignment stage is intentionally local-first and independent of YouTube acquisition.
 A future SourceProvider can supply the same media/transcript inputs without changing the
 alignment or retrieval logic.
+
+
+## Enrich an aligned human clip into a learning example
+
+After a real human-made clip has been aligned and saved, enrich it with the strong editorial
+model:
+
+~~~powershell
+uv run holoclip examples-enrich <EXAMPLE_ID>
+~~~
+
+This adds:
+
+- abstract setup / development / payoff
+- why a human editor likely selected the event
+- reusable structural traits
+- members and topics when supported by the transcript
+- relationship context
+- context requirement
+- adjacent source windows as **weak negatives**
+
+Weak negatives are deliberately labeled weak: a nearby region not selected by this particular
+clip editor is useful contrast, but it is not treated as proof that the region is objectively
+uninteresting.
+
+The enrichment records the model and extraction method so later retrieval decisions remain
+auditable.
