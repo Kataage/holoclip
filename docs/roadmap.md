@@ -18,8 +18,8 @@ Target: one timed transcript in, 3-10 useful clip candidates out.
 - [x] Candidate dedupe/merge
 - [x] Final editorial review with strong model
 - [x] CLI output
-- [ ] Save accept/maybe/reject feedback
-- [ ] Build a repeatable validation corpus
+- [x] Save accept/maybe/reject feedback
+- [x] Add repeatable validation run/metric format\n- [ ] Build a real-stream validation corpus
 - [ ] Run real NIM smoke test with a Japanese transcript
 
 Exit criterion: across a small validation set, Top-5 regularly contains at least two candidates a human considers usable.
