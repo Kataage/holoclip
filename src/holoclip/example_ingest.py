@@ -106,11 +106,13 @@ async def ingest_human_example_from_urls(
 
     resolved_source_url = source_url
     source_auto_detected = False
+    chosen_source: SourceCandidate | None = None
     if not resolved_source_url:
         candidates = source_provider.source_candidates(clip_metadata)
         chosen = choose_source_candidate(candidates)
         if chosen is None:
             raise SourceResolutionError(candidates)
+        chosen_source = chosen
         resolved_source_url = chosen.url
         source_auto_detected = True
         if progress is not None:
@@ -210,6 +212,18 @@ async def ingest_human_example_from_urls(
             "js_runtime": clip_source.metadata.js_runtime,
             "clip_profile": clip_source.profile.value,
             "source_profile": original_source.profile.value,
+            "requested_source_url": source_url,
+            "resolved_source_url": resolved_source_url,
+            "source_auto_detected": source_auto_detected,
+            "source_resolution_reason": (
+                chosen_source.reason if chosen_source is not None else "explicit_source_url"
+            ),
+            "source_resolution_score": (
+                chosen_source.score if chosen_source is not None else 1.0
+            ),
+            "source_resolution_context": (
+                chosen_source.context if chosen_source is not None else None
+            ),
         },
     )
     upsert_human_clip_examples(examples_store, [example])

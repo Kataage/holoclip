@@ -10,6 +10,11 @@ import typer
 from holoclip.alignment import align_clip_to_source
 from holoclip.analysis.candidate_detector import CandidateDetector
 from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings, NimSettings
+from holoclip.example_audit import (
+    build_human_example_audit,
+    find_human_example,
+    format_human_example_audit,
+)
 from holoclip.examples import (
     HumanClipExample,
     compute_human_clip_stats,
@@ -884,6 +889,52 @@ def examples_retrieve(
         raise typer.Exit(3) from exc
 
     typer.echo(json.dumps(bundle.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+
+@app.command()
+def examples_show(
+    example_id: str = typer.Argument(...),
+    store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--store",
+    ),
+    database: Path = typer.Option(
+        Path("data/holoclip.db"),
+        "--database",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Print the complete audit report as JSON.",
+    ),
+) -> None:
+    """Inspect one human-made clip example, alignment, structure and retrieval state."""
+    try:
+        example = find_human_example(store, example_id)
+    except KeyError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+
+    with SQLiteCanonicalRepository(database) as repository:
+        retrieval_documents = repository.list_retrieval_documents_for_example(
+            example.id
+        )
+
+    report = build_human_example_audit(
+        example,
+        retrieval_documents=retrieval_documents,
+    )
+    if as_json:
+        typer.echo(
+            json.dumps(
+                report.model_dump(mode="json"),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    typer.echo(format_human_example_audit(report))
 
 
 @app.command()

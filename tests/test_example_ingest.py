@@ -208,6 +208,14 @@ async def test_url_ingestion_runs_alignment_enrichment_and_index(
     assert examples[0].acquisition_provenance["provider_version"] == "2026.10.02"
     assert examples[0].acquisition_provenance["provider_channel"] == "nightly"
     assert examples[0].acquisition_provenance["js_runtime"] == "node"
+    assert examples[0].acquisition_provenance["resolved_source_url"] == (
+        "https://www.youtube.com/watch?v=source"
+    )
+    assert examples[0].acquisition_provenance["source_auto_detected"] is True
+    assert examples[0].acquisition_provenance["source_resolution_reason"] == (
+        "description_explicit_source_label"
+    )
+    assert examples[0].acquisition_provenance["source_resolution_score"] == 0.9
     assert result.acquisition_provider_version == "2026.10.02"
     assert any(document.kind == "positive" for document in documents)
     assert any(document.kind == "weak_negative" for document in documents)
