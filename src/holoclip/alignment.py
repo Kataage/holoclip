@@ -8,7 +8,10 @@ from pydantic import BaseModel, Field
 from holoclip.models import TranscriptSegment
 
 
-ALIGNMENT_METHOD = "transcript-anchor-v3"
+ALIGNMENT_METHOD = "transcript-anchor-v4"
+WEAK_SINGLETON_MAX_CONFIDENCE = 0.70
+BACKWARD_JUMP_BASE_PENALTY = 0.75
+BACKWARD_JUMP_MAX_EXTRA_PENALTY = 0.75
 
 
 class AlignmentAnchor(BaseModel):
@@ -147,16 +150,28 @@ def _best_alignment_path(
                 previous_offset = prev_source_start - previous_clip.start
                 offset_delta = abs(current_offset - previous_offset)
 
+                expected_source_delta = clip_segment.start - previous_clip.start
+                actual_source_delta = source_start - prev_source_start
+
                 if offset_delta <= same_offset_tolerance_seconds:
                     transition = 0.35
-                    expected_source_delta = clip_segment.start - previous_clip.start
-                    actual_source_delta = source_start - prev_source_start
                     drift = abs(actual_source_delta - expected_source_delta)
                     transition -= min(0.15, drift / 120.0)
+                elif actual_source_delta < 0:
+                    # A single-source human clip normally preserves chronology.
+                    # Penalize backward jumps strongly enough that a slightly
+                    # higher lexical match cannot create an isolated false cut.
+                    # A genuine reordered block can still recover because the
+                    # first jump pays this cost once, while its following anchors
+                    # regain the same-offset continuity bonus.
+                    backward_seconds = abs(actual_source_delta)
+                    transition = -BACKWARD_JUMP_BASE_PENALTY
+                    transition -= min(
+                        BACKWARD_JUMP_MAX_EXTRA_PENALTY,
+                        backward_seconds / 1200.0,
+                    )
                 else:
                     transition = -0.12
-                    if source_start < prev_source_start:
-                        transition -= 0.08
 
                 total = prev_score + similarity + transition
                 if total > best_score:
@@ -266,7 +281,7 @@ def _segment_path(
 def _filter_spurious_segments(
     segments: list[AlignmentSegment],
     *,
-    isolated_max_confidence: float = 0.62,
+    isolated_max_confidence: float = WEAK_SINGLETON_MAX_CONFIDENCE,
     source_order_tolerance_seconds: float = 3.0,
 ) -> list[AlignmentSegment]:
     """Drop weak one-anchor segments that are clear source-order outliers.
@@ -315,7 +330,7 @@ def align_clip_to_source(
     source_segments: list[TranscriptSegment],
     *,
     max_anchors: int = 24,
-    top_matches_per_anchor: int = 4,
+    top_matches_per_anchor: int = 8,
     min_anchor_similarity: float = 0.28,
     same_offset_tolerance_seconds: float = 22.0,
     cut_offset_tolerance_seconds: float = 12.0,
