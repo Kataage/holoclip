@@ -82,3 +82,76 @@ The model is not asked for one magical funny score. It must provide evidence and
 ## Human gate
 
 The future publishing path retains human approval. Weak candidates can eventually be hidden automatically, but context-sensitive clips must not be auto-published merely because a model produced a high score.
+
+
+## Editorial intelligence target
+
+The long-term product is not a timestamp ranker. It is an autonomous editorial system.
+
+~~~text
+new archive / recent event / historical trigger
+    -> evidence extraction
+    -> event/moment graph
+    -> autonomous EditorialIdea generation
+    -> retrieve human positive + weak-negative examples
+    -> narrative planning
+    -> multi-source timeline planning
+    -> deterministic render plan
+    -> preview
+    -> human approval
+~~~
+
+The system must proactively consider multiple output archetypes without requiring the user to
+specify them: micro moments, single-topic stories, same-stream multi-cut stories, historical
+callbacks, multi-member reaction montages, relationship stories, comparisons, chronology,
+event digests, long compilations, and contextual explainers.
+
+See `docs/editorial-intelligence-research-2026-10.md` for the research basis and full target
+architecture.
+
+## Source-independent timeline
+
+Do not permanently model one human clip or generated clip as belonging to exactly one source.
+
+The general contract is:
+
+~~~text
+ClipProject
+  sources[]
+  timeline[]
+    source_asset_id
+    source_start/source_end
+    output_start/output_end
+    purpose
+    confidence
+~~~
+
+Alignment v2 is the single-source special case of this general structure.
+
+## Multimodal evidence
+
+Candidate and idea reasoning may use independent evidence layers:
+
+- transcript semantics
+- audience/live-chat reaction
+- acoustic/prosodic reaction
+- visual/game/scene evidence
+- historical/entity/relationship context
+- human-made clip weak supervision
+- normalized performance metadata
+
+A missing modality must degrade gracefully rather than block the entire pipeline.
+
+## Measured-time principle
+
+LLMs should progressively stop emitting raw timestamps. Prefer stable transcript segment IDs,
+word IDs, shot IDs, or reaction-window IDs and resolve those identifiers back to measured
+timestamps deterministically. This reduces timestamp arithmetic errors and makes decisions
+auditable.
+
+## Resumability
+
+Every expensive stage should persist an artifact keyed by source/content identity so retries
+resume rather than restart. Transcription chunks, feature extraction, broad discovery,
+alignment, enrichment, retrieval, idea generation, edit planning, and rendering should all be
+independently resumable.

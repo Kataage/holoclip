@@ -86,3 +86,80 @@ Start small:
 - quiet or low-event streams
 
 Scale example ingestion only after the ranking loop shows useful signal.
+
+
+## Beyond Top-K: editorial-system evaluation
+
+Top-K acceptance only measures local moment ranking. The long-term system also needs to be
+evaluated as an idea generator and editor.
+
+### Temporal accuracy
+
+For source-aligned examples track:
+
+- source boundary IoU
+- start/end absolute error
+- multi-cut segment precision/recall
+- edit-map ordering accuracy
+- short-moment localization error
+
+### Idea quality
+
+For each EditorialIdea track:
+
+- human accept / maybe / reject
+- evidence correctness
+- context sufficiency
+- novelty versus existing clips
+- narrative completeness
+- whether the proposed archetype fits the material
+- whether optional historical/cross-stream context improves the idea
+
+### Discovery versus imitation
+
+Maintain separate metrics for:
+
+- **retrieval-supported ideas** — strongly supported by human examples
+- **exploratory ideas** — accepted ideas not substantially matching known human clips
+
+The system is not successful if it only reproduces known clipping patterns.
+
+### Diversity
+
+Evaluate idea portfolios across:
+
+- archetype
+- duration
+- member mix
+- topic
+- emotional tone
+- recent versus archival material
+- single-source versus multi-source
+
+A high acceptance rate with near-identical output is a failure mode.
+
+### Multimodal ablations
+
+When enough data exists, compare:
+
+- transcript only
+- transcript + chat
+- transcript + audio
+- transcript + chat + audio
+- full multimodal
+
+This is necessary because different stream genres expose different signals.
+
+### Product metrics
+
+Track:
+
+- preview -> publish rate
+- revise rate
+- reject rate
+- human review minutes per published clip
+- repeated work after retries
+- render work discarded before approval
+
+The product target is not simply model accuracy; it is high-quality published output with
+minimal operator effort.
