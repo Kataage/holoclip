@@ -130,3 +130,31 @@ See docs/evaluation.md for the validation protocol.
 Source acquisition remains isolated from the ranking core so the project does not depend on one platform-specific extraction method.
 
 See docs/architecture.md, docs/evaluation.md and docs/roadmap.md.
+
+
+## Human-made clip example store
+
+Existing human-made clips are used as weak supervision rather than model fine-tuning.
+
+Import a JSON manifest:
+
+~~~powershell
+uv run holoclip examples-import data\examples\human_clips.example.json
+~~~
+
+The validated examples are stored by default in:
+
+~~~text
+data\examples\human_clips.jsonl
+~~~
+
+Inspect coverage:
+
+~~~powershell
+uv run holoclip examples-stats
+~~~
+
+The schema keeps clip/source provenance, resolved source timestamps, abstract story structure,
+members/topics/traits, relationship context, normalized performance metadata, and alignment
+confidence. Source timestamps may be omitted initially and filled by the planned automatic
+clip-to-source transcript alignment stage.
