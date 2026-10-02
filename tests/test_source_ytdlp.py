@@ -183,6 +183,13 @@ def test_download_failure_refreshes_runtime_and_retries_once(
         "command",
         lambda args: ["yt-dlp", *args],
     )
+    provider.runtime._command_prefix = ["yt-dlp"]
+    provider.runtime._runtime_info = yt_dlp.YtDlpRuntimeInfo(
+        version="2026.10.02",
+        channel="nightly",
+        js_runtime="node",
+        managed_by="test",
+    )
 
     def fake_refresh() -> None:
         refreshes["count"] += 1
