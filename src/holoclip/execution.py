@@ -16,6 +16,16 @@ def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def file_input_identity(path: Path) -> dict[str, Any]:
+    resolved = path.resolve()
+    stat = resolved.stat()
+    return {
+        "path": str(resolved),
+        "size_bytes": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+    }
+
+
 def make_input_fingerprint(payload: Any) -> str:
     encoded = json.dumps(
         payload,
