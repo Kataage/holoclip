@@ -12,6 +12,16 @@ import httpx
 from holoclip.config import NimSettings
 
 
+class NvidiaNimAuthorizationError(RuntimeError):
+    def __init__(self, status_code: int, detail: str | None = None) -> None:
+        self.status_code = status_code
+        self.detail = detail
+        message = f"NVIDIA NIM authorization failed with HTTP {status_code}"
+        if detail:
+            message += f": {detail}"
+        super().__init__(message)
+
+
 class _RateGate:
     """Conservative process-local requests-per-minute gate."""
 
@@ -67,6 +77,26 @@ class NvidiaNimClient:
         if self._owns_client:
             await self._client.aclose()
 
+    async def list_models(self) -> dict[str, Any]:
+        response = await self._client.get(
+            f"{self.settings.base_url}/models",
+            headers={"Authorization": f"Bearer {self.settings.api_key}"},
+        )
+        if response.status_code in {401, 403}:
+            detail = None
+            try:
+                payload = response.json()
+                if isinstance(payload, dict):
+                    detail = str(payload.get("detail") or payload.get("message") or "").strip() or None
+            except ValueError:
+                pass
+            raise NvidiaNimAuthorizationError(response.status_code, detail)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError("NVIDIA NIM models response must be a JSON object")
+        return payload
+
     async def chat(
         self,
         messages: Sequence[dict[str, str]],
@@ -104,6 +134,20 @@ class NvidiaNimClient:
                 if response.status_code < 400:
                     data = response.json()
                     return data["choices"][0]["message"]["content"]
+
+                if response.status_code in {401, 403}:
+                    detail = None
+                    try:
+                        error_payload = response.json()
+                        if isinstance(error_payload, dict):
+                            detail = str(
+                                error_payload.get("detail")
+                                or error_payload.get("message")
+                                or ""
+                            ).strip() or None
+                    except ValueError:
+                        pass
+                    raise NvidiaNimAuthorizationError(response.status_code, detail)
 
                 retryable = response.status_code == 429 or 500 <= response.status_code < 600
                 if retryable:
