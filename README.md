@@ -158,3 +158,40 @@ The schema keeps clip/source provenance, resolved source timestamps, abstract st
 members/topics/traits, relationship context, normalized performance metadata, and alignment
 confidence. Source timestamps may be omitted initially and filled by the planned automatic
 clip-to-source transcript alignment stage.
+
+
+## Align a human-made clip back to its source stream
+
+For the first local learning test, supply a local human-made clip file and an already-created
+transcript of the original source stream:
+
+~~~powershell
+uv run holoclip examples-align path\to\clip.mp4 data\transcripts\source-stream.json
+~~~
+
+The command:
+
+1. transcribes the clip with Groq Whisper (and caches that transcript)
+2. matches multiple spoken-text anchors against the source transcript
+3. estimates the original source start/end timestamps
+4. prints confidence and a few anchor matches
+5. does **not** write to the learning store by default
+
+After the alignment looks correct, rerun with provenance and `--save`:
+
+~~~powershell
+uv run holoclip examples-align path\to\clip.mp4 data\transcripts\source-stream.json ^
+  --clip-url "https://www.youtube.com/watch?v=CLIP_ID" ^
+  --clip-title "clip title" ^
+  --source-url "https://www.youtube.com/watch?v=SOURCE_ID" ^
+  --stream-id "SOURCE_ID" ^
+  --save
+~~~
+
+If confidence is below the default threshold (0.55), the example is stored without accepted
+source timestamps so it cannot silently become trusted training data. The threshold can be
+changed with `--min-confidence`.
+
+This alignment stage is intentionally local-first and independent of YouTube acquisition.
+A future SourceProvider can supply the same media/transcript inputs without changing the
+alignment or retrieval logic.

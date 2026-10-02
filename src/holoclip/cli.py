@@ -7,12 +7,15 @@ from pathlib import Path
 
 import typer
 
+from holoclip.alignment import align_clip_to_source
 from holoclip.analysis.candidate_detector import CandidateDetector
 from holoclip.config import GroqTranscriptionSettings, NimSettings
 from holoclip.examples import (
+    HumanClipExample,
     compute_human_clip_stats,
     load_human_clip_manifest,
     load_human_clip_store,
+    make_human_clip_example_id,
     upsert_human_clip_examples,
 )
 from holoclip.evaluation import (
@@ -293,6 +296,124 @@ def doctor() -> None:
         raise typer.Exit(2)
 
     typer.echo("NVIDIA NIM inference: OK")
+
+
+@app.command()
+def examples_align(
+    clip_media: Path = typer.Argument(..., exists=True, readable=True),
+    source_transcript: Path = typer.Argument(..., exists=True, readable=True),
+    clip_url: str | None = typer.Option(None, "--clip-url"),
+    clip_title: str | None = typer.Option(None, "--clip-title"),
+    clip_channel: str | None = typer.Option(None, "--clip-channel"),
+    source_url: str | None = typer.Option(None, "--source-url"),
+    source_title: str | None = typer.Option(None, "--source-title"),
+    stream_id: str | None = typer.Option(None, "--stream-id"),
+    store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--store",
+    ),
+    min_confidence: float = typer.Option(
+        0.55,
+        "--min-confidence",
+        min=0.0,
+        max=1.0,
+    ),
+    save: bool = typer.Option(
+        False,
+        "--save",
+        help="Upsert the result into the human-clip example store.",
+    ),
+    force_transcribe: bool = typer.Option(
+        False,
+        "--force-transcribe",
+    ),
+) -> None:
+    """Transcribe a human-made clip and align it to an original source transcript."""
+    _load_env_file()
+    groq_settings = GroqTranscriptionSettings.from_env()
+
+    resolved_clip_url = clip_url or clip_media.resolve().as_uri()
+    example_id = make_human_clip_example_id(resolved_clip_url)
+    clip_transcript_path = Path("data/transcripts/examples") / f"{example_id}.json"
+
+    if clip_transcript_path.exists() and not force_transcribe:
+        typer.echo(f"reusing clip transcript: {clip_transcript_path}")
+        clip_segments = load_transcript(clip_transcript_path)
+    else:
+        typer.echo(f"transcribing clip: {clip_media}")
+        clip_segments = asyncio.run(transcribe_media(clip_media, groq_settings))
+        save_transcript(clip_segments, clip_transcript_path)
+        typer.echo(f"saved clip transcript: {clip_transcript_path}")
+
+    source_segments = load_transcript(source_transcript)
+    alignment = align_clip_to_source(clip_segments, source_segments)
+    accepted = alignment.confidence >= min_confidence
+
+    typer.echo(
+        f"alignment: {_clock(alignment.source_start)} - {_clock(alignment.source_end)} "
+        f"confidence={alignment.confidence:.3f} "
+        f"anchors={alignment.matched_anchors}/{alignment.total_anchors}"
+    )
+
+    for anchor in alignment.anchors[:5]:
+        typer.echo(
+            f"  clip {_clock(anchor.clip_start)} -> source {_clock(anchor.source_start)} "
+            f"score={anchor.similarity:.3f}"
+        )
+
+    if not save:
+        typer.echo("not saved (use --save after the alignment looks correct)")
+        return
+
+    if clip_url is None:
+        typer.echo("--save requires --clip-url so training provenance is preserved.", err=True)
+        raise typer.Exit(2)
+
+    existing = next(
+        (
+            item
+            for item in load_human_clip_store(store)
+            if item.id == example_id
+        ),
+        None,
+    )
+    base = (
+        existing.model_dump(mode="python")
+        if existing is not None
+        else {
+            "id": example_id,
+            "clip_url": clip_url,
+            "clip_title": clip_title or clip_media.stem,
+        }
+    )
+    excerpt = " ".join(segment.text for segment in clip_segments)[:4000]
+    base.update(
+        {
+            "clip_url": clip_url,
+            "clip_title": clip_title or base.get("clip_title") or clip_media.stem,
+            "clip_channel": clip_channel or base.get("clip_channel"),
+            "source_url": source_url or base.get("source_url"),
+            "source_title": source_title or base.get("source_title"),
+            "stream_id": stream_id or base.get("stream_id") or source_transcript.stem,
+            "source_start": alignment.source_start if accepted else None,
+            "source_end": alignment.source_end if accepted else None,
+            "alignment_confidence": alignment.confidence,
+            "alignment_method": "transcript-anchor-v1",
+            "alignment_matched_anchors": alignment.matched_anchors,
+            "clip_transcript_path": str(clip_transcript_path),
+            "source_transcript_path": str(source_transcript),
+            "transcript_excerpt": excerpt,
+        }
+    )
+
+    if not accepted:
+        typer.echo(
+            f"confidence is below {min_confidence:.2f}; storing as unaligned for later review."
+        )
+
+    example = HumanClipExample.model_validate(base)
+    added, updated, total = upsert_human_clip_examples(store, [example])
+    typer.echo(f"stored example: +{added} new, {updated} updated, {total} total")
 
 
 @app.command()
