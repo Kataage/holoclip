@@ -296,3 +296,48 @@ The index is derived state in `data/holoclip.db`; the HumanClipExample store rem
 source material for rebuilding it. Re-indexing unchanged examples reuses their existing
 vectors, changed structures are re-embedded, and documents belonging to removed examples are
 removed from the active derived index.
+
+## URL-based human clip ingestion with yt-dlp
+
+Holoclip can now use yt-dlp through the replaceable SourceProvider boundary to turn a public
+human-made clip URL into a weak-supervision example.
+
+For the common case:
+
+~~~powershell
+uv run holoclip examples-ingest-url "https://www.youtube.com/watch?v=CLIP_ID"
+~~~
+
+The command:
+
+1. reads clip metadata with yt-dlp
+2. looks for an unambiguous original/source YouTube link in the clip description
+3. downloads the clip and original source using the training-audio profile
+4. transcribes both with the existing resumable Groq pipeline
+5. aligns the human clip back to source timestamps
+6. writes/updates HumanClipExample
+7. extracts setup/development/payoff/selection reason and weak negatives with the strong LLM
+8. refreshes the structural retrieval index
+
+If the description has no unique source, specify it explicitly:
+
+~~~powershell
+uv run holoclip examples-ingest-url "https://www.youtube.com/watch?v=CLIP_ID" ^
+  --source-url "https://www.youtube.com/watch?v=SOURCE_ID"
+~~~
+
+Training acquisition intentionally downloads best audio rather than full-resolution video because
+transcription/alignment do not need the full video stream. The source cache is separated by
+profile:
+
+~~~text
+data/sources/examples/clips/<id>/training_audio/
+data/sources/examples/sources/<id>/training_audio/
+~~~
+
+A future editing-video acquisition can coexist under editing_video/ without mistaking audio
+for a completed video download.
+
+Holoclip invokes yt-dlp with --ignore-config so user-global yt-dlp settings cannot silently
+change the deterministic training pipeline. It does not enable browser cookies or authenticated
+access by default.
