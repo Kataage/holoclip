@@ -39,6 +39,9 @@ class FakeSourceProvider:
                 title="人間切り抜き",
                 channel="切り抜きch",
                 description="元配信 https://www.youtube.com/watch?v=source",
+                provider_version="2026.10.02",
+                provider_channel="nightly",
+                js_runtime="node",
             )
         return SourceMetadata(
             provider="fake",
@@ -47,6 +50,9 @@ class FakeSourceProvider:
             external_id="source",
             title="元配信",
             channel="公式ch",
+            provider_version="2026.10.02",
+            provider_channel="nightly",
+            js_runtime="node",
         )
 
     def source_candidates(self, metadata: SourceMetadata) -> list[SourceCandidate]:
@@ -199,6 +205,10 @@ async def test_url_ingestion_runs_alignment_enrichment_and_index(
     assert examples[0].source_start == pytest.approx(120.0, abs=1.0)
     assert examples[0].why_selected == "意外な告白から明確なオチまである"
     assert examples[0].weak_negatives
+    assert examples[0].acquisition_provenance["provider_version"] == "2026.10.02"
+    assert examples[0].acquisition_provenance["provider_channel"] == "nightly"
+    assert examples[0].acquisition_provenance["js_runtime"] == "node"
+    assert result.acquisition_provider_version == "2026.10.02"
     assert any(document.kind == "positive" for document in documents)
     assert any(document.kind == "weak_negative" for document in documents)
 

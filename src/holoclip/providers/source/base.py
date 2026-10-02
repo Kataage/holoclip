@@ -25,6 +25,9 @@ class SourceMetadata(BaseModel):
     upload_date: str | None = None
     live_status: str | None = None
     extractor: str | None = None
+    provider_version: str | None = None
+    provider_channel: str | None = None
+    js_runtime: str | None = None
 
 
 class SourceCandidate(BaseModel):

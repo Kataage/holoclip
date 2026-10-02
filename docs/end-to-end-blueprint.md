@@ -946,6 +946,17 @@ A job requiring the local agent becomes blocked_dependency, not failed.
 
 Capabilities, not implementation names, should drive behavior.
 
+External extractor/downloader runtimes are operational dependencies, not ordinary static library
+dependencies. For fast-moving providers such as yt-dlp:
+
+- keep the extractor behind SourceProvider
+- refresh the preferred release channel at the start of a new acquisition process
+- pin the resolved extractor version for the lifetime of that job
+- record extractor version/channel/runtime in provenance
+- permit one forced fresh-runtime retry after an extractor failure
+- never allow an extractor update to mutate semantic/editorial state
+- keep a local/manual SourceProvider path so acquisition can be replaced independently
+
 ~~~text
 get_metadata(source)
 get_transcript(source)?
