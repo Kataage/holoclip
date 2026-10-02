@@ -10,6 +10,7 @@ from typing import Protocol, TypeVar
 from pydantic import BaseModel
 
 from holoclip.execution import ArtifactRecord, StageRun, StageStatus
+from holoclip.retrieval import RetrievalDocument
 from holoclip.domain import (
     CanonicalTranscriptSegment,
     ClipTimeline,
@@ -20,7 +21,7 @@ from holoclip.domain import (
     SourceMoment,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 TModel = TypeVar("TModel", bound=BaseModel)
 
@@ -58,6 +59,22 @@ class CanonicalRepository(Protocol):
     def get_artifact(self, item_id: str) -> ArtifactRecord | None: ...
     def upsert_stage_run(self, item: StageRun) -> None: ...
     def get_stage_run(self, item_id: str) -> StageRun | None: ...
+
+    def upsert_retrieval_document(self, item: RetrievalDocument) -> None: ...
+    def get_retrieval_document(self, item_id: str) -> RetrievalDocument | None: ...
+    def list_retrieval_documents(
+        self,
+        *,
+        embedding_model: str,
+        embedding_version: str,
+    ) -> list[RetrievalDocument]: ...
+    def delete_retrieval_documents_not_in(
+        self,
+        *,
+        embedding_model: str,
+        embedding_version: str,
+        active_ids: set[str],
+    ) -> int: ...
 
     def export_jsonl(self, entity: str, output: Path | str) -> int: ...
     def import_jsonl(self, entity: str, source: Path | str) -> int: ...
@@ -286,6 +303,38 @@ class SQLiteCanonicalRepository:
                     """
                     UPDATE schema_meta
                     SET value='2'
+                    WHERE key='schema_version'
+                    """
+                )
+
+        current = self._schema_version()
+        if current == 2:
+            with self.transaction() as connection:
+                connection.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS retrieval_documents (
+                        id TEXT PRIMARY KEY,
+                        kind TEXT NOT NULL,
+                        example_id TEXT NOT NULL,
+                        text_fingerprint TEXT NOT NULL,
+                        embedding_model TEXT NOT NULL,
+                        embedding_version TEXT NOT NULL,
+                        payload TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_retrieval_documents_model
+                        ON retrieval_documents(
+                            embedding_model,
+                            embedding_version,
+                            kind
+                        );
+                    CREATE INDEX IF NOT EXISTS idx_retrieval_documents_example
+                        ON retrieval_documents(example_id);
+                    """
+                )
+                connection.execute(
+                    """
+                    UPDATE schema_meta
+                    SET value='3'
                     WHERE key='schema_version'
                     """
                 )
@@ -872,3 +921,100 @@ class SQLiteCanonicalRepository:
             self.upsert_stage_run(stale)
             count += 1
         return count
+
+
+    def upsert_retrieval_document(self, item: RetrievalDocument) -> None:
+        with self.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO retrieval_documents(
+                    id,
+                    kind,
+                    example_id,
+                    text_fingerprint,
+                    embedding_model,
+                    embedding_version,
+                    payload
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    kind=excluded.kind,
+                    example_id=excluded.example_id,
+                    text_fingerprint=excluded.text_fingerprint,
+                    embedding_model=excluded.embedding_model,
+                    embedding_version=excluded.embedding_version,
+                    payload=excluded.payload
+                """,
+                (
+                    item.id,
+                    item.kind.value,
+                    item.example_id,
+                    item.text_fingerprint,
+                    item.embedding_model,
+                    item.embedding_version,
+                    self._payload(item),
+                ),
+            )
+
+    def get_retrieval_document(self, item_id: str) -> RetrievalDocument | None:
+        row = self._connection.execute(
+            "SELECT payload FROM retrieval_documents WHERE id=?",
+            (item_id,),
+        ).fetchone()
+        return self._decode(RetrievalDocument, row)
+
+    def list_retrieval_documents(
+        self,
+        *,
+        embedding_model: str,
+        embedding_version: str,
+    ) -> list[RetrievalDocument]:
+        rows = self._connection.execute(
+            """
+            SELECT payload
+            FROM retrieval_documents
+            WHERE embedding_model=?
+              AND embedding_version=?
+            ORDER BY id
+            """,
+            (embedding_model, embedding_version),
+        ).fetchall()
+        return [
+            RetrievalDocument.model_validate_json(row["payload"])
+            for row in rows
+        ]
+
+    def delete_retrieval_documents_not_in(
+        self,
+        *,
+        embedding_model: str,
+        embedding_version: str,
+        active_ids: set[str],
+    ) -> int:
+        with self.transaction() as connection:
+            if not active_ids:
+                cursor = connection.execute(
+                    """
+                    DELETE FROM retrieval_documents
+                    WHERE embedding_model=?
+                      AND embedding_version=?
+                    """,
+                    (embedding_model, embedding_version),
+                )
+                return cursor.rowcount
+
+            placeholders = ",".join("?" for _ in active_ids)
+            cursor = connection.execute(
+                f"""
+                DELETE FROM retrieval_documents
+                WHERE embedding_model=?
+                  AND embedding_version=?
+                  AND id NOT IN ({placeholders})
+                """,
+                (
+                    embedding_model,
+                    embedding_version,
+                    *sorted(active_ids),
+                ),
+            )
+            return cursor.rowcount
