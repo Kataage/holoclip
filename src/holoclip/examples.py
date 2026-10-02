@@ -29,6 +29,8 @@ class HumanClipExample(BaseModel):
     source_end: float | None = Field(default=None, ge=0)
     source_event_id: str | None = None
     alignment_confidence: float | None = Field(default=None, ge=0, le=1)
+    alignment_method: str | None = None
+    alignment_matched_anchors: int | None = Field(default=None, ge=0)
 
     clip_transcript_path: str | None = None
     source_transcript_path: str | None = None
