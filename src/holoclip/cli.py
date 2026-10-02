@@ -9,6 +9,14 @@ import typer
 
 from holoclip.alignment import ALIGNMENT_METHOD, align_clip_to_source
 from holoclip.analysis.candidate_detector import CandidateDetector
+from holoclip.clip_policy import (
+    ClipPolicyRule,
+    PolicyDecision,
+    PolicyOperation,
+    append_policy_rule,
+    evaluate_source_metadata,
+    load_policy_rules,
+)
 from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings, NimSettings
 from holoclip.example_audit import (
     build_human_example_audit,
@@ -25,6 +33,7 @@ from holoclip.examples import (
 )
 from holoclip.execution import StageArtifactCache
 from holoclip.example_ingest import (
+    ClipPolicyGateError,
     SourceResolutionError,
     ingest_human_example_from_urls,
 )
@@ -413,6 +422,92 @@ def _refresh_example_index(
 
 
 @app.command()
+def policy_check(
+    source_url: str = typer.Argument(...),
+    policy_file: Path = typer.Option(
+        Path("data/policy/clip_rules.jsonl"),
+        "--policy-file",
+    ),
+) -> None:
+    """Check source-level clip restrictions before acquisition or discovery."""
+    _load_env_file()
+    try:
+        rules = load_policy_rules(policy_file)
+        provider = YtDlpSourceProvider(
+            channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"),
+        )
+        metadata = provider.probe(source_url)
+        evaluation = evaluate_source_metadata(
+            metadata,
+            rules=rules,
+            operation=PolicyOperation.PUBLISH,
+        )
+    except (RuntimeError, ValueError, YtDlpError) as exc:
+        typer.echo(f"policy check failed: {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+    typer.echo(
+        json.dumps(
+            {
+                "source_id": metadata.external_id,
+                "title": metadata.title,
+                "channel": metadata.channel,
+                "channel_id": metadata.channel_id,
+                "availability": metadata.availability,
+                "live_status": metadata.live_status,
+                "policy": evaluation.model_dump(mode="json"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    if evaluation.decision is PolicyDecision.BLOCK:
+        raise typer.Exit(5)
+    if evaluation.decision is PolicyDecision.REVIEW:
+        raise typer.Exit(4)
+
+
+@app.command()
+def policy_add(
+    rule_id: str = typer.Option(..., "--id"),
+    decision: PolicyDecision = typer.Option(..., "--decision"),
+    reason: str = typer.Option(..., "--reason"),
+    source_id: str | None = typer.Option(None, "--source-id"),
+    channel_id: str | None = typer.Option(None, "--channel-id"),
+    channel_name: str | None = typer.Option(None, "--channel-name"),
+    start: float | None = typer.Option(None, "--start", min=0.0),
+    end: float | None = typer.Option(None, "--end", min=0.001),
+    evidence_url: str | None = typer.Option(None, "--evidence-url"),
+    evidence_text: str | None = typer.Option(None, "--evidence-text"),
+    policy_file: Path = typer.Option(
+        Path("data/policy/clip_rules.jsonl"),
+        "--policy-file",
+    ),
+) -> None:
+    """Append a sourced source/channel/range restriction to the local policy registry."""
+    try:
+        rule = ClipPolicyRule(
+            id=rule_id,
+            decision=decision,
+            reason=reason,
+            source_id=source_id,
+            channel_id=channel_id,
+            channel_name=channel_name,
+            start=start,
+            end=end,
+            evidence_url=evidence_url,
+            evidence_text=evidence_text,
+        )
+        append_policy_rule(policy_file, rule)
+    except ValueError as exc:
+        typer.echo(f"invalid policy rule: {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+    typer.echo(f"saved clip policy rule: {rule.id}")
+    typer.echo(f"policy file: {policy_file}")
+
+
+@app.command()
 def source_doctor() -> None:
     """Check the managed yt-dlp runtime and JavaScript runtime."""
     _load_env_file()
@@ -471,6 +566,18 @@ def examples_ingest_url(
         min=30.0,
         max=300.0,
     ),
+    policy_file: Path = typer.Option(
+        Path("data/policy/clip_rules.jsonl"),
+        "--policy-file",
+    ),
+    allow_policy_review: bool = typer.Option(
+        False,
+        "--allow-policy-review",
+        help=(
+            "Proceed through REVIEW findings after manual inspection. "
+            "BLOCK findings can never be overridden."
+        ),
+    ),
 ) -> None:
     """Download, align, enrich and index one human-made clip from URLs."""
     _load_env_file()
@@ -478,6 +585,11 @@ def examples_ingest_url(
     groq_settings = GroqTranscriptionSettings.from_env()
     nim_settings = NimSettings.from_env()
     embedding_settings = NimEmbeddingSettings.from_env()
+    try:
+        policy_rules = load_policy_rules(policy_file)
+    except ValueError as exc:
+        typer.echo(f"clip policy error: {exc}", err=True)
+        raise typer.Exit(2) from exc
 
     try:
         source_provider = YtDlpSourceProvider(
@@ -516,11 +628,35 @@ def examples_ingest_url(
                     stage_cache=stage_cache,
                     min_confidence=min_confidence,
                     weak_negative_window_seconds=weak_negative_window,
+                    policy_rules=policy_rules,
+                    allow_policy_review=allow_policy_review,
                     progress=typer.echo,
                 )
 
     try:
         result = asyncio.run(_run())
+    except ClipPolicyGateError as exc:
+        typer.echo(
+            f"clip policy: {exc.evaluation.decision.value} ({exc.stage})",
+            err=True,
+        )
+        for finding in exc.evaluation.findings:
+            scope = ""
+            if finding.start is not None and finding.end is not None:
+                scope = f" [{_clock(finding.start)}-{_clock(finding.end)}]"
+            typer.echo(
+                f"  - {finding.source}{scope}: {finding.reason}",
+                err=True,
+            )
+            if finding.evidence_url:
+                typer.echo(f"    evidence: {finding.evidence_url}", err=True)
+        if exc.evaluation.decision is PolicyDecision.REVIEW:
+            typer.echo(
+                "Review the evidence/range manually. Re-run with "
+                "--allow-policy-review only if it is confirmed safe.",
+                err=True,
+            )
+        raise typer.Exit(5) from exc
     except SourceResolutionError as exc:
         typer.echo(
             "元配信を一意に決められませんでした。"
