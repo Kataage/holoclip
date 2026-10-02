@@ -155,3 +155,13 @@ Every expensive stage should persist an artifact keyed by source/content identit
 resume rather than restart. Transcription chunks, feature extraction, broad discovery,
 alignment, enrichment, retrieval, idea generation, edit planning, and rendering should all be
 independently resumable.
+
+
+## Architecture baseline
+
+The authoritative end-to-end design is now `docs/end-to-end-blueprint.md`.
+
+When a local implementation shortcut conflicts with that blueprint, keep the shortcut behind a
+compatibility adapter rather than changing the long-term entity boundaries. The blueprint
+defines canonical entities, lifecycle stages, resumability, local/cloud responsibility,
+migration from the current PoC, evaluation gates, and the implementation order.

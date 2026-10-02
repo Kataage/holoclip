@@ -25,6 +25,25 @@ Target: one timed transcript in, 3-10 useful clip candidates out.
 
 Exit criterion: across a small validation set, Top-5 regularly contains at least two candidates a human considers usable.
 
+## Phase 1.5 - canonical foundation
+
+This is the migration bridge from the working PoC to the long-term architecture in
+`docs/end-to-end-blueprint.md`.
+
+- [ ] SourceAsset canonical identity
+- [ ] Stable TranscriptSegment IDs
+- [ ] EvidenceItem / SourceMoment contracts
+- [ ] TimelineSegment / ClipTimeline contracts
+- [ ] EditorialIdea contract
+- [ ] ReviewRecord contract
+- [ ] Repository interface + local SQLite implementation
+- [ ] ArtifactRecord / StageRun resumability skeleton
+- [ ] Compatibility adapters for current ClipCandidate / EvaluationRun / HumanClipExample
+- [ ] JSON/JSONL migration/import path
+
+Exit criterion: existing continuous and multi-cut tests pass through the canonical model without
+losing provenance, and successful upstream stages can be reused after a simulated retry.
+
 ## Phase 2 - human-sense example database
 
 - [x] Define existing-clip example schema
