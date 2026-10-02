@@ -136,7 +136,7 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
     assert "removed/gap inside bounding range: 60.0s" in rendered
     assert "first alignment - declared hint: +0.0s" in rendered
     assert "元配信の最初" in rendered
-    assert "Retrieval documents (1)" in rendered
+    assert f"Retrieval documents ({len(documents)})" in rendered
 
 
 def test_repository_lists_retrieval_documents_for_example(tmp_path: Path) -> None:
