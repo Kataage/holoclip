@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from holoclip.models import TranscriptSegment
 
 
-ALIGNMENT_METHOD = "transcript-anchor-v4"
+ALIGNMENT_METHOD = "transcript-anchor-v5"
 WEAK_SINGLETON_MAX_CONFIDENCE = 0.70
 BACKWARD_JUMP_BASE_PENALTY = 0.75
 BACKWARD_JUMP_MAX_EXTRA_PENALTY = 0.75
@@ -325,6 +325,79 @@ def _filter_spurious_segments(
 
     return kept
 
+
+def _merge_consistent_segments(
+    segments: list[AlignmentSegment],
+    *,
+    source_duration: float,
+    cut_offset_tolerance_seconds: float,
+) -> list[AlignmentSegment]:
+    """Rejoin neighboring groups after an outlier segment has been removed.
+
+    If two surviving segments have effectively the same clip->source offset,
+    the apparent gap was created by segmentation noise rather than an editorial
+    cut. Reconstruct one continuous segment so unanchored clip time is not lost.
+    """
+    if len(segments) < 2:
+        return segments
+
+    def merge(left: AlignmentSegment, right: AlignmentSegment) -> AlignmentSegment:
+        anchors = sorted(
+            [*left.anchors, *right.anchors],
+            key=lambda item: (item.clip_start, item.source_start),
+        )
+        offsets = [anchor.source_start - anchor.clip_start for anchor in anchors]
+        median_offset = statistics.median(offsets)
+        clip_start = left.clip_start
+        clip_end = right.clip_end
+        source_start = max(
+            0.0,
+            min(source_duration - 0.001, clip_start + median_offset),
+        )
+        source_end = min(source_duration, clip_end + median_offset)
+        source_end = max(source_start + 0.001, source_end)
+
+        average_similarity = statistics.fmean(anchor.similarity for anchor in anchors)
+        spread = statistics.pstdev(offsets) if len(offsets) >= 2 else 0.0
+        consistency = max(
+            0.0,
+            1.0
+            - min(
+                1.0,
+                spread / max(1.0, cut_offset_tolerance_seconds),
+            ),
+        )
+        anchor_strength = min(1.0, len(anchors) / 3.0)
+        confidence = max(
+            0.0,
+            min(
+                1.0,
+                (0.65 * average_similarity)
+                + (0.20 * consistency)
+                + (0.15 * anchor_strength),
+            ),
+        )
+        return AlignmentSegment(
+            clip_start=clip_start,
+            clip_end=clip_end,
+            source_start=source_start,
+            source_end=source_end,
+            confidence=confidence,
+            matched_anchors=len(anchors),
+            median_offset=median_offset,
+            anchors=anchors,
+        )
+
+    merged: list[AlignmentSegment] = [segments[0]]
+    for segment in segments[1:]:
+        previous = merged[-1]
+        offset_delta = abs(segment.median_offset - previous.median_offset)
+        if offset_delta <= cut_offset_tolerance_seconds:
+            merged[-1] = merge(previous, segment)
+        else:
+            merged.append(segment)
+    return merged
+
 def align_clip_to_source(
     clip_segments: list[TranscriptSegment],
     source_segments: list[TranscriptSegment],
@@ -384,6 +457,12 @@ def align_clip_to_source(
     segments = _filter_spurious_segments(segments)
     if not segments:
         raise ValueError("no coherent transcript alignment segments found")
+
+    segments = _merge_consistent_segments(
+        segments,
+        source_duration=source[-1].end,
+        cut_offset_tolerance_seconds=cut_offset_tolerance_seconds,
+    )
 
     all_anchors = [anchor for segment in segments for anchor in segment.anchors]
     all_offsets = [anchor.source_start - anchor.clip_start for anchor in all_anchors]

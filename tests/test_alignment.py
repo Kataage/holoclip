@@ -7,6 +7,7 @@ from holoclip.alignment import (
     AlignmentSegment,
     _best_alignment_path,
     _filter_spurious_segments,
+    _merge_consistent_segments,
     align_clip_to_source,
     normalize_match_text,
 )
@@ -291,3 +292,103 @@ def test_filter_spurious_singleton_accepts_real_world_0628_regression() -> None:
 
     assert len(filtered) == 2
     assert [segment.source_start for segment in filtered] == [1231, 1421]
+
+
+
+def test_merge_consistent_segments_rejoins_gap_after_outlier_removal() -> None:
+    def item(
+        clip_start: float,
+        clip_end: float,
+        source_start: float,
+        source_end: float,
+        confidence: float,
+        anchors: int,
+    ) -> AlignmentSegment:
+        offset = source_start - clip_start
+        return AlignmentSegment(
+            clip_start=clip_start,
+            clip_end=clip_end,
+            source_start=source_start,
+            source_end=source_end,
+            confidence=confidence,
+            matched_anchors=anchors,
+            median_offset=offset,
+            anchors=[
+                AlignmentAnchor(
+                    clip_start=clip_start + index,
+                    source_start=source_start + index,
+                    similarity=confidence,
+                    clip_text=f"clip-{index}",
+                    source_text=f"source-{index}",
+                )
+                for index in range(anchors)
+            ],
+        )
+
+    segments = [
+        item(0.0, 122.0, 1231.0, 1354.0, 0.726, 2),
+        item(186.0, 430.0, 1421.0, 1666.0, 0.813, 9),
+        item(436.0, 771.0, 1672.0, 2007.0, 0.823, 12),
+    ]
+
+    merged = _merge_consistent_segments(
+        segments,
+        source_duration=4000.0,
+        cut_offset_tolerance_seconds=12.0,
+    )
+
+    assert len(merged) == 1
+    assert merged[0].clip_start == pytest.approx(0.0)
+    assert merged[0].clip_end == pytest.approx(771.0)
+    assert merged[0].source_start == pytest.approx(1235.0, abs=6.0)
+    assert merged[0].source_end == pytest.approx(2006.0, abs=6.0)
+    assert merged[0].matched_anchors == 23
+
+
+def test_merge_consistent_segments_preserves_real_cut_offset_jump() -> None:
+    left = AlignmentSegment(
+        clip_start=0,
+        clip_end=60,
+        source_start=1000,
+        source_end=1060,
+        confidence=0.9,
+        matched_anchors=3,
+        median_offset=1000,
+        anchors=[
+            AlignmentAnchor(
+                clip_start=float(index),
+                source_start=1000.0 + index,
+                similarity=0.9,
+                clip_text="clip",
+                source_text="source",
+            )
+            for index in range(3)
+        ],
+    )
+    right = AlignmentSegment(
+        clip_start=60,
+        clip_end=120,
+        source_start=1200,
+        source_end=1260,
+        confidence=0.9,
+        matched_anchors=3,
+        median_offset=1140,
+        anchors=[
+            AlignmentAnchor(
+                clip_start=60.0 + index,
+                source_start=1200.0 + index,
+                similarity=0.9,
+                clip_text="clip",
+                source_text="source",
+            )
+            for index in range(3)
+        ],
+    )
+
+    merged = _merge_consistent_segments(
+        [left, right],
+        source_duration=4000.0,
+        cut_offset_tolerance_seconds=12.0,
+    )
+
+    assert merged == [left, right]

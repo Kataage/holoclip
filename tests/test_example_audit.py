@@ -18,6 +18,7 @@ from holoclip.retrieval import (
     RETRIEVAL_VERSION,
     RetrievalDocument,
     RetrievalDocumentKind,
+    build_retrieval_document_drafts,
 )
 from holoclip.transcript import save_transcript
 
@@ -100,20 +101,20 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
             "source_resolution_score": 0.9,
         },
     )
-    document = RetrievalDocument(
-        id="retr-a",
-        kind=RetrievalDocumentKind.POSITIVE,
-        example_id=example.id,
-        text="setup: 前振り\npayoff: オチ",
-        text_fingerprint="fp",
-        embedding_model="embed",
-        embedding_version=RETRIEVAL_VERSION,
-        embedding=[1.0, 0.0],
-    )
+    drafts, _ = build_retrieval_document_drafts([example])
+    documents = [
+        RetrievalDocument(
+            **draft.model_dump(),
+            embedding_model="embed",
+            embedding_version=RETRIEVAL_VERSION,
+            embedding=[1.0, float(index + 1)],
+        )
+        for index, draft in enumerate(drafts)
+    ]
 
     report = build_human_example_audit(
         example,
-        retrieval_documents=[document],
+        retrieval_documents=documents,
     )
 
     assert len(report.alignment_segments) == 2
@@ -135,7 +136,7 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
     assert "removed/gap inside bounding range: 60.0s" in rendered
     assert "first alignment - declared hint: +0.0s" in rendered
     assert "元配信の最初" in rendered
-    assert "Retrieval documents (1)" in rendered
+    assert f"Retrieval documents ({len(documents)})" in rendered
 
 
 def test_repository_lists_retrieval_documents_for_example(tmp_path: Path) -> None:
@@ -217,3 +218,57 @@ def test_audit_warns_on_nonmonotonic_weak_singleton(tmp_path: Path) -> None:
     rendered = format_human_example_audit(report)
     assert "source delta from previous: -610.0s" in rendered
     assert "non-monotonic alignment" in rendered
+
+
+
+def test_audit_warns_when_retrieval_documents_are_stale(tmp_path: Path) -> None:
+    clip_path = tmp_path / "clip.json"
+    source_path = tmp_path / "source.json"
+    save_transcript(
+        [TranscriptSegment(start=0, end=10, text="clip")],
+        clip_path,
+    )
+    save_transcript(
+        [TranscriptSegment(start=100, end=110, text="source")],
+        source_path,
+    )
+    example = HumanClipExample(
+        id="stale-example",
+        clip_url="https://youtu.be/clip",
+        clip_title="stale",
+        source_start=100,
+        source_end=110,
+        alignment_confidence=0.9,
+        alignment_method="transcript-anchor-v4",
+        alignment_segments=[
+            AlignmentSegmentExample(
+                clip_start=0,
+                clip_end=10,
+                source_start=100,
+                source_end=110,
+                confidence=0.9,
+                matched_anchors=3,
+            )
+        ],
+        clip_transcript_path=str(clip_path),
+        source_transcript_path=str(source_path),
+    )
+    stale = RetrievalDocument(
+        id="old-positive",
+        kind=RetrievalDocumentKind.POSITIVE,
+        example_id=example.id,
+        text="setup: old data",
+        text_fingerprint="old-fingerprint",
+        embedding_model="embed",
+        embedding=[1.0],
+    )
+
+    report = build_human_example_audit(
+        example,
+        retrieval_documents=[stale],
+    )
+
+    assert any(
+        "retrieval index does not match" in warning
+        for warning in report.warnings
+    )
