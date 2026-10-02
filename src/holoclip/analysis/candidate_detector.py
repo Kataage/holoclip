@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from holoclip.analysis.prompts import discovery_messages, final_review_messages
+from holoclip.execution import StageArtifactCache, StageStatus, make_input_fingerprint
 from holoclip.models import CandidateWarning, ClipCandidate, TranscriptChunk
 from holoclip.providers.llm.base import LLMProvider
 
@@ -82,6 +83,8 @@ class CandidateDetector:
         fast_reasoning_effort: str = "low",
         strong_reasoning_effort: str = "high",
         progress: Callable[[str], None] | None = None,
+        stage_cache: StageArtifactCache | None = None,
+        cache_provider: str = "llm",
     ) -> None:
         self.llm = llm
         self.fast_model = fast_model
@@ -89,19 +92,75 @@ class CandidateDetector:
         self.fast_reasoning_effort = fast_reasoning_effort
         self.strong_reasoning_effort = strong_reasoning_effort
         self.progress = progress
+        self.stage_cache = stage_cache
+        self.cache_provider = cache_provider
 
     def _emit(self, message: str) -> None:
         if self.progress is not None:
             self.progress(message)
 
     async def _discover_chunk(self, chunk: TranscriptChunk) -> list[ClipCandidate]:
-        payload = await self.llm.chat_json(
-            discovery_messages(chunk),
-            model=self.fast_model,
-            temperature=0.2,
-            max_tokens=2048,
-            reasoning_effort=self.fast_reasoning_effort,
+        input_fingerprint = make_input_fingerprint(
+            {
+                "chunk_id": chunk.id,
+                "start": chunk.start,
+                "end": chunk.end,
+                "text": chunk.text,
+                "segment_indices": chunk.segment_indices,
+            }
         )
+        payload = None
+
+        if self.stage_cache is not None:
+            payload = self.stage_cache.reusable_json(
+                stage="broad_candidate_discovery",
+                subject_type="transcript_chunk",
+                subject_id=chunk.id,
+                input_fingerprint=input_fingerprint,
+                stage_version="1",
+                provider=self.cache_provider,
+                model=self.fast_model,
+                prompt_version="discovery-v1",
+            )
+            if payload is not None:
+                self._emit(f"broad {chunk.id}: reused")
+
+        if payload is None:
+            run = None
+            if self.stage_cache is not None:
+                run = self.stage_cache.start(
+                    stage="broad_candidate_discovery",
+                    subject_type="transcript_chunk",
+                    subject_id=chunk.id,
+                    input_fingerprint=input_fingerprint,
+                    stage_version="1",
+                    provider=self.cache_provider,
+                    model=self.fast_model,
+                    prompt_version="discovery-v1",
+                )
+            try:
+                payload = await self.llm.chat_json(
+                    discovery_messages(chunk),
+                    model=self.fast_model,
+                    temperature=0.2,
+                    max_tokens=2048,
+                    reasoning_effort=self.fast_reasoning_effort,
+                )
+            except Exception as exc:
+                if self.stage_cache is not None and run is not None:
+                    self.stage_cache.fail(
+                        run,
+                        status=StageStatus.FAILED_RETRYABLE,
+                        error=exc,
+                    )
+                raise
+
+            if self.stage_cache is not None and run is not None:
+                self.stage_cache.succeed_json(
+                    run,
+                    payload,
+                    kind="broad_candidate_discovery",
+                )
         raw = payload.get("candidates", [])
         if not isinstance(raw, list):
             return []
