@@ -47,3 +47,38 @@ class NimSettings:
             raise ValueError("NVIDIA_NIM_MAX_CONCURRENCY must be >= 1")
         if self.rpm < 1:
             raise ValueError("NVIDIA_NIM_RPM must be >= 1")
+
+
+@dataclass(frozen=True, slots=True)
+class GroqTranscriptionSettings:
+    api_key: str
+    base_url: str = "https://api.groq.com/openai/v1"
+    model: str = "whisper-large-v3-turbo"
+    language: str = "ja"
+    rpm: int = 15
+    max_retries: int = 6
+    timeout_seconds: float = 300.0
+    chunk_seconds: int = 900
+
+    @classmethod
+    def from_env(cls) -> GroqTranscriptionSettings:
+        return cls(
+            api_key=os.getenv("GROQ_API_KEY", ""),
+            base_url=os.getenv(
+                "GROQ_BASE_URL", "https://api.groq.com/openai/v1"
+            ).rstrip("/"),
+            model=os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo"),
+            language=os.getenv("GROQ_WHISPER_LANGUAGE", "ja"),
+            rpm=_env_int("GROQ_WHISPER_RPM", 15),
+            max_retries=_env_int("GROQ_WHISPER_MAX_RETRIES", 6),
+            timeout_seconds=_env_float("GROQ_WHISPER_TIMEOUT_SECONDS", 300.0),
+            chunk_seconds=_env_int("GROQ_AUDIO_CHUNK_SECONDS", 900),
+        )
+
+    def validate(self) -> None:
+        if not self.api_key:
+            raise ValueError("GROQ_API_KEY is not set")
+        if self.rpm < 1:
+            raise ValueError("GROQ_WHISPER_RPM must be >= 1")
+        if self.chunk_seconds < 60:
+            raise ValueError("GROQ_AUDIO_CHUNK_SECONDS must be >= 60")

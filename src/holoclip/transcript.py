@@ -71,3 +71,14 @@ def chunk_segments(
         cursor += step
 
     return chunks
+
+
+def save_transcript(segments: list[TranscriptSegment], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "segments": [segment.model_dump(mode="json") for segment in segments],
+    }
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )

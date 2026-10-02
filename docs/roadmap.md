@@ -19,7 +19,8 @@ Target: one timed transcript in, 3-10 useful clip candidates out.
 - [x] Final editorial review with strong model
 - [x] CLI output
 - [x] Save accept/maybe/reject feedback
-- [x] Add repeatable validation run/metric format\n- [ ] Build a real-stream validation corpus
+- [x] Add repeatable validation run/metric format
+- [ ] Build a real-stream validation corpus
 - [ ] Run real NIM smoke test with a Japanese transcript
 
 Exit criterion: across a small validation set, Top-5 regularly contains at least two candidates a human considers usable.
@@ -36,9 +37,10 @@ Exit criterion: across a small validation set, Top-5 regularly contains at least
 
 ## Phase 3 - transcript/source automation
 
-- [ ] TranscriptionProvider interface
-- [ ] Groq Whisper adapter
-- [ ] LocalFileProvider
+- [x] TranscriptionProvider interface
+- [x] Groq Whisper adapter
+- [x] Local media input with FFmpeg audio chunking
+- [x] One-command local media -> transcript -> candidate run
 - [ ] Source acquisition strategy review
 - [ ] Stream metadata ingest
 - [ ] Optional live-chat reaction features
