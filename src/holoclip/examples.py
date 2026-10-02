@@ -84,6 +84,7 @@ class HumanClipExample(BaseModel):
     performance: ClipPerformance | None = None
     clipped_by_count: int = Field(default=1, ge=1)
     notes: str | None = None
+    acquisition_provenance: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_source_range(self) -> HumanClipExample:
