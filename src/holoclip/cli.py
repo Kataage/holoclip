@@ -73,6 +73,7 @@ async def _detect_candidates(
     window_minutes: float,
     overlap_minutes: float,
     stage_cache: StageArtifactCache | None = None,
+    retrieval_repository: SQLiteCanonicalRepository | None = None,
 ):
     chunks = chunk_segments(
         segments,
@@ -84,17 +85,34 @@ async def _detect_candidates(
         f"(fast={settings.fast_model}, final={settings.model})"
     )
     async with NvidiaNimClient(settings, event_callback=typer.echo) as client:
-        detector = CandidateDetector(
-            client,
-            fast_model=settings.fast_model,
-            strong_model=settings.model,
-            fast_reasoning_effort=settings.fast_reasoning_effort,
-            strong_reasoning_effort=settings.strong_reasoning_effort,
-            progress=typer.echo,
-            stage_cache=stage_cache,
-            cache_provider="nvidia_nim",
-        )
-        return await detector.run(chunks, top_k=top_k)
+        if retrieval_repository is None:
+            detector = CandidateDetector(
+                client,
+                fast_model=settings.fast_model,
+                strong_model=settings.model,
+                fast_reasoning_effort=settings.fast_reasoning_effort,
+                strong_reasoning_effort=settings.strong_reasoning_effort,
+                progress=typer.echo,
+                stage_cache=stage_cache,
+                cache_provider="nvidia_nim",
+            )
+            return await detector.run(chunks, top_k=top_k)
+
+        embedding_settings = NimEmbeddingSettings.from_env()
+        async with NvidiaNimEmbeddingClient(embedding_settings) as embedding_client:
+            detector = CandidateDetector(
+                client,
+                fast_model=settings.fast_model,
+                strong_model=settings.model,
+                fast_reasoning_effort=settings.fast_reasoning_effort,
+                strong_reasoning_effort=settings.strong_reasoning_effort,
+                progress=typer.echo,
+                stage_cache=stage_cache,
+                cache_provider="nvidia_nim",
+                embedding_provider=embedding_client,
+                retrieval_repository=retrieval_repository,
+            )
+            return await detector.run(chunks, top_k=top_k)
 
 
 @app.command()
@@ -115,7 +133,10 @@ def analyze(
     settings = NimSettings.from_env()
     segments = load_transcript(transcript)
 
-    async def _run(stage_cache: StageArtifactCache) -> list[dict[str, object]]:
+    async def _run(
+        stage_cache: StageArtifactCache,
+        repository: SQLiteCanonicalRepository,
+    ) -> list[dict[str, object]]:
         candidates = await _detect_candidates(
             segments,
             settings=settings,
@@ -123,6 +144,7 @@ def analyze(
             window_minutes=window_minutes,
             overlap_minutes=overlap_minutes,
             stage_cache=stage_cache,
+            retrieval_repository=repository,
         )
 
         if save_run_path is not None:
@@ -141,7 +163,7 @@ def analyze(
                 repository,
                 Path("data/artifacts/stages"),
             )
-            result = asyncio.run(_run(stage_cache))
+            result = asyncio.run(_run(stage_cache, repository))
     except NvidiaNimAuthorizationError as exc:
         typer.echo(f"NVIDIA NIM error: {exc}", err=True)
         typer.echo(
@@ -216,7 +238,10 @@ def discover(
         or Path("data/evaluation/runs") / f"{resolved_stream_id}.json"
     )
 
-    async def _run(stage_cache: StageArtifactCache) -> list[dict[str, object]]:
+    async def _run(
+        stage_cache: StageArtifactCache,
+        repository: SQLiteCanonicalRepository,
+    ) -> list[dict[str, object]]:
         if transcript_path.exists() and not force_transcribe:
             typer.echo(f"reusing transcript: {transcript_path}")
             segments = load_transcript(transcript_path)
@@ -238,6 +263,7 @@ def discover(
             window_minutes=window_minutes,
             overlap_minutes=overlap_minutes,
             stage_cache=stage_cache,
+            retrieval_repository=repository,
         )
         save_run(
             build_run(
@@ -256,7 +282,7 @@ def discover(
                 repository,
                 Path("data/artifacts/stages"),
             )
-            result = asyncio.run(_run(stage_cache))
+            result = asyncio.run(_run(stage_cache, repository))
     except NvidiaNimAuthorizationError as exc:
         typer.echo(f"NVIDIA NIM error: {exc}", err=True)
         typer.echo(f"Transcript is safe at: {transcript_path}", err=True)
