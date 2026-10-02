@@ -1,0 +1,11 @@
+{
+  "clips": [
+    {
+      "id": "example-known-clip",
+      "stream_id": "example-stream",
+      "start": 120.0,
+      "end": 180.0,
+      "title": "Optional known human-made clip"
+    }
+  ]
+}
