@@ -68,6 +68,15 @@ Prefer candidates understandable to a new viewer unless fan context is the point
 Penalize candidates where the title sounds better than the described material.
 Penalize context-risk and likely misinterpretation.
 Do not select duplicates of the same underlying moment.
+
+When retrieved human examples are provided:
+- treat positive examples as weak evidence for reusable editorial mechanisms, not templates
+- treat weak negatives only as moments an editor omitted in that specific context, not as objectively bad content
+- compare setup/development/payoff, contrast, relationship dynamics, callback, escalation and context needs
+- do not copy titles, wording, jokes, thumbnails, or exact edit structures
+- similarity alone is not proof that a candidate is good
+- a genuinely novel candidate may still outrank all retrieved examples
+
 Return JSON only.
 """
 
@@ -76,11 +85,11 @@ def final_review_messages(
     candidates: list[ClipCandidate],
     *,
     top_k: int,
+    retrieval_evidence: list[dict[str, object]] | None = None,
 ) -> list[dict[str, str]]:
     compact = []
     for index, candidate in enumerate(candidates):
-        compact.append(
-            {
+        item = {
                 "index": index,
                 "start": candidate.start,
                 "end": candidate.end,
@@ -94,12 +103,15 @@ def final_review_messages(
                 "confidence": candidate.confidence,
                 "warnings": [warning.value for warning in candidate.warnings],
             }
-        )
+        if retrieval_evidence is not None and index < len(retrieval_evidence):
+            item["retrieval"] = retrieval_evidence[index]
+        compact.append(item)
 
     user = (
         f"Choose at most {top_k} candidates from the following list.\n"
         "Rank strongest first. Return JSON as "
-        '{"ranked":[{"index":0,"confidence":0.0,"reason":"brief editorial reason"}]}.\n\n'
+        '{"ranked":[{"index":0,"confidence":0.0,"reason":"brief editorial reason",'
+        '"retrieval_assessment":"how retrieved positives/weak negatives affected the decision"}]}.\n\n'
         + json.dumps(compact, ensure_ascii=False)
     )
     return [

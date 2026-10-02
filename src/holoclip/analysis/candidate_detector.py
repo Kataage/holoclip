@@ -6,8 +6,19 @@ from typing import Any
 
 from holoclip.analysis.prompts import discovery_messages, final_review_messages
 from holoclip.execution import StageArtifactCache, StageStatus, make_input_fingerprint
-from holoclip.models import CandidateWarning, ClipCandidate, TranscriptChunk
+from holoclip.models import (
+    CandidateRetrievalHit,
+    CandidateRetrievalTrace,
+    CandidateWarning,
+    ClipCandidate,
+    TranscriptChunk,
+)
+from holoclip.providers.embedding.base import EmbeddingProvider, EmbeddingProviderError
 from holoclip.providers.llm.base import LLMProvider
+from holoclip.retrieval import (
+    clip_candidate_query_text,
+    retrieve_structural_examples_many,
+)
 
 
 def _candidate_from_item(item: dict[str, Any], chunk: TranscriptChunk) -> ClipCandidate | None:
@@ -85,6 +96,10 @@ class CandidateDetector:
         progress: Callable[[str], None] | None = None,
         stage_cache: StageArtifactCache | None = None,
         cache_provider: str = "llm",
+        embedding_provider: EmbeddingProvider | None = None,
+        retrieval_repository: Any | None = None,
+        retrieval_positive_k: int = 3,
+        retrieval_negative_k: int = 3,
     ) -> None:
         self.llm = llm
         self.fast_model = fast_model
@@ -94,6 +109,10 @@ class CandidateDetector:
         self.progress = progress
         self.stage_cache = stage_cache
         self.cache_provider = cache_provider
+        self.embedding_provider = embedding_provider
+        self.retrieval_repository = retrieval_repository
+        self.retrieval_positive_k = retrieval_positive_k
+        self.retrieval_negative_k = retrieval_negative_k
 
     def _emit(self, message: str) -> None:
         if self.progress is not None:
@@ -201,6 +220,91 @@ class CandidateDetector:
         self._emit(f"Broad discovery: {len(flattened)} raw -> {len(deduped)} deduped")
         return deduped
 
+
+    async def _attach_retrieval(
+        self,
+        candidates: list[ClipCandidate],
+    ) -> tuple[list[ClipCandidate], list[dict[str, object]] | None]:
+        working = [candidate.model_copy(deep=True) for candidate in candidates]
+        if self.embedding_provider is None or self.retrieval_repository is None:
+            return working, None
+
+        query_texts = [clip_candidate_query_text(candidate) for candidate in working]
+        try:
+            bundles = await retrieve_structural_examples_many(
+                self.embedding_provider,
+                self.retrieval_repository,
+                query_texts,
+                positive_k=self.retrieval_positive_k,
+                negative_k=self.retrieval_negative_k,
+            )
+        except EmbeddingProviderError as exc:
+            self._emit(f"Retrieval unavailable: {exc}; continuing without examples")
+            return working, None
+
+        evidence: list[dict[str, object]] = []
+        attached = 0
+        for candidate, bundle in zip(working, bundles, strict=True):
+            positive_hits = [
+                CandidateRetrievalHit(
+                    document_id=hit.document_id,
+                    example_id=hit.example_id,
+                    score=hit.score,
+                )
+                for hit in bundle.positives
+            ]
+            negative_hits = [
+                CandidateRetrievalHit(
+                    document_id=hit.document_id,
+                    example_id=hit.example_id,
+                    score=hit.score,
+                )
+                for hit in bundle.negatives
+            ]
+            if positive_hits or negative_hits:
+                candidate.retrieval_trace = CandidateRetrievalTrace(
+                    embedding_model=bundle.embedding_model,
+                    embedding_version=bundle.embedding_version,
+                    positives=positive_hits,
+                    weak_negatives=negative_hits,
+                )
+                attached += 1
+
+            evidence.append(
+                {
+                    "positive_examples": [
+                        {
+                            "example_id": hit.example_id,
+                            "document_id": hit.document_id,
+                            "similarity": round(hit.score, 4),
+                            "structure": hit.text[:240],
+                        }
+                        for hit in bundle.positives
+                    ],
+                    "weak_negatives": [
+                        {
+                            "example_id": hit.example_id,
+                            "document_id": hit.document_id,
+                            "similarity": round(hit.score, 4),
+                            "structure": hit.text[:240],
+                            "reason": hit.metadata.get("reason"),
+                        }
+                        for hit in bundle.negatives
+                    ],
+                }
+            )
+
+        if attached:
+            self._emit(
+                f"Retrieval: attached examples to {attached}/{len(working)} candidates "
+                f"({self.retrieval_positive_k} positive + "
+                f"{self.retrieval_negative_k} weak-negative max each)"
+            )
+            return working, evidence
+
+        self._emit("Retrieval: index is empty; final review uses the baseline prompt")
+        return working, None
+
     async def final_select(
         self,
         candidates: list[ClipCandidate],
@@ -210,11 +314,17 @@ class CandidateDetector:
         if not candidates:
             return []
 
+        review_candidates, retrieval_evidence = await self._attach_retrieval(candidates)
+
         self._emit(
-            f"Final review: {len(candidates)} candidates with {self.strong_model}"
+            f"Final review: {len(review_candidates)} candidates with {self.strong_model}"
         )
         payload = await self.llm.chat_json(
-            final_review_messages(candidates, top_k=top_k),
+            final_review_messages(
+                review_candidates,
+                top_k=top_k,
+                retrieval_evidence=retrieval_evidence,
+            ),
             model=self.strong_model,
             temperature=0.1,
             max_tokens=3072,
@@ -222,7 +332,11 @@ class CandidateDetector:
         )
         ranked = payload.get("ranked")
         if not isinstance(ranked, list):
-            return sorted(candidates, key=lambda item: item.confidence, reverse=True)[:top_k]
+            return sorted(
+                review_candidates,
+                key=lambda item: item.confidence,
+                reverse=True,
+            )[:top_k]
 
         selected: list[ClipCandidate] = []
         seen: set[int] = set()
@@ -234,10 +348,10 @@ class CandidateDetector:
                 index = int(item["index"])
             except (KeyError, TypeError, ValueError):
                 continue
-            if index in seen or index < 0 or index >= len(candidates):
+            if index in seen or index < 0 or index >= len(review_candidates):
                 continue
 
-            candidate = candidates[index].model_copy(deep=True)
+            candidate = review_candidates[index].model_copy(deep=True)
             try:
                 candidate.confidence = max(
                     0.0,
@@ -245,6 +359,13 @@ class CandidateDetector:
                 )
             except (TypeError, ValueError):
                 pass
+            if candidate.retrieval_trace is not None:
+                assessment = str(
+                    item.get("retrieval_assessment")
+                    or item.get("reason")
+                    or ""
+                ).strip()
+                candidate.retrieval_trace.selector_reason = assessment or None
             selected.append(candidate)
             seen.add(index)
             if len(selected) >= top_k:

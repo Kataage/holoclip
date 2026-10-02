@@ -9,13 +9,14 @@ from typing import Any, Self
 import httpx
 
 from holoclip.config import NimEmbeddingSettings
+from holoclip.providers.embedding.base import EmbeddingProviderError
 
 
-class NvidiaEmbeddingAuthorizationError(RuntimeError):
+class NvidiaEmbeddingAuthorizationError(EmbeddingProviderError):
     pass
 
 
-class NvidiaEmbeddingRateLimitDeferred(RuntimeError):
+class NvidiaEmbeddingRateLimitDeferred(EmbeddingProviderError):
     def __init__(self, retry_after: float | None = None) -> None:
         self.retry_after = retry_after
         message = "NVIDIA embedding endpoint rate/quota limited"
@@ -96,9 +97,11 @@ class NvidiaNimEmbeddingClient:
                         },
                         json=payload,
                     )
-                except (httpx.TimeoutException, httpx.NetworkError):
+                except (httpx.TimeoutException, httpx.NetworkError) as exc:
                     if attempt >= self.settings.max_retries:
-                        raise
+                        raise EmbeddingProviderError(
+                            f"NVIDIA embedding network request failed: {exc}"
+                        ) from exc
                     await asyncio.sleep(min(30.0, (2**attempt) + random.random()))
                     continue
 
@@ -146,7 +149,12 @@ class NvidiaNimEmbeddingClient:
                     await asyncio.sleep(min(30.0, (2**attempt) + random.random()))
                     continue
 
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    raise EmbeddingProviderError(
+                        f"NVIDIA embedding HTTP {response.status_code}"
+                    ) from exc
 
         if len(output) != len(clean):
             raise RuntimeError(

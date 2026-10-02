@@ -4,6 +4,10 @@ from collections.abc import Sequence
 from typing import Protocol
 
 
+class EmbeddingProviderError(RuntimeError):
+    pass
+
+
 class EmbeddingProvider(Protocol):
     @property
     def model(self) -> str: ...
