@@ -9,6 +9,12 @@ import typer
 
 from holoclip.analysis.candidate_detector import CandidateDetector
 from holoclip.config import GroqTranscriptionSettings, NimSettings
+from holoclip.examples import (
+    compute_human_clip_stats,
+    load_human_clip_manifest,
+    load_human_clip_store,
+    upsert_human_clip_examples,
+)
 from holoclip.evaluation import (
     FeedbackRecord,
     append_feedback,
@@ -287,6 +293,34 @@ def doctor() -> None:
         raise typer.Exit(2)
 
     typer.echo("NVIDIA NIM inference: OK")
+
+
+@app.command()
+def examples_import(
+    manifest: Path = typer.Argument(..., exists=True, readable=True),
+    store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--store",
+        help="JSONL store for structured human-made clip examples.",
+    ),
+) -> None:
+    """Validate and upsert human-made clip examples into the local learning store."""
+    examples = load_human_clip_manifest(manifest)
+    added, updated, total = upsert_human_clip_examples(store, examples)
+    typer.echo(f"human clip examples: +{added} new, {updated} updated, {total} total")
+    typer.echo(f"store: {store}")
+
+
+@app.command()
+def examples_stats(
+    store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--store",
+    ),
+) -> None:
+    """Summarize the current human-made clip weak-supervision store."""
+    stats = compute_human_clip_stats(load_human_clip_store(store))
+    typer.echo(json.dumps(stats.model_dump(mode="json"), ensure_ascii=False, indent=2))
 
 
 @app.command()
