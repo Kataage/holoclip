@@ -113,6 +113,15 @@ def load_feedback(path: Path) -> list[FeedbackRecord]:
     return records
 
 
+def latest_feedback_index(
+    feedback: list[FeedbackRecord],
+) -> dict[tuple[str, str], FeedbackRecord]:
+    latest: dict[tuple[str, str], FeedbackRecord] = {}
+    for record in feedback:
+        latest[(record.stream_id, record.candidate_id)] = record
+    return latest
+
+
 def load_known_clips(path: Path | None) -> list[KnownClip]:
     if path is None or not path.exists():
         return []
@@ -158,9 +167,7 @@ def compute_metrics(
     known_clips: list[KnownClip] | None = None,
 ) -> EvaluationMetrics:
     known_clips = known_clips or []
-    latest_feedback: dict[tuple[str, str], FeedbackRecord] = {}
-    for record in feedback:
-        latest_feedback[(record.stream_id, record.candidate_id)] = record
+    latest_feedback = latest_feedback_index(feedback)
 
     accepted = 0
     maybe = 0
