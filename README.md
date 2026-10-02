@@ -380,3 +380,41 @@ is present.
 A nightly build's displayed `yt-dlp --version` string is recorded as provenance only. Holoclip
 does **not** feed that display string back into a `yt-dlp==...` package requirement, because
 nightly display identifiers are not guaranteed to be valid registry version specifiers.
+
+
+## Audit one human-made clip example
+
+Inspect the exact alignment and learning state without calling any external model:
+
+~~~powershell
+uv run holoclip examples-show <EXAMPLE_ID>
+~~~
+
+For the second real validation example:
+
+~~~powershell
+uv run holoclip examples-show 2002038236448bab
+~~~
+
+The report shows:
+
+- clip/source provenance
+- aggregate alignment confidence and bounding range
+- every clip -> source alignment segment
+- transcript excerpts from both sides of each aligned segment
+- source gaps between retained segments
+- setup / development / payoff / why-selected structure
+- weak negatives
+- retrieval documents currently stored for that example
+- acquisition/runtime provenance
+
+Use JSON when the report needs to be inspected by another tool:
+
+~~~powershell
+uv run holoclip examples-show 2002038236448bab --json
+~~~
+
+New URL ingests also preserve the original resolved source URL (including a YouTube `?t=`
+timestamp when present), source-resolution reason/score/context, and whether the source was
+auto-detected. The audit report compares that declared timestamp hint with the first aligned
+source segment when available.
