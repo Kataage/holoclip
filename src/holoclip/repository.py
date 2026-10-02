@@ -53,6 +53,9 @@ class CanonicalRepository(Protocol):
     def upsert_review_record(self, item: ReviewRecord) -> None: ...
     def get_review_record(self, item_id: str) -> ReviewRecord | None: ...
 
+    def export_jsonl(self, entity: str, output: Path | str) -> int: ...
+    def import_jsonl(self, entity: str, source: Path | str) -> int: ...
+
 
 class SQLiteCanonicalRepository:
     def __init__(self, path: Path | str) -> None:
@@ -562,3 +565,41 @@ class SQLiteCanonicalRepository:
                 handle.write(json.dumps(payload, ensure_ascii=False))
                 handle.write("\n")
         return len(rows)
+
+
+    def import_jsonl(self, entity: str, source: Path | str) -> int:
+        handlers = {
+            "source_assets": (SourceAsset, self.upsert_source_asset),
+            "transcript_segments": (
+                CanonicalTranscriptSegment,
+                self.upsert_transcript_segment,
+            ),
+            "evidence_items": (EvidenceItem, self.upsert_evidence),
+            "source_moments": (SourceMoment, self.upsert_source_moment),
+            "clip_timelines": (ClipTimeline, self.upsert_clip_timeline),
+            "editorial_ideas": (EditorialIdea, self.upsert_editorial_idea),
+            "review_records": (ReviewRecord, self.upsert_review_record),
+        }
+        handler = handlers.get(entity)
+        if handler is None:
+            raise ValueError(f"unsupported import entity: {entity}")
+
+        model, upsert = handler
+        count = 0
+        path = Path(source)
+        for line_number, raw_line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(),
+            start=1,
+        ):
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                item = model.model_validate_json(line)
+            except ValueError as exc:
+                raise ValueError(
+                    f"invalid {entity} row at {path}:{line_number}"
+                ) from exc
+            upsert(item)
+            count += 1
+        return count
