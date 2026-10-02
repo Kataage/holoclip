@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from holoclip.evaluation import (
     EvaluationCandidate,
     EvaluationRun,
