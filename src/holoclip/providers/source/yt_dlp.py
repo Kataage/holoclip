@@ -457,7 +457,14 @@ class YtDlpSourceProvider:
             # Human clippers commonly write a source label, then the stream title,
             # then the URL on separate lines. Judge the URL with nearby context
             # instead of only the URL's own line.
-            context_lines = lines[max(0, index - 3) : index + 1]
+            context_start = max(0, index - 3)
+            # Do not let a source label attached to an earlier URL leak into a
+            # later unrelated link such as "related video". A URL closes the
+            # preceding context block.
+            for prior_index in range(context_start, index):
+                if _URL_RE.search(lines[prior_index]):
+                    context_start = prior_index + 1
+            context_lines = lines[context_start : index + 1]
             context = "\n".join(part.strip() for part in context_lines if part.strip())
             lowered = context.casefold()
             explicit = any(hint.casefold() in lowered for hint in _SOURCE_HINTS)
