@@ -341,3 +341,37 @@ for a completed video download.
 Holoclip invokes yt-dlp with --ignore-config so user-global yt-dlp settings cannot silently
 change the deterministic training pipeline. It does not enable browser cookies or authenticated
 access by default.
+
+
+### yt-dlp runtime freshness policy
+
+yt-dlp is intentionally **not pinned as a normal Holoclip Python dependency**.
+
+For normal source acquisition Holoclip uses uv/uvx as a managed tool runtime:
+
+- default channel: `nightly`
+- each new Holoclip source-ingest process refreshes yt-dlp package metadata
+- the latest resolved yt-dlp version is then pinned for the lifetime of that provider/job
+- if extraction fails, Holoclip performs one forced runtime refresh and retries once
+- the exact yt-dlp version, channel, and JavaScript runtime are stored in human-example acquisition provenance
+
+This avoids keeping a stale downloader in a long-lived project environment while still making one
+ingest job reproducible.
+
+Check the source runtime without downloading media:
+
+~~~powershell
+uv run holoclip source-doctor
+~~~
+
+The default can be changed for debugging/reproducibility:
+
+~~~powershell
+set HOLOCLIP_YTDLP_CHANNEL=stable
+uv run holoclip source-doctor
+~~~
+
+For reliable current YouTube extraction, Holoclip also checks for a supported JavaScript runtime.
+Deno >= 2.3 is preferred by yt-dlp; Node >= 22 is also supported and is enabled explicitly by
+Holoclip when selected. The managed yt-dlp package uses the `default` extra so the EJS component
+is present.
