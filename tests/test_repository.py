@@ -266,15 +266,14 @@ def test_version_one_database_migrates_execution_tables(tmp_path: Path) -> None:
         artifact_table = repository._connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='artifact_records'"
         ).fetchone()
+        retrieval_table = repository._connection.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='retrieval_documents'"
+        ).fetchone()
 
     assert version is not None
     assert version["value"] == "3"
     assert stage_table is not None
-    retrieval_table = repository._connection.execute(
-        "SELECT name FROM sqlite_master "
-        "WHERE type='table' AND name='retrieval_documents'"
-    ).fetchone()
-
     assert artifact_table is not None
     assert retrieval_table is not None
 
