@@ -383,16 +383,40 @@ class YtDlpSourceProvider:
     def runtime_info(self) -> YtDlpRuntimeInfo:
         return self.runtime.info
 
+    def _run_yt_dlp(
+        self,
+        args: list[str],
+        *,
+        label: str,
+        retry_with_fresh_runtime: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        try:
+            return _run_process(
+                self.runtime.command(args),
+                label=label,
+            )
+        except YtDlpError as first_error:
+            if not retry_with_fresh_runtime or not self.runtime.manage_updates:
+                raise
+            self.runtime.refresh()
+            try:
+                return _run_process(
+                    self.runtime.command(args),
+                    label=f"{label} after runtime refresh",
+                )
+            except YtDlpError as second_error:
+                raise YtDlpError(
+                    f"{second_error}; initial attempt also failed: {first_error}"
+                ) from second_error
+
     def probe(self, url: str) -> SourceMetadata:
-        result = _run_process(
-            self.runtime.command(
-                [
-                    "--no-playlist",
-                    "--skip-download",
-                    "--dump-single-json",
-                    url,
-                ]
-            ),
+        result = self._run_yt_dlp(
+            [
+                "--no-playlist",
+                "--skip-download",
+                "--dump-single-json",
+                url,
+            ],
             label="yt-dlp metadata probe",
         )
         try:
@@ -520,8 +544,8 @@ class YtDlpSourceProvider:
             )
 
         args.append(url)
-        result = _run_process(
-            self.runtime.command(args),
+        result = self._run_yt_dlp(
+            args,
             label="yt-dlp acquisition",
         )
 
