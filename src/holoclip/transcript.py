@@ -12,7 +12,7 @@ def load_transcript(path: Path) -> list[TranscriptSegment]:
     if isinstance(raw, dict):
         raw = raw.get("segments")
     if not isinstance(raw, list):
-        raise ValueError("transcript JSON must be a list or an object with a segments list")
+        raise TypeError("transcript JSON must be a list or an object with a segments list")
     return [TranscriptSegment.model_validate(item) for item in raw]
 
 
