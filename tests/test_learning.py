@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from holoclip.examples import AlignmentSegmentExample, HumanClipExample
+from holoclip.execution import StageArtifactCache
 from holoclip.learning import build_adjacent_weak_negatives, enrich_human_clip_example
 from holoclip.models import TranscriptSegment
+from holoclip.repository import SQLiteCanonicalRepository
 
 
 class FakeLLM:
@@ -165,3 +168,53 @@ def test_multicut_gap_becomes_weak_negative() -> None:
     assert middle.start == pytest.approx(130)
     assert middle.end == pytest.approx(170)
     assert "人間が削った中間部分" in middle.transcript_excerpt
+
+
+
+class CountingLLM(FakeLLM):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def chat_json(self, *args, **kwargs) -> dict[str, Any]:
+        self.calls += 1
+        return await super().chat_json(*args, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_enrichment_reuses_successful_stage_artifact(tmp_path: Path) -> None:
+    source = [
+        seg(20, 40, "前の雑談"),
+        seg(100, 120, "給料が入らなかった"),
+        seg(130, 150, "貯金で生活した"),
+        seg(180, 200, "次の話題"),
+    ]
+    llm = CountingLLM()
+    database = tmp_path / "holoclip.db"
+
+    with SQLiteCanonicalRepository(database) as repository:
+        cache = StageArtifactCache(repository, tmp_path / "artifacts")
+        first = await enrich_human_clip_example(
+            llm,
+            example(),
+            source,
+            model="strong-model",
+            reasoning_effort="high",
+            weak_negative_window_seconds=60,
+            stage_cache=cache,
+            cache_provider="nvidia_nim",
+        )
+        second = await enrich_human_clip_example(
+            llm,
+            example(),
+            source,
+            model="strong-model",
+            reasoning_effort="high",
+            weak_negative_window_seconds=60,
+            stage_cache=cache,
+            cache_provider="nvidia_nim",
+        )
+
+    assert llm.calls == 1
+    assert second.setup == first.setup
+    assert second.why_selected == first.why_selected
+    assert second.weak_negatives == first.weak_negatives
