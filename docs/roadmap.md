@@ -4,21 +4,23 @@
 
 - [x] Repository initialized
 - [x] Provider boundaries defined
-- [ ] Conservative NIM rate-limit client
-- [ ] Transcript and candidate contracts
-- [ ] CI/lint/test workflow
+- [x] Conservative NIM rate-limit client
+- [x] Transcript and candidate contracts
+- [x] CI/lint/test workflow
 
 ## Phase 1 - candidate discovery PoC
 
 Target: one timed transcript in, 3-10 useful clip candidates out.
 
-- [ ] Import JSON timed transcripts
-- [ ] Overlapping chunker
-- [ ] Broad candidate extraction with fast model
-- [ ] Candidate dedupe/merge
-- [ ] Final editorial review with strong model
-- [ ] CLI output
+- [x] Import JSON timed transcripts
+- [x] Overlapping chunker
+- [x] Broad candidate extraction with fast model
+- [x] Candidate dedupe/merge
+- [x] Final editorial review with strong model
+- [x] CLI output
 - [ ] Save accept/maybe/reject feedback
+- [ ] Build a repeatable validation corpus
+- [ ] Run real NIM smoke test with a Japanese transcript
 
 Exit criterion: across a small validation set, Top-5 regularly contains at least two candidates a human considers usable.
 
