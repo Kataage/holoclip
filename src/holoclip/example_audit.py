@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from holoclip.alignment import WEAK_SINGLETON_MAX_CONFIDENCE
 from holoclip.examples import HumanClipExample, WeakNegativeExample, load_human_clip_store
 from holoclip.models import TranscriptSegment
-from holoclip.retrieval import RetrievalDocument
+from holoclip.retrieval import RetrievalDocument, build_retrieval_document_drafts
 from holoclip.transcript import load_transcript
 
 
@@ -254,6 +254,20 @@ def build_human_example_audit(
     )
     source_gap_seconds = max(0.0, source_bounding_seconds - source_selected_seconds)
 
+    retrieval_source = retrieval_documents or []
+    expected_drafts, _ = build_retrieval_document_drafts([example])
+    expected_retrieval = {
+        draft.id: draft.text_fingerprint for draft in expected_drafts
+    }
+    actual_retrieval = {
+        document.id: document.text_fingerprint for document in retrieval_source
+    }
+    if actual_retrieval != expected_retrieval:
+        warnings.append(
+            "retrieval index does not match the current human example; "
+            "run examples-index after the example is successfully enriched"
+        )
+
     retrieval = [
         RetrievalAuditDocument(
             id=document.id,
@@ -262,7 +276,7 @@ def build_human_example_audit(
             embedding_version=document.embedding_version,
             text=document.text,
         )
-        for document in (retrieval_documents or [])
+        for document in retrieval_source
     ]
 
     score_raw = provenance.get("source_resolution_score")
