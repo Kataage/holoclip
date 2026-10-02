@@ -226,8 +226,6 @@ async def ingest_human_example_from_urls(
             ),
         },
     )
-    upsert_human_clip_examples(examples_store, [example])
-
     enriched = False
     index_stats: IndexBuildStats | None = None
     if accepted:
@@ -240,6 +238,8 @@ async def ingest_human_example_from_urls(
             model=llm_model,
             reasoning_effort=llm_reasoning_effort,
             weak_negative_window_seconds=weak_negative_window_seconds,
+            stage_cache=stage_cache,
+            cache_provider="nvidia_nim",
         )
         upsert_human_clip_examples(examples_store, [example])
         enriched = True
@@ -257,6 +257,11 @@ async def ingest_human_example_from_urls(
                 f"{index_stats.embedded_documents} embedded, "
                 f"{index_stats.reused_documents} reused"
             )
+    else:
+        # Rejected alignments are safe to persist as explicit unaligned examples.
+        # Accepted examples are committed only after enrichment succeeds so a
+        # transient LLM failure cannot overwrite the last good learned record.
+        upsert_human_clip_examples(examples_store, [example])
 
     return HumanExampleIngestResult(
         example_id=example_id,
