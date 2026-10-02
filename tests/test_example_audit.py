@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from holoclip.example_audit import (
     build_human_example_audit,
     format_human_example_audit,
