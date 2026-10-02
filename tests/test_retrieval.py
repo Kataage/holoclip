@@ -36,9 +36,13 @@ class FakeEmbeddingProvider:
         self.passage_calls.append(batch)
         return [self._vector(text) for text in batch]
 
+    async def embed_queries(self, texts) -> list[list[float]]:
+        batch = list(texts)
+        self.query_calls.extend(batch)
+        return [self._vector(text) for text in batch]
+
     async def embed_query(self, text: str) -> list[float]:
-        self.query_calls.append(text)
-        return self._vector(text)
+        return (await self.embed_queries([text]))[0]
 
 
 def enriched_example(
