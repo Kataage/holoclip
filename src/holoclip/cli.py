@@ -18,6 +18,15 @@ from holoclip.clip_policy import (
     load_policy_rules,
 )
 from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings, NimSettings
+from holoclip.example_batch import (
+    BatchStatus,
+    load_batch_manifest,
+    load_batch_state,
+    save_batch_state,
+    should_skip_succeeded,
+    summarize_batch_state,
+    update_batch_item_state,
+)
 from holoclip.example_audit import (
     build_human_example_audit,
     find_human_example,
@@ -722,6 +731,289 @@ def examples_ingest_url(
             f"channel={result.acquisition_provider_channel or 'unknown'} "
             f"js={result.acquisition_js_runtime or 'unknown'}"
         )
+
+
+@app.command()
+def examples_ingest_batch(
+    manifest: Path = typer.Argument(..., exists=True, readable=True),
+    state_path: Path | None = typer.Option(None, "--state"),
+    store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--store",
+    ),
+    download_root: Path = typer.Option(
+        Path("data/sources/examples"),
+        "--download-root",
+    ),
+    transcript_root: Path = typer.Option(
+        Path("data/transcripts"),
+        "--transcript-root",
+    ),
+    database: Path = typer.Option(
+        Path("data/holoclip.db"),
+        "--database",
+    ),
+    policy_file: Path = typer.Option(
+        Path("data/policy/clip_rules.jsonl"),
+        "--policy-file",
+    ),
+    min_confidence: float = typer.Option(
+        0.55,
+        "--min-confidence",
+        min=0.0,
+        max=1.0,
+    ),
+    weak_negative_window: float = typer.Option(
+        90.0,
+        "--weak-negative-window",
+        min=30.0,
+        max=300.0,
+    ),
+    allow_policy_review: bool = typer.Option(
+        False,
+        "--allow-policy-review",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Reprocess items that already succeeded with the same inputs.",
+    ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Exit non-zero when the batch ends with unresolved items.",
+    ),
+) -> None:
+    """Sequentially ingest a resumable JSONL batch of human-made clips."""
+    _load_env_file()
+    resolved_state_path = (
+        state_path
+        if state_path is not None
+        else manifest.with_suffix(manifest.suffix + ".state.json")
+    )
+
+    try:
+        items = load_batch_manifest(manifest)
+        batch_state = load_batch_state(
+            resolved_state_path,
+            manifest_path=manifest,
+        )
+        policy_rules = load_policy_rules(policy_file)
+    except ValueError as exc:
+        typer.echo(f"batch configuration error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+    if not items:
+        typer.echo("batch manifest has no enabled/input rows")
+        return
+
+    groq_settings = GroqTranscriptionSettings.from_env()
+    nim_settings = NimSettings.from_env()
+    embedding_settings = NimEmbeddingSettings.from_env()
+
+    try:
+        source_provider = YtDlpSourceProvider(
+            channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"),
+        )
+    except RuntimeError as exc:
+        typer.echo(f"source provider error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+    async def _run_batch() -> tuple[int, int]:
+        processed = 0
+        skipped_existing_success = 0
+
+        with SQLiteCanonicalRepository(database) as repository:
+            stage_cache = StageArtifactCache(
+                repository,
+                Path("data/artifacts/stages"),
+            )
+            async with (
+                NvidiaNimClient(
+                    nim_settings,
+                    event_callback=typer.echo,
+                ) as llm,
+                NvidiaNimEmbeddingClient(embedding_settings) as embedding,
+            ):
+                for index, item in enumerate(items, start=1):
+                    prefix = f"[{index}/{len(items)}]"
+
+                    if not item.enabled:
+                        typer.echo(f"{prefix} disabled: {item.clip_url}")
+                        update_batch_item_state(
+                            batch_state,
+                            item,
+                            status=BatchStatus.SKIPPED,
+                            details={"reason": "disabled"},
+                        )
+                        save_batch_state(resolved_state_path, batch_state)
+                        continue
+
+                    if should_skip_succeeded(
+                        item,
+                        batch_state,
+                        force=force,
+                    ):
+                        skipped_existing_success += 1
+                        typer.echo(f"{prefix} already succeeded; skipped")
+                        continue
+
+                    processed += 1
+                    typer.echo("")
+                    typer.echo(f"{prefix} ingesting {item.clip_url}")
+                    if item.source_url:
+                        typer.echo(f"{prefix} source {item.source_url}")
+
+                    try:
+                        result = await ingest_human_example_from_urls(
+                            source_provider,
+                            clip_url=item.clip_url,
+                            source_url=item.source_url,
+                            download_root=download_root,
+                            transcript_root=transcript_root,
+                            examples_store=store,
+                            groq_settings=groq_settings,
+                            llm=llm,
+                            llm_model=nim_settings.model,
+                            llm_reasoning_effort=nim_settings.strong_reasoning_effort,
+                            embedding_provider=embedding,
+                            repository=repository,
+                            stage_cache=stage_cache,
+                            min_confidence=min_confidence,
+                            weak_negative_window_seconds=weak_negative_window,
+                            policy_rules=policy_rules,
+                            allow_policy_review=allow_policy_review,
+                            progress=lambda message, p=prefix: typer.echo(
+                                f"{p} {message}"
+                            ),
+                        )
+                    except SourceResolutionError as exc:
+                        update_batch_item_state(
+                            batch_state,
+                            item,
+                            status=BatchStatus.NEEDS_SOURCE,
+                            last_error=str(exc),
+                            details={
+                                "candidates": [
+                                    candidate.model_dump(mode="json")
+                                    for candidate in exc.candidates
+                                ]
+                            },
+                        )
+                        typer.echo(
+                            f"{prefix} NEEDS_SOURCE: {len(exc.candidates)} candidate(s)"
+                        )
+                    except ClipPolicyGateError as exc:
+                        status = (
+                            BatchStatus.POLICY_BLOCKED
+                            if exc.evaluation.decision is PolicyDecision.BLOCK
+                            else BatchStatus.POLICY_REVIEW
+                        )
+                        update_batch_item_state(
+                            batch_state,
+                            item,
+                            status=status,
+                            last_error=str(exc),
+                            details={
+                                "stage": exc.stage,
+                                "policy": exc.evaluation.model_dump(mode="json"),
+                            },
+                        )
+                        typer.echo(
+                            f"{prefix} {status.value.upper()}: "
+                            f"{exc.evaluation.decision.value} at {exc.stage}"
+                        )
+                    except (
+                        NvidiaNimTimeoutError,
+                        NvidiaEmbeddingRateLimitDeferred,
+                        YtDlpError,
+                    ) as exc:
+                        update_batch_item_state(
+                            batch_state,
+                            item,
+                            status=BatchStatus.RETRYABLE,
+                            last_error=str(exc),
+                            details={"error_class": type(exc).__name__},
+                        )
+                        typer.echo(
+                            f"{prefix} RETRYABLE: {type(exc).__name__}: {exc}"
+                        )
+                    except (
+                        NvidiaNimAuthorizationError,
+                        NvidiaEmbeddingAuthorizationError,
+                    ) as exc:
+                        update_batch_item_state(
+                            batch_state,
+                            item,
+                            status=BatchStatus.FAILED,
+                            last_error=str(exc),
+                            details={"error_class": type(exc).__name__},
+                        )
+                        save_batch_state(resolved_state_path, batch_state)
+                        typer.echo(
+                            f"{prefix} FAILED: authorization/configuration error: {exc}"
+                        )
+                        break
+                    except Exception as exc:
+                        update_batch_item_state(
+                            batch_state,
+                            item,
+                            status=BatchStatus.FAILED,
+                            last_error=str(exc),
+                            details={"error_class": type(exc).__name__},
+                        )
+                        typer.echo(
+                            f"{prefix} FAILED: {type(exc).__name__}: {exc}"
+                        )
+                    else:
+                        status = (
+                            BatchStatus.SUCCEEDED
+                            if result.aligned and result.enriched
+                            else BatchStatus.ALIGNMENT_REJECTED
+                        )
+                        update_batch_item_state(
+                            batch_state,
+                            item,
+                            status=status,
+                            example_id=result.example_id,
+                            details={
+                                "alignment_confidence": result.alignment_confidence,
+                                "alignment_segments": result.alignment_segments,
+                                "aligned": result.aligned,
+                                "enriched": result.enriched,
+                            },
+                        )
+                        typer.echo(
+                            f"{prefix} {status.value.upper()}: "
+                            f"confidence={result.alignment_confidence:.3f} "
+                            f"segments={result.alignment_segments}"
+                        )
+
+                    save_batch_state(resolved_state_path, batch_state)
+
+        return processed, skipped_existing_success
+
+    processed, skipped_existing_success = asyncio.run(_run_batch())
+    summary = summarize_batch_state(
+        items,
+        batch_state,
+        processed=processed,
+        skipped_existing_success=skipped_existing_success,
+        state_path=resolved_state_path,
+    )
+    typer.echo("")
+    typer.echo(json.dumps(summary.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+    unresolved = sum(
+        count
+        for status, count in summary.counts.items()
+        if status not in {
+            BatchStatus.SUCCEEDED.value,
+            BatchStatus.SKIPPED.value,
+        }
+    )
+    if strict and unresolved:
+        raise typer.Exit(6)
 
 
 @app.command()
