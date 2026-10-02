@@ -91,3 +91,42 @@ class GroqTranscriptionSettings:
             raise ValueError("GROQ_WHISPER_RPM must be >= 1")
         if self.chunk_seconds < 60:
             raise ValueError("GROQ_AUDIO_CHUNK_SECONDS must be >= 60")
+
+
+@dataclass(frozen=True, slots=True)
+class NimEmbeddingSettings:
+    api_key: str
+    base_url: str = "https://integrate.api.nvidia.com/v1"
+    model: str = "nvidia/nemotron-3-embed-1b"
+    rpm: int = 20
+    max_retries: int = 6
+    timeout_seconds: float = 120.0
+    batch_size: int = 16
+
+    @classmethod
+    def from_env(cls) -> NimEmbeddingSettings:
+        return cls(
+            api_key=os.getenv("NVIDIA_API_KEY", ""),
+            base_url=os.getenv(
+                "NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.com/v1"
+            ).rstrip("/"),
+            model=os.getenv(
+                "NVIDIA_NIM_EMBEDDING_MODEL",
+                "nvidia/nemotron-3-embed-1b",
+            ),
+            rpm=_env_int("NVIDIA_NIM_EMBEDDING_RPM", 20),
+            max_retries=_env_int("NVIDIA_NIM_EMBEDDING_MAX_RETRIES", 6),
+            timeout_seconds=_env_float(
+                "NVIDIA_NIM_EMBEDDING_TIMEOUT_SECONDS",
+                120.0,
+            ),
+            batch_size=_env_int("NVIDIA_NIM_EMBEDDING_BATCH_SIZE", 16),
+        )
+
+    def validate(self) -> None:
+        if not self.api_key:
+            raise ValueError("NVIDIA_API_KEY is not set")
+        if self.rpm < 1:
+            raise ValueError("NVIDIA_NIM_EMBEDDING_RPM must be >= 1")
+        if self.batch_size < 1:
+            raise ValueError("NVIDIA_NIM_EMBEDDING_BATCH_SIZE must be >= 1")
