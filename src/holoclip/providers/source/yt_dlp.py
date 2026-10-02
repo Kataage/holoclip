@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from pydantic import BaseModel
+
 from holoclip.providers.source.base import (
     AcquiredSource,
     AcquisitionProfile,
@@ -30,17 +32,18 @@ class YtDlpError(RuntimeError):
     pass
 
 
-def require_yt_dlp() -> str:
-    executable = shutil.which("yt-dlp") or shutil.which("yt-dlp.exe")
-    if executable is None:
-        raise RuntimeError(
-            "yt-dlp was not found on PATH. Install the official yt-dlp binary "
-            "or package and make sure the 'yt-dlp' command is available."
-        )
-    return executable
+class YtDlpRuntimeInfo(BaseModel):
+    version: str
+    channel: str
+    js_runtime: str
+    managed_by: str
 
 
-def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
+def _run_process(
+    command: list[str],
+    *,
+    label: str = "command",
+) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             command,
@@ -55,12 +58,219 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
         if len(detail) > 1200:
             detail = detail[-1200:]
         raise YtDlpError(
-            f"yt-dlp failed with exit code {exc.returncode}"
+            f"{label} failed with exit code {exc.returncode}"
             + (f": {detail}" if detail else "")
         ) from exc
 
 
-def _metadata_from_payload(url: str, payload: dict) -> SourceMetadata:
+def _version_tuple(raw: str) -> tuple[int, ...]:
+    match = re.search(r"(\d+(?:\.\d+)+)", raw)
+    if match is None:
+        return ()
+    return tuple(int(part) for part in match.group(1).split("."))
+
+
+def _runtime_version(executable: str) -> tuple[int, ...]:
+    result = _run_process([executable, "--version"], label=executable)
+    return _version_tuple(result.stdout.strip() or result.stderr.strip())
+
+
+def detect_js_runtime() -> tuple[str, str]:
+    deno = shutil.which("deno") or shutil.which("deno.exe")
+    if deno is not None:
+        version = _runtime_version(deno)
+        if version >= (2, 3, 0):
+            return "deno", deno
+
+    node = shutil.which("node") or shutil.which("node.exe")
+    if node is not None:
+        version = _runtime_version(node)
+        if version >= (22, 0, 0):
+            return "node", node
+
+    raise RuntimeError(
+        "A supported JavaScript runtime is required for reliable YouTube extraction. "
+        "Install Deno >= 2.3.0 (recommended) or Node >= 22.0.0 and make sure it is on PATH."
+    )
+
+
+def _uv_tool_launcher() -> list[str] | None:
+    uvx = shutil.which("uvx") or shutil.which("uvx.exe")
+    if uvx is not None:
+        return [uvx]
+
+    uv = shutil.which("uv") or shutil.which("uv.exe")
+    if uv is not None:
+        return [uv, "tool", "run"]
+    return None
+
+
+class ManagedYtDlpRuntime:
+    """Resolve one fresh yt-dlp runtime per Holoclip process.
+
+    Normal operation uses uv/uvx to refresh yt-dlp package metadata and resolve the latest
+    release once. Subsequent yt-dlp calls in the same provider instance are pinned to that
+    exact version so the runtime cannot change halfway through an ingest job.
+    """
+
+    def __init__(
+        self,
+        *,
+        channel: str = "nightly",
+        executable: str | None = None,
+        js_runtime: str | None = None,
+        manage_updates: bool = True,
+    ) -> None:
+        if channel not in {"stable", "nightly"}:
+            raise ValueError("yt-dlp channel must be stable or nightly")
+        self.channel = channel
+        self.explicit_executable = executable
+        self.explicit_js_runtime = js_runtime
+        self.manage_updates = manage_updates
+        self._command_prefix: list[str] | None = None
+        self._runtime_info: YtDlpRuntimeInfo | None = None
+
+    @property
+    def info(self) -> YtDlpRuntimeInfo:
+        self.ensure()
+        assert self._runtime_info is not None
+        return self._runtime_info
+
+    @property
+    def command_prefix(self) -> list[str]:
+        self.ensure()
+        assert self._command_prefix is not None
+        return list(self._command_prefix)
+
+    def _js_runtime(self) -> tuple[str, str | None]:
+        if self.explicit_js_runtime:
+            raw = self.explicit_js_runtime.strip()
+            if ":" in raw:
+                name, path = raw.split(":", 1)
+                return name.strip(), path.strip() or None
+            return raw, None
+        name, path = detect_js_runtime()
+        return name, path
+
+    def _managed_uv_runtime(
+        self,
+        launcher: list[str],
+        *,
+        js_name: str,
+    ) -> None:
+        resolve = [*launcher, "--refresh-package", "yt-dlp"]
+        if self.channel == "nightly":
+            resolve.extend(["--prerelease", "allow"])
+        resolve.extend(["--from", "yt-dlp[default]", "yt-dlp", "--version"])
+
+        result = _run_process(resolve, label="yt-dlp runtime refresh")
+        version = (result.stdout.strip() or result.stderr.strip()).splitlines()[-1].strip()
+        if not version:
+            raise YtDlpError("yt-dlp runtime refresh returned an empty version")
+
+        prefix = [*launcher]
+        if self.channel == "nightly":
+            prefix.extend(["--prerelease", "allow"])
+        prefix.extend(
+            [
+                "--from",
+                f"yt-dlp[default]=={version}",
+                "yt-dlp",
+            ]
+        )
+        self._command_prefix = prefix
+        self._runtime_info = YtDlpRuntimeInfo(
+            version=version,
+            channel=self.channel,
+            js_runtime=js_name,
+            managed_by="uvx",
+        )
+
+    def _direct_runtime(
+        self,
+        executable: str,
+        *,
+        js_name: str,
+    ) -> None:
+        if self.manage_updates:
+            try:
+                _run_process(
+                    [executable, "--update-to", self.channel],
+                    label=f"yt-dlp {self.channel} update",
+                )
+            except YtDlpError as exc:
+                raise YtDlpError(
+                    f"{exc}. This yt-dlp executable could not self-update. "
+                    "Install uv/uvx so Holoclip can manage a fresh yt-dlp runtime, "
+                    "or update the executable manually."
+                ) from exc
+
+        version_result = _run_process([executable, "--version"], label="yt-dlp version")
+        version = (
+            version_result.stdout.strip() or version_result.stderr.strip()
+        ).splitlines()[-1].strip()
+        if not version:
+            raise YtDlpError("yt-dlp version output was empty")
+
+        self._command_prefix = [executable]
+        self._runtime_info = YtDlpRuntimeInfo(
+            version=version,
+            channel=self.channel,
+            js_runtime=js_name,
+            managed_by="direct",
+        )
+
+    def ensure(self) -> None:
+        if self._command_prefix is not None:
+            return
+
+        js_name, _js_path = self._js_runtime()
+
+        if self.explicit_executable is not None:
+            self._direct_runtime(
+                self.explicit_executable,
+                js_name=js_name,
+            )
+            return
+
+        launcher = _uv_tool_launcher()
+        if launcher is not None and self.manage_updates:
+            self._managed_uv_runtime(
+                launcher,
+                js_name=js_name,
+            )
+            return
+
+        executable = shutil.which("yt-dlp") or shutil.which("yt-dlp.exe")
+        if executable is None:
+            raise RuntimeError(
+                "Neither uv/uvx nor a yt-dlp executable was found on PATH. "
+                "Holoclip uses uv/uvx to resolve the latest yt-dlp runtime by default."
+            )
+        self._direct_runtime(
+            executable,
+            js_name=js_name,
+        )
+
+    def command(self, args: list[str]) -> list[str]:
+        self.ensure()
+        js_name, js_path = self._js_runtime()
+        runtime_arg = js_name if js_path is None else f"{js_name}:{js_path}"
+        return [
+            *self.command_prefix,
+            "--ignore-config",
+            "--js-runtimes",
+            runtime_arg,
+            *args,
+        ]
+
+
+def _metadata_from_payload(
+    url: str,
+    payload: dict,
+    *,
+    runtime: YtDlpRuntimeInfo,
+) -> SourceMetadata:
     external_id = str(payload.get("id") or "").strip()
     title = str(payload.get("title") or "").strip()
     if not external_id:
@@ -92,6 +302,9 @@ def _metadata_from_payload(url: str, payload: dict) -> SourceMetadata:
         live_status=str(payload.get("live_status") or "").strip() or None,
         extractor=str(payload.get("extractor_key") or payload.get("extractor") or "").strip()
         or None,
+        provider_version=runtime.version,
+        provider_channel=runtime.channel,
+        js_runtime=runtime.js_runtime,
     )
 
 
@@ -146,19 +359,36 @@ def choose_source_candidate(
 
 
 class YtDlpSourceProvider:
-    def __init__(self, executable: str | None = None) -> None:
-        self.executable = executable or require_yt_dlp()
+    def __init__(
+        self,
+        executable: str | None = None,
+        *,
+        channel: str = "nightly",
+        js_runtime: str | None = None,
+        manage_updates: bool = True,
+    ) -> None:
+        self.runtime = ManagedYtDlpRuntime(
+            channel=channel,
+            executable=executable,
+            js_runtime=js_runtime,
+            manage_updates=manage_updates,
+        )
+
+    @property
+    def runtime_info(self) -> YtDlpRuntimeInfo:
+        return self.runtime.info
 
     def probe(self, url: str) -> SourceMetadata:
-        result = _run(
-            [
-                self.executable,
-                "--ignore-config",
-                "--no-playlist",
-                "--skip-download",
-                "--dump-single-json",
-                url,
-            ]
+        result = _run_process(
+            self.runtime.command(
+                [
+                    "--no-playlist",
+                    "--skip-download",
+                    "--dump-single-json",
+                    url,
+                ]
+            ),
+            label="yt-dlp metadata probe",
         )
         try:
             payload = json.loads(result.stdout)
@@ -166,7 +396,11 @@ class YtDlpSourceProvider:
             raise YtDlpError("yt-dlp metadata output was not valid JSON") from exc
         if not isinstance(payload, dict):
             raise YtDlpError("yt-dlp metadata output must be a JSON object")
-        return _metadata_from_payload(url, payload)
+        return _metadata_from_payload(
+            url,
+            payload,
+            runtime=self.runtime_info,
+        )
 
     def source_candidates(
         self,
@@ -254,9 +488,7 @@ class YtDlpSourceProvider:
                 reused=True,
             )
 
-        command = [
-            self.executable,
-            "--ignore-config",
+        args = [
             "--no-playlist",
             "--continue",
             "--no-overwrites",
@@ -271,9 +503,9 @@ class YtDlpSourceProvider:
         ]
 
         if profile is AcquisitionProfile.TRAINING_AUDIO:
-            command.extend(["--format", "bestaudio/best"])
+            args.extend(["--format", "bestaudio/best"])
         else:
-            command.extend(
+            args.extend(
                 [
                     "--format",
                     "bv*+ba/b",
@@ -282,8 +514,11 @@ class YtDlpSourceProvider:
                 ]
             )
 
-        command.append(url)
-        result = _run(command)
+        args.append(url)
+        result = _run_process(
+            self.runtime.command(args),
+            label="yt-dlp acquisition",
+        )
 
         printed_paths = [
             Path(line.strip())
