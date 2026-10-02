@@ -47,7 +47,7 @@ def test_empty_database_migrates_to_current_schema(tmp_path: Path) -> None:
         ).fetchone()
 
     assert row is not None
-    assert row["value"] == "1"
+    assert row["value"] == "2"
 
 
 def test_source_transcript_evidence_and_moment_round_trip(tmp_path: Path) -> None:
@@ -242,3 +242,32 @@ def test_newer_schema_version_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(RepositoryVersionError, match="newer than supported"):
         SQLiteCanonicalRepository(path)
+
+
+def test_version_one_database_migrates_execution_tables(tmp_path: Path) -> None:
+    path = tmp_path / "v1.db"
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
+    connection.execute(
+        "INSERT INTO schema_meta(key, value) VALUES('schema_version', '1')"
+    )
+    connection.commit()
+    connection.close()
+
+    with SQLiteCanonicalRepository(path) as repository:
+        version = repository._connection.execute(
+            "SELECT value FROM schema_meta WHERE key='schema_version'"
+        ).fetchone()
+        stage_table = repository._connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='stage_runs'"
+        ).fetchone()
+        artifact_table = repository._connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='artifact_records'"
+        ).fetchone()
+
+    assert version is not None
+    assert version["value"] == "2"
+    assert stage_table is not None
+    assert artifact_table is not None
