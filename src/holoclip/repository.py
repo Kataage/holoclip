@@ -9,6 +9,7 @@ from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
 
+from holoclip.execution import ArtifactRecord, StageRun, StageStatus
 from holoclip.domain import (
     CanonicalTranscriptSegment,
     ClipTimeline,
@@ -19,7 +20,7 @@ from holoclip.domain import (
     SourceMoment,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 TModel = TypeVar("TModel", bound=BaseModel)
 
@@ -52,6 +53,11 @@ class CanonicalRepository(Protocol):
 
     def upsert_review_record(self, item: ReviewRecord) -> None: ...
     def get_review_record(self, item_id: str) -> ReviewRecord | None: ...
+
+    def upsert_artifact(self, item: ArtifactRecord) -> None: ...
+    def get_artifact(self, item_id: str) -> ArtifactRecord | None: ...
+    def upsert_stage_run(self, item: StageRun) -> None: ...
+    def get_stage_run(self, item_id: str) -> StageRun | None: ...
 
     def export_jsonl(self, entity: str, output: Path | str) -> int: ...
     def import_jsonl(self, entity: str, source: Path | str) -> int: ...
@@ -224,7 +230,64 @@ class SQLiteCanonicalRepository:
                     VALUES('schema_version', ?)
                     ON CONFLICT(key) DO UPDATE SET value=excluded.value
                     """,
-                    (str(SCHEMA_VERSION),),
+                    ("1",),
+                )
+
+        current = self._schema_version()
+        if current == 1:
+            with self.transaction() as connection:
+                connection.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS artifact_records (
+                        id TEXT PRIMARY KEY,
+                        kind TEXT NOT NULL,
+                        locator TEXT NOT NULL,
+                        checksum TEXT NOT NULL,
+                        logical_owner_type TEXT NOT NULL,
+                        logical_owner_id TEXT NOT NULL,
+                        payload TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_artifact_owner
+                        ON artifact_records(logical_owner_type, logical_owner_id);
+
+                    CREATE TABLE IF NOT EXISTS stage_runs (
+                        id TEXT PRIMARY KEY,
+                        stage TEXT NOT NULL,
+                        subject_type TEXT NOT NULL,
+                        subject_id TEXT NOT NULL,
+                        input_fingerprint TEXT NOT NULL,
+                        stage_version TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        attempt INTEGER NOT NULL,
+                        provider TEXT,
+                        model TEXT,
+                        prompt_version TEXT,
+                        started_at TEXT,
+                        completed_at TEXT,
+                        payload TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_stage_runs_lookup
+                        ON stage_runs(
+                            stage,
+                            subject_type,
+                            subject_id,
+                            input_fingerprint,
+                            stage_version,
+                            provider,
+                            model,
+                            prompt_version,
+                            attempt
+                        );
+                    CREATE INDEX IF NOT EXISTS idx_stage_runs_status
+                        ON stage_runs(status, stage);
+                    """
+                )
+                connection.execute(
+                    """
+                    UPDATE schema_meta
+                    SET value='2'
+                    WHERE key='schema_version'
+                    """
                 )
 
         final = self._schema_version()
@@ -601,5 +664,211 @@ class SQLiteCanonicalRepository:
                     f"invalid {entity} row at {path}:{line_number}"
                 ) from exc
             upsert(item)
+            count += 1
+        return count
+
+
+    def upsert_artifact(self, item: ArtifactRecord) -> None:
+        with self.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO artifact_records(
+                    id,
+                    kind,
+                    locator,
+                    checksum,
+                    logical_owner_type,
+                    logical_owner_id,
+                    payload
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    kind=excluded.kind,
+                    locator=excluded.locator,
+                    checksum=excluded.checksum,
+                    logical_owner_type=excluded.logical_owner_type,
+                    logical_owner_id=excluded.logical_owner_id,
+                    payload=excluded.payload
+                """,
+                (
+                    item.id,
+                    item.kind,
+                    item.locator,
+                    item.checksum,
+                    item.logical_owner_type,
+                    item.logical_owner_id,
+                    self._payload(item),
+                ),
+            )
+
+    def get_artifact(self, item_id: str) -> ArtifactRecord | None:
+        row = self._connection.execute(
+            "SELECT payload FROM artifact_records WHERE id=?",
+            (item_id,),
+        ).fetchone()
+        return self._decode(ArtifactRecord, row)
+
+    def upsert_stage_run(self, item: StageRun) -> None:
+        with self.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO stage_runs(
+                    id,
+                    stage,
+                    subject_type,
+                    subject_id,
+                    input_fingerprint,
+                    stage_version,
+                    status,
+                    attempt,
+                    provider,
+                    model,
+                    prompt_version,
+                    started_at,
+                    completed_at,
+                    payload
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    status=excluded.status,
+                    started_at=excluded.started_at,
+                    completed_at=excluded.completed_at,
+                    payload=excluded.payload
+                """,
+                (
+                    item.id,
+                    item.stage,
+                    item.subject_type,
+                    item.subject_id,
+                    item.input_fingerprint,
+                    item.stage_version,
+                    item.status.value,
+                    item.attempt,
+                    item.provider,
+                    item.model,
+                    item.prompt_version,
+                    item.started_at,
+                    item.completed_at,
+                    self._payload(item),
+                ),
+            )
+
+    def get_stage_run(self, item_id: str) -> StageRun | None:
+        row = self._connection.execute(
+            "SELECT payload FROM stage_runs WHERE id=?",
+            (item_id,),
+        ).fetchone()
+        return self._decode(StageRun, row)
+
+    def latest_stage_run(
+        self,
+        *,
+        stage: str,
+        subject_type: str,
+        subject_id: str,
+        input_fingerprint: str,
+        stage_version: str,
+        provider: str | None,
+        model: str | None,
+        prompt_version: str | None,
+    ) -> StageRun | None:
+        row = self._connection.execute(
+            """
+            SELECT payload
+            FROM stage_runs
+            WHERE stage=?
+              AND subject_type=?
+              AND subject_id=?
+              AND input_fingerprint=?
+              AND stage_version=?
+              AND provider IS ?
+              AND model IS ?
+              AND prompt_version IS ?
+            ORDER BY attempt DESC
+            LIMIT 1
+            """,
+            (
+                stage,
+                subject_type,
+                subject_id,
+                input_fingerprint,
+                stage_version,
+                provider,
+                model,
+                prompt_version,
+            ),
+        ).fetchone()
+        return self._decode(StageRun, row)
+
+    def find_reusable_stage_run(
+        self,
+        *,
+        stage: str,
+        subject_type: str,
+        subject_id: str,
+        input_fingerprint: str,
+        stage_version: str,
+        provider: str | None,
+        model: str | None,
+        prompt_version: str | None,
+    ) -> StageRun | None:
+        row = self._connection.execute(
+            """
+            SELECT payload
+            FROM stage_runs
+            WHERE stage=?
+              AND subject_type=?
+              AND subject_id=?
+              AND input_fingerprint=?
+              AND stage_version=?
+              AND provider IS ?
+              AND model IS ?
+              AND prompt_version IS ?
+              AND status=?
+            ORDER BY attempt DESC
+            LIMIT 1
+            """,
+            (
+                stage,
+                subject_type,
+                subject_id,
+                input_fingerprint,
+                stage_version,
+                provider,
+                model,
+                prompt_version,
+                StageStatus.SUCCEEDED.value,
+            ),
+        ).fetchone()
+        return self._decode(StageRun, row)
+
+    def mark_stage_runs_stale(
+        self,
+        *,
+        stage: str,
+        subject_type: str,
+        subject_id: str,
+    ) -> int:
+        rows = self._connection.execute(
+            """
+            SELECT payload
+            FROM stage_runs
+            WHERE stage=?
+              AND subject_type=?
+              AND subject_id=?
+              AND status=?
+            """,
+            (
+                stage,
+                subject_type,
+                subject_id,
+                StageStatus.SUCCEEDED.value,
+            ),
+        ).fetchall()
+        count = 0
+        for row in rows:
+            run = StageRun.model_validate_json(row["payload"])
+            stale = run.model_copy(update={"status": StageStatus.STALE})
+            self.upsert_stage_run(stale)
             count += 1
         return count

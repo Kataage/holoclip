@@ -18,6 +18,7 @@ from holoclip.examples import (
     make_human_clip_example_id,
     upsert_human_clip_examples,
 )
+from holoclip.execution import StageArtifactCache
 from holoclip.evaluation import (
     FeedbackRecord,
     append_feedback,
@@ -38,6 +39,7 @@ from holoclip.providers.llm.nvidia_nim import (
     NvidiaNimClient,
     NvidiaNimTimeoutError,
 )
+from holoclip.repository import SQLiteCanonicalRepository
 from holoclip.transcript import chunk_segments, load_transcript, save_transcript
 from holoclip.transcription import transcribe_media
 
@@ -63,6 +65,7 @@ async def _detect_candidates(
     top_k: int,
     window_minutes: float,
     overlap_minutes: float,
+    stage_cache: StageArtifactCache | None = None,
 ):
     chunks = chunk_segments(
         segments,
@@ -81,6 +84,8 @@ async def _detect_candidates(
             fast_reasoning_effort=settings.fast_reasoning_effort,
             strong_reasoning_effort=settings.strong_reasoning_effort,
             progress=typer.echo,
+            stage_cache=stage_cache,
+            cache_provider="nvidia_nim",
         )
         return await detector.run(chunks, top_k=top_k)
 
@@ -103,13 +108,14 @@ def analyze(
     settings = NimSettings.from_env()
     segments = load_transcript(transcript)
 
-    async def _run() -> list[dict[str, object]]:
+    async def _run(stage_cache: StageArtifactCache) -> list[dict[str, object]]:
         candidates = await _detect_candidates(
             segments,
             settings=settings,
             top_k=top_k,
             window_minutes=window_minutes,
             overlap_minutes=overlap_minutes,
+            stage_cache=stage_cache,
         )
 
         if save_run_path is not None:
@@ -123,7 +129,12 @@ def analyze(
         return [candidate.model_dump(mode="json") for candidate in candidates]
 
     try:
-        result = asyncio.run(_run())
+        with SQLiteCanonicalRepository(Path("data/holoclip.db")) as repository:
+            stage_cache = StageArtifactCache(
+                repository,
+                Path("data/artifacts/stages"),
+            )
+            result = asyncio.run(_run(stage_cache))
     except NvidiaNimAuthorizationError as exc:
         typer.echo(f"NVIDIA NIM error: {exc}", err=True)
         typer.echo(
@@ -151,7 +162,19 @@ def transcribe(
     settings = GroqTranscriptionSettings.from_env()
     target = output or Path("data/transcripts") / f"{media.stem}.json"
 
-    segments = asyncio.run(transcribe_media(media, settings))
+    with SQLiteCanonicalRepository(Path("data/holoclip.db")) as repository:
+        stage_cache = StageArtifactCache(
+            repository,
+            Path("data/artifacts/stages"),
+        )
+        segments = asyncio.run(
+            transcribe_media(
+                media,
+                settings,
+                stage_cache=stage_cache,
+                progress=typer.echo,
+            )
+        )
     save_transcript(segments, target)
     typer.echo(f"saved transcript: {target}")
     typer.echo(f"segments: {len(segments)}")
@@ -186,13 +209,18 @@ def discover(
         or Path("data/evaluation/runs") / f"{resolved_stream_id}.json"
     )
 
-    async def _run() -> list[dict[str, object]]:
+    async def _run(stage_cache: StageArtifactCache) -> list[dict[str, object]]:
         if transcript_path.exists() and not force_transcribe:
             typer.echo(f"reusing transcript: {transcript_path}")
             segments = load_transcript(transcript_path)
         else:
             typer.echo(f"transcribing media: {media}")
-            segments = await transcribe_media(media, groq_settings)
+            segments = await transcribe_media(
+                media,
+                groq_settings,
+                stage_cache=stage_cache,
+                progress=typer.echo,
+            )
             save_transcript(segments, transcript_path)
             typer.echo(f"saved transcript: {transcript_path}")
 
@@ -202,6 +230,7 @@ def discover(
             top_k=top_k,
             window_minutes=window_minutes,
             overlap_minutes=overlap_minutes,
+            stage_cache=stage_cache,
         )
         save_run(
             build_run(
@@ -215,7 +244,12 @@ def discover(
         return [candidate.model_dump(mode="json") for candidate in candidates]
 
     try:
-        result = asyncio.run(_run())
+        with SQLiteCanonicalRepository(Path("data/holoclip.db")) as repository:
+            stage_cache = StageArtifactCache(
+                repository,
+                Path("data/artifacts/stages"),
+            )
+            result = asyncio.run(_run(stage_cache))
     except NvidiaNimAuthorizationError as exc:
         typer.echo(f"NVIDIA NIM error: {exc}", err=True)
         typer.echo(f"Transcript is safe at: {transcript_path}", err=True)
@@ -342,7 +376,19 @@ def examples_align(
         clip_segments = load_transcript(clip_transcript_path)
     else:
         typer.echo(f"transcribing clip: {clip_media}")
-        clip_segments = asyncio.run(transcribe_media(clip_media, groq_settings))
+        with SQLiteCanonicalRepository(Path("data/holoclip.db")) as repository:
+            stage_cache = StageArtifactCache(
+                repository,
+                Path("data/artifacts/stages"),
+            )
+            clip_segments = asyncio.run(
+                transcribe_media(
+                    clip_media,
+                    groq_settings,
+                    stage_cache=stage_cache,
+                    progress=typer.echo,
+                )
+            )
         save_transcript(clip_segments, clip_transcript_path)
         typer.echo(f"saved clip transcript: {clip_transcript_path}")
 
