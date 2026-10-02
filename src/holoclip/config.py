@@ -26,7 +26,7 @@ class NimSettings:
     timeout_seconds: float = 180.0
 
     @classmethod
-    def from_env(cls) -> "NimSettings":
+    def from_env(cls) -> NimSettings:
         return cls(
             api_key=os.getenv("NVIDIA_API_KEY", ""),
             base_url=os.getenv(
