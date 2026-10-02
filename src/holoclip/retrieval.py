@@ -265,26 +265,15 @@ async def index_human_examples(
     return stats
 
 
-async def retrieve_structural_examples(
-    provider: EmbeddingProvider,
-    repository: Any,
-    query_text: str,
+def _rank_bundle(
     *,
-    positive_k: int = 3,
-    negative_k: int = 3,
+    query_text: str,
+    query_vector: list[float],
+    documents: list[RetrievalDocument],
+    embedding_model: str,
+    positive_k: int,
+    negative_k: int,
 ) -> RetrievalBundle:
-    if positive_k < 0 or negative_k < 0:
-        raise ValueError("retrieval K values must be non-negative")
-    query = query_text.strip()
-    if not query:
-        raise ValueError("retrieval query must not be empty")
-
-    query_vector = await provider.embed_query(query)
-    documents = repository.list_retrieval_documents(
-        embedding_model=provider.model,
-        embedding_version=RETRIEVAL_VERSION,
-    )
-
     positives: list[RetrievalHit] = []
     negatives: list[RetrievalHit] = []
     for document in documents:
@@ -305,8 +294,73 @@ async def retrieve_structural_examples(
     positives.sort(key=lambda item: item.score, reverse=True)
     negatives.sort(key=lambda item: item.score, reverse=True)
     return RetrievalBundle(
-        query_text=query,
-        embedding_model=provider.model,
+        query_text=query_text,
+        embedding_model=embedding_model,
         positives=positives[:positive_k],
         negatives=negatives[:negative_k],
     )
+
+
+async def retrieve_structural_examples_many(
+    provider: EmbeddingProvider,
+    repository: Any,
+    query_texts: list[str],
+    *,
+    positive_k: int = 3,
+    negative_k: int = 3,
+) -> list[RetrievalBundle]:
+    if positive_k < 0 or negative_k < 0:
+        raise ValueError("retrieval K values must be non-negative")
+    queries = [query.strip() for query in query_texts]
+    if any(not query for query in queries):
+        raise ValueError("retrieval query must not be empty")
+    if not queries:
+        return []
+
+    documents = repository.list_retrieval_documents(
+        embedding_model=provider.model,
+        embedding_version=RETRIEVAL_VERSION,
+    )
+    if not documents:
+        return [
+            RetrievalBundle(
+                query_text=query,
+                embedding_model=provider.model,
+            )
+            for query in queries
+        ]
+
+    query_vectors = await provider.embed_queries(queries)
+    if len(query_vectors) != len(queries):
+        raise RuntimeError("embedding provider returned an unexpected query vector count")
+
+    return [
+        _rank_bundle(
+            query_text=query,
+            query_vector=vector,
+            documents=documents,
+            embedding_model=provider.model,
+            positive_k=positive_k,
+            negative_k=negative_k,
+        )
+        for query, vector in zip(queries, query_vectors, strict=True)
+    ]
+
+
+async def retrieve_structural_examples(
+    provider: EmbeddingProvider,
+    repository: Any,
+    query_text: str,
+    *,
+    positive_k: int = 3,
+    negative_k: int = 3,
+) -> RetrievalBundle:
+    return (
+        await retrieve_structural_examples_many(
+            provider,
+            repository,
+            [query_text],
+            positive_k=positive_k,
+            negative_k=negative_k,
+        )
+    )[0]
