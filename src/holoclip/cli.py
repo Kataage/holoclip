@@ -9,7 +9,7 @@ import typer
 
 from holoclip.alignment import align_clip_to_source
 from holoclip.analysis.candidate_detector import CandidateDetector
-from holoclip.config import GroqTranscriptionSettings, NimSettings
+from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings, NimSettings
 from holoclip.examples import (
     HumanClipExample,
     compute_human_clip_stats,
@@ -35,12 +35,18 @@ from holoclip.learning import enrich_human_clip_example
 from holoclip.media import play_media_segment
 from holoclip.migration import migrate_legacy_data, report_as_json
 from holoclip.models import ReviewDecision
+from holoclip.providers.embedding.nvidia_nim import (
+    NvidiaEmbeddingAuthorizationError,
+    NvidiaEmbeddingRateLimitDeferred,
+    NvidiaNimEmbeddingClient,
+)
 from holoclip.providers.llm.nvidia_nim import (
     NvidiaNimAuthorizationError,
     NvidiaNimClient,
     NvidiaNimTimeoutError,
 )
 from holoclip.repository import SQLiteCanonicalRepository
+from holoclip.retrieval import index_human_examples, retrieve_structural_examples
 from holoclip.transcript import chunk_segments, load_transcript, save_transcript
 from holoclip.transcription import transcribe_media
 
@@ -334,6 +340,42 @@ def doctor() -> None:
     typer.echo("NVIDIA NIM inference: OK")
 
 
+def _refresh_example_index(
+    examples: list[HumanClipExample],
+    *,
+    database: Path = Path("data/holoclip.db"),
+) -> None:
+    if not examples:
+        return
+    settings = NimEmbeddingSettings.from_env()
+
+    async def _run():
+        with SQLiteCanonicalRepository(database) as repository:
+            async with NvidiaNimEmbeddingClient(settings) as provider:
+                return await index_human_examples(provider, repository, examples)
+
+    try:
+        stats = asyncio.run(_run())
+    except (
+        NvidiaEmbeddingAuthorizationError,
+        NvidiaEmbeddingRateLimitDeferred,
+        ValueError,
+    ) as exc:
+        typer.echo(
+            f"embedding index update skipped/failed: {exc}; "
+            "the enriched example was already saved",
+            err=True,
+        )
+        return
+
+    typer.echo(
+        "retrieval index: "
+        f"{stats.embedded_documents} embedded, "
+        f"{stats.reused_documents} reused, "
+        f"{stats.removed_documents} removed"
+    )
+
+
 @app.command()
 def examples_align(
     clip_media: Path = typer.Argument(..., exists=True, readable=True),
@@ -543,6 +585,7 @@ def examples_enrich(
 
     _added, _updated, total = upsert_human_clip_examples(store, [enriched])
     typer.echo(f"enriched: {enriched.id} ({total} total)")
+    _refresh_example_index(load_human_clip_store(store))
     typer.echo(f"setup: {enriched.setup}")
     typer.echo(f"development: {enriched.development}")
     typer.echo(f"payoff: {enriched.payoff}")
@@ -565,6 +608,80 @@ def examples_import(
     added, updated, total = upsert_human_clip_examples(store, examples)
     typer.echo(f"human clip examples: +{added} new, {updated} updated, {total} total")
     typer.echo(f"store: {store}")
+
+
+@app.command()
+def examples_index(
+    store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--store",
+    ),
+    database: Path = typer.Option(
+        Path("data/holoclip.db"),
+        "--database",
+    ),
+) -> None:
+    """Build or refresh structural embeddings for human clip examples."""
+    _load_env_file()
+    examples = load_human_clip_store(store)
+    if not examples:
+        typer.echo(f"no human clip examples found: {store}")
+        return
+
+    settings = NimEmbeddingSettings.from_env()
+
+    async def _run():
+        with SQLiteCanonicalRepository(database) as repository:
+            async with NvidiaNimEmbeddingClient(settings) as provider:
+                return await index_human_examples(provider, repository, examples)
+
+    try:
+        stats = asyncio.run(_run())
+    except NvidiaEmbeddingAuthorizationError as exc:
+        typer.echo(f"NVIDIA embedding authorization error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except NvidiaEmbeddingRateLimitDeferred as exc:
+        typer.echo(f"NVIDIA embedding quota/rate limit: {exc}", err=True)
+        raise typer.Exit(3) from exc
+
+    typer.echo(json.dumps(stats.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+
+@app.command()
+def examples_retrieve(
+    query: str = typer.Argument(...),
+    positive_k: int = typer.Option(3, "--positive-k", min=0, max=20),
+    negative_k: int = typer.Option(3, "--negative-k", min=0, max=20),
+    database: Path = typer.Option(
+        Path("data/holoclip.db"),
+        "--database",
+    ),
+) -> None:
+    """Inspect structurally similar positive and weak-negative examples."""
+    _load_env_file()
+    settings = NimEmbeddingSettings.from_env()
+
+    async def _run():
+        with SQLiteCanonicalRepository(database) as repository:
+            async with NvidiaNimEmbeddingClient(settings) as provider:
+                return await retrieve_structural_examples(
+                    provider,
+                    repository,
+                    query,
+                    positive_k=positive_k,
+                    negative_k=negative_k,
+                )
+
+    try:
+        bundle = asyncio.run(_run())
+    except NvidiaEmbeddingAuthorizationError as exc:
+        typer.echo(f"NVIDIA embedding authorization error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except NvidiaEmbeddingRateLimitDeferred as exc:
+        typer.echo(f"NVIDIA embedding quota/rate limit: {exc}", err=True)
+        raise typer.Exit(3) from exc
+
+    typer.echo(json.dumps(bundle.model_dump(mode="json"), ensure_ascii=False, indent=2))
 
 
 @app.command()
