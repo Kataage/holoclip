@@ -30,6 +30,7 @@ from holoclip.evaluation import (
     load_runs,
     save_run,
 )
+from holoclip.learning import enrich_human_clip_example
 from holoclip.media import play_media_segment
 from holoclip.models import ReviewDecision
 from holoclip.providers.llm.nvidia_nim import (
@@ -414,6 +415,71 @@ def examples_align(
     example = HumanClipExample.model_validate(base)
     added, updated, total = upsert_human_clip_examples(store, [example])
     typer.echo(f"stored example: +{added} new, {updated} updated, {total} total")
+
+
+@app.command()
+def examples_enrich(
+    example_id: str = typer.Argument(...),
+    store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--store",
+    ),
+    weak_negative_window: float = typer.Option(
+        90.0,
+        "--weak-negative-window",
+        min=30.0,
+        max=300.0,
+    ),
+) -> None:
+    """Extract editorial structure and adjacent weak negatives for one aligned example."""
+    _load_env_file()
+    settings = NimSettings.from_env()
+    examples = load_human_clip_store(store)
+    example = next((item for item in examples if item.id == example_id), None)
+    if example is None:
+        typer.echo(f"example not found: {example_id}", err=True)
+        raise typer.Exit(2)
+    if example.source_start is None or example.source_end is None:
+        typer.echo("example is not source-aligned yet", err=True)
+        raise typer.Exit(2)
+    if not example.source_transcript_path:
+        typer.echo("example has no source_transcript_path", err=True)
+        raise typer.Exit(2)
+
+    source_transcript_path = Path(example.source_transcript_path)
+    if not source_transcript_path.exists():
+        typer.echo(f"source transcript not found: {source_transcript_path}", err=True)
+        raise typer.Exit(2)
+    source_segments = load_transcript(source_transcript_path)
+
+    async def _run() -> HumanClipExample:
+        async with NvidiaNimClient(settings, event_callback=typer.echo) as client:
+            return await enrich_human_clip_example(
+                client,
+                example,
+                source_segments,
+                model=settings.model,
+                reasoning_effort=settings.strong_reasoning_effort,
+                weak_negative_window_seconds=weak_negative_window,
+            )
+
+    try:
+        enriched = asyncio.run(_run())
+    except NvidiaNimAuthorizationError as exc:
+        typer.echo(f"NVIDIA NIM error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except NvidiaNimTimeoutError as exc:
+        typer.echo(f"NVIDIA NIM timeout: {exc}", err=True)
+        raise typer.Exit(3) from exc
+
+    _added, _updated, total = upsert_human_clip_examples(store, [enriched])
+    typer.echo(f"enriched: {enriched.id} ({total} total)")
+    typer.echo(f"setup: {enriched.setup}")
+    typer.echo(f"development: {enriched.development}")
+    typer.echo(f"payoff: {enriched.payoff}")
+    typer.echo(f"why_selected: {enriched.why_selected}")
+    typer.echo(f"traits: {', '.join(enriched.traits) if enriched.traits else '(none)'}")
+    typer.echo(f"weak_negatives: {len(enriched.weak_negatives)}")
 
 
 @app.command()
