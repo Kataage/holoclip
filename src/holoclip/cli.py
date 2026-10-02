@@ -25,6 +25,7 @@ from holoclip.models import ReviewDecision
 from holoclip.providers.llm.nvidia_nim import (
     NvidiaNimAuthorizationError,
     NvidiaNimClient,
+    NvidiaNimTimeoutError,
 )
 from holoclip.transcript import chunk_segments, load_transcript, save_transcript
 from holoclip.transcription import transcribe_media
@@ -57,11 +58,18 @@ async def _detect_candidates(
         window_seconds=window_minutes * 60.0,
         overlap_seconds=overlap_minutes * 60.0,
     )
-    async with NvidiaNimClient(settings) as client:
+    typer.echo(
+        f"Transcript chunks: {len(chunks)} "
+        f"(fast={settings.fast_model}, final={settings.model})"
+    )
+    async with NvidiaNimClient(settings, event_callback=typer.echo) as client:
         detector = CandidateDetector(
             client,
             fast_model=settings.fast_model,
             strong_model=settings.model,
+            fast_reasoning_effort=settings.fast_reasoning_effort,
+            strong_reasoning_effort=settings.strong_reasoning_effort,
+            progress=typer.echo,
         )
         return await detector.run(chunks, top_k=top_k)
 
@@ -108,11 +116,17 @@ def analyze(
     except NvidiaNimAuthorizationError as exc:
         typer.echo(f"NVIDIA NIM error: {exc}", err=True)
         typer.echo(
-            "The API key was loaded, but hosted inference access is not authorized. "
-            "For personal NVIDIA Build accounts this can indicate missing Public API Endpoints access.",
+            "The API key was loaded, but hosted inference access is not authorized.",
             err=True,
         )
         raise typer.Exit(2) from exc
+    except NvidiaNimTimeoutError as exc:
+        typer.echo(f"NVIDIA NIM timeout: {exc}", err=True)
+        typer.echo(
+            "The transcript is already saved. Rerun the same analyze command to retry.",
+            err=True,
+        )
+        raise typer.Exit(3) from exc
     typer.echo(json.dumps({"candidates": result}, ensure_ascii=False, indent=2))
 
 
@@ -141,6 +155,11 @@ def discover(
     overlap_minutes: float = typer.Option(2.0, min=0.0, max=10.0),
     transcript_output: Path | None = typer.Option(None, "--transcript-output"),
     run_output: Path | None = typer.Option(None, "--run-output"),
+    force_transcribe: bool = typer.Option(
+        False,
+        "--force-transcribe",
+        help="Ignore an existing transcript and transcribe the media again.",
+    ),
 ) -> None:
     """Transcribe local media, discover clip candidates, and save an evaluation run."""
     _load_env_file()
@@ -157,8 +176,14 @@ def discover(
     )
 
     async def _run() -> list[dict[str, object]]:
-        segments = await transcribe_media(media, groq_settings)
-        save_transcript(segments, transcript_path)
+        if transcript_path.exists() and not force_transcribe:
+            typer.echo(f"reusing transcript: {transcript_path}")
+            segments = load_transcript(transcript_path)
+        else:
+            typer.echo(f"transcribing media: {media}")
+            segments = await transcribe_media(media, groq_settings)
+            save_transcript(segments, transcript_path)
+            typer.echo(f"saved transcript: {transcript_path}")
 
         candidates = await _detect_candidates(
             segments,
@@ -182,18 +207,16 @@ def discover(
     except NvidiaNimAuthorizationError as exc:
         typer.echo(f"NVIDIA NIM error: {exc}", err=True)
         typer.echo(f"Transcript is safe at: {transcript_path}", err=True)
-        typer.echo(
-            "After NVIDIA hosted inference access is fixed, rerun analysis without retranscribing:",
-            err=True,
-        )
-        typer.echo(
-            f'uv run holoclip analyze "{transcript_path}" '
-            f'--stream-id "{resolved_stream_id}" --save-run "{run_path}"',
-            err=True,
-        )
         raise typer.Exit(2) from exc
+    except NvidiaNimTimeoutError as exc:
+        typer.echo(f"NVIDIA NIM timeout: {exc}", err=True)
+        typer.echo(f"Transcript is safe at: {transcript_path}", err=True)
+        typer.echo(
+            "Rerun the same discover command; the saved transcript will be reused automatically.",
+            err=True,
+        )
+        raise typer.Exit(3) from exc
 
-    typer.echo(f"saved transcript: {transcript_path}")
     typer.echo(f"saved evaluation run: {run_path}")
     typer.echo(json.dumps({"candidates": result}, ensure_ascii=False, indent=2))
 
@@ -225,6 +248,7 @@ def doctor() -> None:
                         model=model,
                         temperature=0.0,
                         max_tokens=8,
+                        reasoning_effort="low",
                     )
                 except NvidiaNimAuthorizationError as exc:
                     checks.append((label, model, str(exc)))
