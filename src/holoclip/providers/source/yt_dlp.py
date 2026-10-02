@@ -315,6 +315,7 @@ def _metadata_from_payload(
         duration=duration,
         upload_date=str(payload.get("upload_date") or "").strip() or None,
         live_status=str(payload.get("live_status") or "").strip() or None,
+        availability=str(payload.get("availability") or "").strip() or None,
         extractor=str(payload.get("extractor_key") or payload.get("extractor") or "").strip()
         or None,
         provider_version=runtime.version,
