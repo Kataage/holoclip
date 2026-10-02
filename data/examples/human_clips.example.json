@@ -1,0 +1,30 @@
+{
+  "examples": [
+    {
+      "clip_url": "https://www.youtube.com/watch?v=CLIP_ID",
+      "clip_title": "Human-made clip title",
+      "clip_channel": "Example clip channel",
+      "source_url": "https://www.youtube.com/watch?v=SOURCE_ID",
+      "source_title": "Original source stream title",
+      "stream_id": "SOURCE_ID",
+      "source_start": 1234.0,
+      "source_end": 1410.0,
+      "alignment_confidence": 1.0,
+      "members": ["member-name"],
+      "topics": ["topic"],
+      "traits": ["unexpected_confession", "setup_payoff"],
+      "context_requirement": "medium",
+      "setup": "Abstract setup, not copied wording.",
+      "development": "Abstract development.",
+      "payoff": "Abstract payoff.",
+      "why_selected": "Why a human editor likely chose this event.",
+      "performance": {
+        "views": null,
+        "likes": null,
+        "age_days": null,
+        "channel_baseline_ratio": null,
+        "normalized_score": null
+      }
+    }
+  ]
+}
