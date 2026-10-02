@@ -408,6 +408,26 @@ def _refresh_example_index(
 
 
 @app.command()
+def source_doctor() -> None:
+    """Check the managed yt-dlp runtime and JavaScript runtime."""
+    _load_env_file()
+    try:
+        provider = YtDlpSourceProvider(
+            channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"),
+        )
+        info = provider.runtime_info
+    except (RuntimeError, YtDlpError) as exc:
+        typer.echo(f"source runtime: FAIL ({exc})", err=True)
+        raise typer.Exit(2) from exc
+
+    typer.echo("source runtime: OK")
+    typer.echo(f"yt-dlp: {info.version}")
+    typer.echo(f"channel: {info.channel}")
+    typer.echo(f"managed_by: {info.managed_by}")
+    typer.echo(f"js_runtime: {info.js_runtime}")
+
+
+@app.command()
 def examples_ingest_url(
     clip_url: str = typer.Argument(...),
     source_url: str | None = typer.Option(
@@ -455,7 +475,9 @@ def examples_ingest_url(
     embedding_settings = NimEmbeddingSettings.from_env()
 
     try:
-        source_provider = YtDlpSourceProvider()
+        source_provider = YtDlpSourceProvider(
+            channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"),
+        )
     except RuntimeError as exc:
         typer.echo(f"source provider error: {exc}", err=True)
         raise typer.Exit(2) from exc
@@ -546,6 +568,14 @@ def examples_ingest_url(
     typer.echo(f"source media: {result.source_media_path}")
     typer.echo(f"clip transcript: {result.clip_transcript_path}")
     typer.echo(f"source transcript: {result.source_transcript_path}")
+    if result.acquisition_provider_version:
+        typer.echo(
+            "acquisition runtime: "
+            f"{result.acquisition_provider} "
+            f"{result.acquisition_provider_version} "
+            f"channel={result.acquisition_provider_channel or 'unknown'} "
+            f"js={result.acquisition_js_runtime or 'unknown'}"
+        )
 
 
 @app.command()
