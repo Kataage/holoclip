@@ -47,7 +47,7 @@ def test_empty_database_migrates_to_current_schema(tmp_path: Path) -> None:
         ).fetchone()
 
     assert row is not None
-    assert row["value"] == "2"
+    assert row["value"] == "3"
 
 
 def test_source_transcript_evidence_and_moment_round_trip(tmp_path: Path) -> None:
@@ -268,6 +268,38 @@ def test_version_one_database_migrates_execution_tables(tmp_path: Path) -> None:
         ).fetchone()
 
     assert version is not None
-    assert version["value"] == "2"
+    assert version["value"] == "3"
     assert stage_table is not None
+    retrieval_table = repository._connection.execute(
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name='retrieval_documents'"
+    ).fetchone()
+
     assert artifact_table is not None
+    assert retrieval_table is not None
+
+
+def test_version_two_database_migrates_retrieval_table(tmp_path: Path) -> None:
+    path = tmp_path / "v2.db"
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
+    connection.execute(
+        "INSERT INTO schema_meta(key, value) VALUES('schema_version', '2')"
+    )
+    connection.commit()
+    connection.close()
+
+    with SQLiteCanonicalRepository(path) as repository:
+        version = repository._connection.execute(
+            "SELECT value FROM schema_meta WHERE key='schema_version'"
+        ).fetchone()
+        retrieval_table = repository._connection.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='retrieval_documents'"
+        ).fetchone()
+
+    assert version is not None
+    assert version["value"] == "3"
+    assert retrieval_table is not None
