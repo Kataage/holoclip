@@ -471,3 +471,46 @@ uv run holoclip policy-add ^
 Rules should record the narrowest scope supported by the evidence. A stream-specific
 request must not be promoted into a permanent member-wide ban without evidence for
 that broader scope.
+
+
+## Batch-ingest human-made clips
+
+Put one JSON object per line in a manifest:
+
+~~~jsonl
+{"clip_url":"https://www.youtube.com/watch?v=CLIP_A"}
+{"clip_url":"https://www.youtube.com/watch?v=CLIP_B","source_url":"https://www.youtube.com/watch?v=SOURCE_B"}
+{"clip_url":"https://www.youtube.com/watch?v=CLIP_C","enabled":false,"note":"hold for later"}
+~~~
+
+Run the batch sequentially:
+
+~~~powershell
+uv run holoclip examples-ingest-batch data\examples\batch.jsonl
+~~~
+
+The batch intentionally does not parallelize model calls. Each item goes through the
+same source resolution, clip-policy, alignment, enrichment and retrieval-index path as
+`examples-ingest-url`.
+
+A state file is written after every item (by default
+`batch.jsonl.state.json`). Status values include:
+
+- `succeeded`
+- `needs_source`
+- `policy_blocked`
+- `policy_review`
+- `alignment_rejected`
+- `retryable`
+- `failed`
+
+Re-running the same command skips successful rows whose input fingerprint is unchanged.
+If a row's `source_url` is corrected, that row becomes eligible automatically.
+Use `--force` to re-run successful rows deliberately.
+
+Source ambiguity, policy review/block, alignment rejection and transient provider
+failures do not stop later rows. Authorization/configuration failures stop the batch
+because they are likely to affect every remaining item.
+
+Use `--strict` when CI/automation should receive a non-zero exit code if unresolved
+items remain.
