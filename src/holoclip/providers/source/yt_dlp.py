@@ -161,7 +161,7 @@ class ManagedYtDlpRuntime:
         resolve = [*launcher, "--refresh-package", "yt-dlp"]
         if self.channel == "nightly":
             resolve.extend(["--prerelease", "allow"])
-        resolve.extend(["--from", "yt-dlp[default]", "yt-dlp", "--version"])
+        resolve.extend(["--from", "yt-dlp[default]@latest", "yt-dlp", "--version"])
 
         result = _run_process(resolve, label="yt-dlp runtime refresh")
         version = (result.stdout.strip() or result.stderr.strip()).splitlines()[-1].strip()
@@ -251,6 +251,11 @@ class ManagedYtDlpRuntime:
             executable,
             js_name=js_name,
         )
+
+    def refresh(self) -> None:
+        self._command_prefix = None
+        self._runtime_info = None
+        self.ensure()
 
     def command(self, args: list[str]) -> list[str]:
         self.ensure()
