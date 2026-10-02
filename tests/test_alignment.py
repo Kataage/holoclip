@@ -38,6 +38,8 @@ def test_align_clip_to_source_finds_known_offset() -> None:
     assert result.source_end == pytest.approx(642.0, abs=2.0)
     assert result.matched_anchors >= 3
     assert result.confidence >= 0.55
+    assert len(result.segments) == 1
+    assert result.segments[0].source_start == pytest.approx(600.0, abs=1.0)
 
 
 def test_align_clip_to_source_rejects_unrelated_text() -> None:
@@ -52,3 +54,37 @@ def test_align_clip_to_source_rejects_unrelated_text() -> None:
 
     with pytest.raises(ValueError, match="no plausible transcript anchors"):
         align_clip_to_source(clip, source)
+
+
+def test_align_clip_to_source_detects_multiple_cut_segments() -> None:
+    source = [
+        segment(0, "配信開始のあいさつをしています"),
+        segment(600, "まず最初に大事な話をしておきたいんだけど"),
+        segment(612, "昨日かなりびっくりする出来事がありました"),
+        segment(624, "ここまでが最初の話のオチになります"),
+        segment(800, "途中では全く別の雑談をしています"),
+        segment(1000, "さらに別のゲームの話題が続いています"),
+        segment(1200, "さっきの話に関係する後日談があるんだけど"),
+        segment(1212, "実はその後さらに予想外のことが起きました"),
+        segment(1224, "最後はみんなで笑って終わりました"),
+        segment(1500, "ここからエンディングです"),
+    ]
+    clip = [
+        segment(0, "まず最初に大事な話をしておきたいんだけど"),
+        segment(12, "昨日かなりびっくりする出来事がありました"),
+        segment(24, "ここまでが最初の話のオチになります"),
+        segment(30, "さっきの話に関係する後日談があるんだけど"),
+        segment(42, "実はその後さらに予想外のことが起きました"),
+        segment(54, "最後はみんなで笑って終わりました"),
+    ]
+
+    result = align_clip_to_source(clip, source)
+
+    assert result.confidence >= 0.75
+    assert len(result.segments) == 2
+    assert result.segments[0].clip_start == pytest.approx(0)
+    assert result.segments[0].source_start == pytest.approx(600, abs=1)
+    assert result.segments[0].source_end == pytest.approx(630, abs=2)
+    assert result.segments[1].clip_start == pytest.approx(30, abs=1)
+    assert result.segments[1].source_start == pytest.approx(1200, abs=1)
+    assert result.segments[1].source_end == pytest.approx(1230, abs=2)
