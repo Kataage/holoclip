@@ -5,7 +5,7 @@ import json
 import random
 import time
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Self
 
 import httpx
 
@@ -32,12 +32,6 @@ class _RateGate:
 def _extract_json(text: str) -> dict[str, Any]:
     value = text.strip()
 
-    if value.startswith("~~~"):
-        lines = value.splitlines()[1:]
-        if lines and lines[-1].strip() == "~~~":
-            lines.pop()
-        value = "\n".join(lines).strip()
-
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError:
@@ -48,7 +42,7 @@ def _extract_json(text: str) -> dict[str, Any]:
         parsed = json.loads(value[start : end + 1])
 
     if not isinstance(parsed, dict):
-        raise ValueError("LLM JSON response must be an object")
+        raise TypeError("LLM JSON response must be an object")
     return parsed
 
 
@@ -66,7 +60,7 @@ class NvidiaNimClient:
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(timeout=settings.timeout_seconds)
 
-    async def __aenter__(self) -> "NvidiaNimClient":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *_: object) -> None:
