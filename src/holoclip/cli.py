@@ -9,6 +9,17 @@ import typer
 
 from holoclip.analysis.candidate_detector import CandidateDetector
 from holoclip.config import NimSettings
+from holoclip.evaluation import (
+    FeedbackRecord,
+    append_feedback,
+    build_run,
+    compute_metrics,
+    load_feedback,
+    load_known_clips,
+    load_runs,
+    save_run,
+)
+from holoclip.models import ReviewDecision
 from holoclip.providers.llm.nvidia_nim import NvidiaNimClient
 from holoclip.transcript import chunk_segments, load_transcript
 
@@ -33,6 +44,12 @@ def analyze(
     top_k: int = typer.Option(5, min=1, max=20),
     window_minutes: float = typer.Option(10.0, min=2.0, max=30.0),
     overlap_minutes: float = typer.Option(2.0, min=0.0, max=10.0),
+    stream_id: str | None = typer.Option(None),
+    save_run_path: Path | None = typer.Option(
+        None,
+        "--save-run",
+        help="Save an evaluation run JSON in addition to printing candidates.",
+    ),
 ) -> None:
     """Analyze a timed transcript JSON file and print clip candidates."""
     _load_env_file()
@@ -52,10 +69,67 @@ def analyze(
                 strong_model=settings.model,
             )
             candidates = await detector.run(chunks, top_k=top_k)
+
+            if save_run_path is not None:
+                run = build_run(
+                    stream_id=stream_id or transcript.stem,
+                    transcript_path=str(transcript),
+                    candidates=candidates,
+                )
+                save_run(run, save_run_path)
+
             return [candidate.model_dump(mode="json") for candidate in candidates]
 
     result = asyncio.run(_run())
     typer.echo(json.dumps({"candidates": result}, ensure_ascii=False, indent=2))
+
+
+@app.command()
+def label(
+    stream_id: str = typer.Argument(...),
+    candidate_id: str = typer.Argument(...),
+    decision: ReviewDecision = typer.Argument(...),
+    reason: str | None = typer.Option(None),
+    feedback_file: Path = typer.Option(
+        Path("data/evaluation/feedback.jsonl"),
+        "--feedback-file",
+    ),
+) -> None:
+    """Append one accept/maybe/reject judgment to the evaluation log."""
+    append_feedback(
+        FeedbackRecord(
+            stream_id=stream_id,
+            candidate_id=candidate_id,
+            decision=decision,
+            reason=reason,
+        ),
+        feedback_file,
+    )
+    typer.echo(f"saved {decision.value}: {stream_id}/{candidate_id}")
+
+
+@app.command()
+def metrics(
+    runs_dir: Path = typer.Option(
+        Path("data/evaluation/runs"),
+        "--runs-dir",
+    ),
+    feedback_file: Path = typer.Option(
+        Path("data/evaluation/feedback.jsonl"),
+        "--feedback-file",
+    ),
+    known_clips_file: Path | None = typer.Option(
+        None,
+        "--known-clips",
+    ),
+) -> None:
+    """Compute Top-K acceptance and known-clip recall metrics."""
+    result = compute_metrics(
+        load_runs(runs_dir),
+        load_feedback(feedback_file),
+        load_known_clips(known_clips_file),
+    )
+    typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
