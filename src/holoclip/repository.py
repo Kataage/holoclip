@@ -68,6 +68,10 @@ class CanonicalRepository(Protocol):
         embedding_model: str,
         embedding_version: str,
     ) -> list[RetrievalDocument]: ...
+    def list_retrieval_documents_for_example(
+        self,
+        example_id: str,
+    ) -> list[RetrievalDocument]: ...
     def delete_retrieval_documents_not_in(
         self,
         *,
@@ -978,6 +982,24 @@ class SQLiteCanonicalRepository:
             ORDER BY id
             """,
             (embedding_model, embedding_version),
+        ).fetchall()
+        return [
+            RetrievalDocument.model_validate_json(row["payload"])
+            for row in rows
+        ]
+
+    def list_retrieval_documents_for_example(
+        self,
+        example_id: str,
+    ) -> list[RetrievalDocument]:
+        rows = self._connection.execute(
+            """
+            SELECT payload
+            FROM retrieval_documents
+            WHERE example_id=?
+            ORDER BY kind, id
+            """,
+            (example_id,),
         ).fetchall()
         return [
             RetrievalDocument.model_validate_json(row["payload"])
