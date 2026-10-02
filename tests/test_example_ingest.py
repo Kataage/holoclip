@@ -11,7 +11,7 @@ from holoclip.example_ingest import (
     ingest_human_example_from_urls,
 )
 from holoclip.execution import StageArtifactCache
-from holoclip.examples import load_human_clip_store
+from holoclip.examples import HumanClipExample, load_human_clip_store, upsert_human_clip_examples
 from holoclip.models import TranscriptSegment
 from holoclip.providers.source.base import (
     AcquiredSource,
@@ -247,3 +247,74 @@ async def test_ambiguous_source_description_is_not_auto_learned(
 
     assert len(caught.value.candidates) == 2
     assert not (tmp_path / "human_clips.jsonl").exists()
+
+
+
+class FailingLLM:
+    async def chat(self, *args, **kwargs) -> str:
+        raise RuntimeError("unexpected chat")
+
+    async def chat_json(self, *args, **kwargs):
+        raise RuntimeError("simulated enrichment timeout")
+
+
+@pytest.mark.asyncio
+async def test_failed_reingest_preserves_last_good_enriched_example(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    async def fake_transcribe(media_path, settings, *, stage_cache=None, progress=None):
+        return clip_transcript() if "clip" in str(media_path) else source_transcript()
+
+    monkeypatch.setattr(example_ingest, "transcribe_media", fake_transcribe)
+
+    store = tmp_path / "human_clips.jsonl"
+    previous = HumanClipExample(
+        id="existing",
+        clip_url="https://www.youtube.com/watch?v=clip",
+        clip_title="previous good",
+        source_url="https://www.youtube.com/watch?v=source",
+        source_title="元配信",
+        stream_id="source",
+        source_start=120,
+        source_end=134,
+        alignment_confidence=0.9,
+        alignment_method="older-good",
+        setup="existing setup",
+        development="existing development",
+        payoff="existing payoff",
+        why_selected="existing reason",
+        structure_method="glm-structure-v1",
+        structure_model="strong",
+    )
+    # Use the canonical URL-derived id so the failed reingest targets this record.
+    previous.id = example_ingest.make_human_clip_example_id(previous.clip_url)
+    upsert_human_clip_examples(store, [previous])
+
+    database = tmp_path / "holoclip.db"
+    with SQLiteCanonicalRepository(database) as repository:
+        cache = StageArtifactCache(repository, tmp_path / "artifacts")
+        with pytest.raises(RuntimeError, match="simulated enrichment timeout"):
+            await ingest_human_example_from_urls(
+                FakeSourceProvider(tmp_path),
+                clip_url=previous.clip_url,
+                source_url=None,
+                download_root=tmp_path / "sources",
+                transcript_root=tmp_path / "transcripts",
+                examples_store=store,
+                groq_settings=GroqTranscriptionSettings(api_key="test", rpm=60000),
+                llm=FailingLLM(),
+                llm_model="strong",
+                llm_reasoning_effort="high",
+                embedding_provider=FakeEmbeddingProvider(),
+                repository=repository,
+                stage_cache=cache,
+                min_confidence=0.55,
+            )
+
+    loaded = load_human_clip_store(store)
+    assert len(loaded) == 1
+    assert loaded[0].id == previous.id
+    assert loaded[0].setup == "existing setup"
+    assert loaded[0].why_selected == "existing reason"
+    assert loaded[0].alignment_method == "older-good"

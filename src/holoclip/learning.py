@@ -3,6 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 from holoclip.examples import HumanClipExample, WeakNegativeExample
+from holoclip.execution import (
+    StageArtifactCache,
+    StageStatus,
+    make_input_fingerprint,
+)
 from holoclip.models import TranscriptSegment
 from holoclip.providers.llm.base import LLMProvider
 
@@ -166,18 +171,78 @@ async def enrich_human_clip_example(
     model: str,
     reasoning_effort: str = "high",
     weak_negative_window_seconds: float = 90.0,
+    stage_cache: StageArtifactCache | None = None,
+    cache_provider: str | None = None,
 ) -> HumanClipExample:
     if example.source_start is None or example.source_end is None:
         raise ValueError("example must be source-aligned before enrichment")
 
     source_context = _aligned_source_context(example, source_segments)
-    payload = await llm.chat_json(
-        _structure_messages(example, source_context),
-        model=model,
-        temperature=0.1,
-        max_tokens=1800,
-        reasoning_effort=reasoning_effort,
+    messages = _structure_messages(example, source_context)
+    input_fingerprint = make_input_fingerprint(
+        {
+            "example_id": example.id,
+            "clip_title": example.clip_title,
+            "transcript_excerpt": example.transcript_excerpt,
+            "alignment_method": example.alignment_method,
+            "alignment_segments": [
+                segment.model_dump(mode="json")
+                for segment in example.alignment_segments
+            ],
+            "source_context": source_context,
+            "reasoning_effort": reasoning_effort,
+        }
     )
+
+    payload = None
+    if stage_cache is not None:
+        payload = stage_cache.reusable_json(
+            stage="human_example_enrichment",
+            subject_type="human_clip_example",
+            subject_id=example.id,
+            input_fingerprint=input_fingerprint,
+            stage_version="1",
+            provider=cache_provider,
+            model=model,
+            prompt_version="human-structure-v1",
+        )
+
+    if payload is None:
+        run = None
+        if stage_cache is not None:
+            run = stage_cache.start(
+                stage="human_example_enrichment",
+                subject_type="human_clip_example",
+                subject_id=example.id,
+                input_fingerprint=input_fingerprint,
+                stage_version="1",
+                provider=cache_provider,
+                model=model,
+                prompt_version="human-structure-v1",
+            )
+        try:
+            payload = await llm.chat_json(
+                messages,
+                model=model,
+                temperature=0.1,
+                max_tokens=1800,
+                reasoning_effort=reasoning_effort,
+            )
+        except Exception as exc:
+            if stage_cache is not None and run is not None:
+                stage_cache.fail(
+                    run,
+                    status=StageStatus.FAILED_RETRYABLE,
+                    error=exc,
+                )
+            raise
+
+        if stage_cache is not None and run is not None:
+            stage_cache.succeed_json(
+                run,
+                payload,
+                kind="human_example_enrichment",
+            )
 
     def strings(name: str) -> list[str]:
         raw: Any = payload.get(name, [])
