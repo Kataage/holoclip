@@ -951,7 +951,7 @@ dependencies. For fast-moving providers such as yt-dlp:
 
 - keep the extractor behind SourceProvider
 - refresh the preferred release channel at the start of a new acquisition process
-- pin the resolved extractor version for the lifetime of that job
+- warm the resolved extractor into an isolated/offline-capable tool cache for the lifetime of that job
 - record extractor version/channel/runtime in provenance
 - permit one forced fresh-runtime retry after an extractor failure
 - never allow an extractor update to mutate semantic/editorial state
