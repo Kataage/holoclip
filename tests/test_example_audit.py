@@ -120,6 +120,7 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
     assert report.alignment_segments[0].clip_excerpt == "最初の話 続きの話"
     assert report.alignment_segments[0].source_excerpt == "元配信の最初 元配信の続き"
     assert report.alignment_segments[1].source_gap_from_previous == 60
+    assert report.alignment_segments[1].source_delta_from_previous == 60
     assert report.clip_selected_seconds == 30
     assert report.source_selected_seconds == 30
     assert report.source_bounding_seconds == 90
@@ -156,3 +157,63 @@ def test_repository_lists_retrieval_documents_for_example(tmp_path: Path) -> Non
 
     assert len(documents) == 1
     assert documents[0].example_id == "a"
+
+
+
+def test_audit_warns_on_nonmonotonic_weak_singleton(tmp_path: Path) -> None:
+    clip_path = tmp_path / "clip.json"
+    source_path = tmp_path / "source.json"
+    save_transcript(
+        [TranscriptSegment(start=0, end=30, text="clip")],
+        clip_path,
+    )
+    save_transcript(
+        [TranscriptSegment(start=0, end=1000, text="source")],
+        source_path,
+    )
+    example = HumanClipExample(
+        id="bad-order",
+        clip_url="https://youtu.be/clip",
+        clip_title="bad order",
+        source_start=100,
+        source_end=900,
+        alignment_confidence=0.7,
+        alignment_method="transcript-anchor-v2",
+        alignment_segments=[
+            AlignmentSegmentExample(
+                clip_start=0,
+                clip_end=10,
+                source_start=700,
+                source_end=710,
+                confidence=0.8,
+                matched_anchors=4,
+            ),
+            AlignmentSegmentExample(
+                clip_start=10,
+                clip_end=16,
+                source_start=100,
+                source_end=106,
+                confidence=0.55,
+                matched_anchors=1,
+            ),
+            AlignmentSegmentExample(
+                clip_start=16,
+                clip_end=30,
+                source_start=800,
+                source_end=814,
+                confidence=0.8,
+                matched_anchors=4,
+            ),
+        ],
+        clip_transcript_path=str(clip_path),
+        source_transcript_path=str(source_path),
+    )
+
+    report = build_human_example_audit(example)
+
+    assert report.alignment_segments[1].source_delta_from_previous == -610
+    assert any("non-monotonic alignment" in item for item in report.warnings)
+    assert any("weak isolated alignment" in item for item in report.warnings)
+    rendered = format_human_example_audit(report)
+    assert "source delta from previous: -610.0s" in rendered
+    assert "non-monotonic alignment" in rendered
