@@ -33,6 +33,20 @@ class CandidateWarning(StrEnum):
     POSSIBLE_MISINTERPRETATION = "possible_misinterpretation"
 
 
+class CandidateRetrievalHit(BaseModel):
+    document_id: str
+    example_id: str
+    score: float
+
+
+class CandidateRetrievalTrace(BaseModel):
+    embedding_model: str
+    embedding_version: str
+    positives: list[CandidateRetrievalHit] = Field(default_factory=list)
+    weak_negatives: list[CandidateRetrievalHit] = Field(default_factory=list)
+    selector_reason: str | None = None
+
+
 class ClipCandidate(BaseModel):
     start: float = Field(ge=0)
     end: float = Field(gt=0)
@@ -46,6 +60,7 @@ class ClipCandidate(BaseModel):
     confidence: float = Field(default=0.5, ge=0, le=1)
     source_chunk_ids: list[str] = Field(default_factory=list)
     warnings: list[CandidateWarning] = Field(default_factory=list)
+    retrieval_trace: CandidateRetrievalTrace | None = None
 
     @model_validator(mode="after")
     def validate_range(self) -> ClipCandidate:
