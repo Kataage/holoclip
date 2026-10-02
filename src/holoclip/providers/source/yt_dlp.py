@@ -24,6 +24,10 @@ _SOURCE_HINTS = (
     "配信元",
     "original",
     "source",
+    "taken from this stream",
+    "taken from this video",
+    "clip is taken from",
+    "clip taken from",
 )
 _URL_RE = re.compile(r"https?://[^\s<>()\[\]{}\"']+")
 
@@ -360,10 +364,10 @@ def choose_source_candidate(
         return None
     ordered = sorted(candidates, key=lambda item: item.score, reverse=True)
     best = ordered[0]
-    if len(ordered) == 1:
-        return best
     if best.score < minimum_score:
         return None
+    if len(ordered) == 1:
+        return best
     if best.score - ordered[1].score < minimum_margin:
         return None
     return best
@@ -448,8 +452,21 @@ class YtDlpSourceProvider:
         clip_video_id = _youtube_video_id(metadata.webpage_url or metadata.url)
         by_url: dict[str, SourceCandidate] = {}
 
-        for line in description.splitlines():
-            lowered = line.casefold()
+        lines = description.splitlines()
+        for index, line in enumerate(lines):
+            # Human clippers commonly write a source label, then the stream title,
+            # then the URL on separate lines. Judge the URL with nearby context
+            # instead of only the URL's own line.
+            context_start = max(0, index - 3)
+            # Do not let a source label attached to an earlier URL leak into a
+            # later unrelated link such as "related video". A URL closes the
+            # preceding context block.
+            for prior_index in range(context_start, index):
+                if _URL_RE.search(lines[prior_index]):
+                    context_start = prior_index + 1
+            context_lines = lines[context_start : index + 1]
+            context = "\n".join(part.strip() for part in context_lines if part.strip())
+            lowered = context.casefold()
             explicit = any(hint.casefold() in lowered for hint in _SOURCE_HINTS)
             for raw_url in _URL_RE.findall(line):
                 url = _trim_url(raw_url)
@@ -468,7 +485,7 @@ class YtDlpSourceProvider:
                 candidate = SourceCandidate(
                     url=url,
                     score=score,
-                    context=line.strip()[:500] or None,
+                    context=context[:500] or None,
                     reason=reason,
                 )
                 existing = by_url.get(url)

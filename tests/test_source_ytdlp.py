@@ -38,6 +38,48 @@ def test_source_candidates_prefer_explicit_original_link() -> None:
     assert yt_dlp.choose_source_candidate(candidates) == candidates[0]
 
 
+
+def test_source_candidates_use_adjacent_lines_for_source_context() -> None:
+    provider = yt_dlp.YtDlpSourceProvider(
+        executable="yt-dlp",
+        js_runtime="node",
+        manage_updates=False,
+    )
+    metadata = SourceMetadata(
+        provider="yt-dlp",
+        url="https://www.youtube.com/watch?v=tPmHMqtjLIw",
+        webpage_url="https://www.youtube.com/watch?v=tPmHMqtjLIw",
+        external_id="tPmHMqtjLIw",
+        title="Leon or Chris, Risu?",
+        description=(
+            "This clip is taken from this stream:\n"
+            "#MMMalas : Akhirnya Monday Malam Malaszszszs\n"
+            "https://www.youtube.com/watch?v=yqjeW_LSMOI\n\n"
+            "Ayunda Risu:\n"
+            "https://twitter.com/ayunda_risu"
+        ),
+    )
+
+    candidates = provider.source_candidates(metadata)
+
+    assert len(candidates) == 1
+    assert candidates[0].url == "https://www.youtube.com/watch?v=yqjeW_LSMOI"
+    assert candidates[0].score == pytest.approx(0.90)
+    assert candidates[0].reason == "description_explicit_source_label"
+    assert "This clip is taken from this stream" in (candidates[0].context or "")
+    assert yt_dlp.choose_source_candidate(candidates) == candidates[0]
+
+
+def test_single_low_score_youtube_link_is_not_auto_selected() -> None:
+    candidate = yt_dlp.SourceCandidate(
+        url="https://youtu.be/related",
+        score=0.45,
+        reason="description_youtube_link",
+    )
+
+    assert yt_dlp.choose_source_candidate([candidate]) is None
+
+
 def test_equal_explicit_source_candidates_are_not_auto_selected() -> None:
     candidates = [
         yt_dlp.SourceCandidate(
