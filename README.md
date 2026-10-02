@@ -268,3 +268,31 @@ rather than creating duplicate entities.
 Legacy feedback JSONL remains in active use for the current review/metrics workflow because old
 feedback records do not contain a trustworthy creation timestamp. Holoclip does not invent one
 during migration.
+
+
+## Structural retrieval from human-made clips
+
+After an aligned human clip has been enriched, Holoclip automatically refreshes the derived
+structural retrieval index. Positive examples are embedded from abstract editorial structure
+(setup, development, payoff, selection reason, traits, topics and relationship context) rather
+than clip title wording. Weak negatives are indexed separately.
+
+The current hosted embedding default is:
+
+~~~text
+nvidia/nemotron-3-embed-1b
+~~~
+
+Override it with `NVIDIA_NIM_EMBEDDING_MODEL` when needed.
+
+Manual rebuild/debug commands:
+
+~~~powershell
+uv run holoclip examples-index
+uv run holoclip examples-retrieve "unexpected confession with setup and payoff"
+~~~
+
+The index is derived state in `data/holoclip.db`; the HumanClipExample store remains the
+source material for rebuilding it. Re-indexing unchanged examples reuses their existing
+vectors, changed structures are re-embedded, and documents belonging to removed examples are
+removed from the active derived index.
