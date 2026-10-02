@@ -6,6 +6,15 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from holoclip.alignment import ALIGNMENT_METHOD, align_clip_to_source
+from holoclip.clip_policy import (
+    ClipPolicyEvaluation,
+    ClipPolicyRule,
+    PolicyDecision,
+    PolicyOperation,
+    combine_policy_evaluations,
+    evaluate_source_metadata,
+    evaluate_source_ranges,
+)
 from holoclip.config import GroqTranscriptionSettings
 from holoclip.examples import (
     HumanClipExample,
@@ -34,6 +43,20 @@ class SourceResolutionError(RuntimeError):
         if candidates:
             message += f" ({len(candidates)} candidate(s) found)"
         super().__init__(message)
+
+
+class ClipPolicyGateError(RuntimeError):
+    def __init__(
+        self,
+        evaluation: ClipPolicyEvaluation,
+        *,
+        stage: str,
+    ) -> None:
+        self.evaluation = evaluation
+        self.stage = stage
+        super().__init__(
+            f"clip policy {evaluation.decision.value} at {stage}"
+        )
 
 
 class HumanExampleIngestResult(BaseModel):
@@ -100,6 +123,8 @@ async def ingest_human_example_from_urls(
     stage_cache: StageArtifactCache,
     min_confidence: float = 0.55,
     weak_negative_window_seconds: float = 90.0,
+    policy_rules: list[ClipPolicyRule] | None = None,
+    allow_policy_review: bool = False,
     progress: Callable[[str], None] | None = None,
 ) -> HumanExampleIngestResult:
     clip_metadata = source_provider.probe(clip_url)
@@ -120,6 +145,20 @@ async def ingest_human_example_from_urls(
                 "auto-detected original source: "
                 f"{resolved_source_url} ({chosen.reason}, score={chosen.score:.2f})"
             )
+
+    source_metadata = source_provider.probe(resolved_source_url)
+    metadata_policy = evaluate_source_metadata(
+        source_metadata,
+        rules=policy_rules,
+        operation=PolicyOperation.LEARN,
+    )
+    if metadata_policy.decision is PolicyDecision.BLOCK:
+        raise ClipPolicyGateError(metadata_policy, stage="source_metadata")
+    if (
+        metadata_policy.decision is PolicyDecision.REVIEW
+        and not allow_policy_review
+    ):
+        raise ClipPolicyGateError(metadata_policy, stage="source_metadata")
 
     if progress is not None:
         progress("acquiring human-made clip audio")
@@ -168,6 +207,33 @@ async def ingest_human_example_from_urls(
             f"segments={len(alignment.segments)} "
             f"accepted={'yes' if accepted else 'no'}"
         )
+
+    range_policy = ClipPolicyEvaluation(
+        decision=PolicyDecision.ALLOW,
+    )
+    if accepted:
+        range_policy = evaluate_source_ranges(
+            original_source.metadata,
+            ranges=[
+                (segment.source_start, segment.source_end)
+                for segment in alignment.segments
+            ],
+            transcript=source_segments,
+            rules=policy_rules,
+            operation=PolicyOperation.LEARN,
+        )
+        if range_policy.decision is PolicyDecision.BLOCK:
+            raise ClipPolicyGateError(range_policy, stage="aligned_ranges")
+        if (
+            range_policy.decision is PolicyDecision.REVIEW
+            and not allow_policy_review
+        ):
+            raise ClipPolicyGateError(range_policy, stage="aligned_ranges")
+
+    combined_policy = combine_policy_evaluations(
+        metadata_policy,
+        range_policy,
+    )
 
     excerpt = " ".join(segment.text for segment in clip_segments)[:4000]
     example = HumanClipExample(
@@ -224,6 +290,12 @@ async def ingest_human_example_from_urls(
             "source_resolution_context": (
                 chosen_source.context if chosen_source is not None else None
             ),
+            "clip_policy_version": combined_policy.version,
+            "clip_policy_decision": combined_policy.decision.value,
+            "clip_policy_findings": [
+                finding.model_dump(mode="json")
+                for finding in combined_policy.findings
+            ],
         },
     )
     enriched = False
