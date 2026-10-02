@@ -5,6 +5,7 @@ import pytest
 from holoclip.alignment import (
     AlignmentAnchor,
     AlignmentSegment,
+    _best_alignment_path,
     _filter_spurious_segments,
     align_clip_to_source,
     normalize_match_text,
@@ -225,3 +226,68 @@ def test_filter_keeps_strong_or_multi_anchor_reordered_segment() -> None:
         strong,
         after,
     ]
+
+
+
+def test_best_path_prefers_forward_candidate_over_better_backward_singleton() -> None:
+    clip_a = segment(0, "first")
+    clip_b = segment(10, "middle")
+    clip_c = segment(20, "last")
+    matched = [
+        (clip_a, [(1000.0, "first", 0.80)]),
+        (
+            clip_b,
+            [
+                (100.0, "middle duplicate", 0.99),
+                (1100.0, "middle correct", 0.40),
+            ],
+        ),
+        (clip_c, [(1110.0, "last", 0.90)]),
+    ]
+
+    path = _best_alignment_path(
+        matched,
+        same_offset_tolerance_seconds=22.0,
+    )
+
+    assert [row[1] for row in path] == [1000.0, 1100.0, 1110.0]
+
+
+def test_filter_spurious_singleton_accepts_real_world_0628_regression() -> None:
+    def item(
+        clip_start: float,
+        source_start: float,
+        confidence: float,
+        anchors: int,
+        duration: float,
+    ) -> AlignmentSegment:
+        return AlignmentSegment(
+            clip_start=clip_start,
+            clip_end=clip_start + duration,
+            source_start=source_start,
+            source_end=source_start + duration,
+            confidence=confidence,
+            matched_anchors=anchors,
+            median_offset=source_start - clip_start,
+            anchors=[
+                AlignmentAnchor(
+                    clip_start=clip_start + index,
+                    source_start=source_start + index,
+                    similarity=confidence,
+                    clip_text="clip",
+                    source_text="source",
+                )
+                for index in range(anchors)
+            ],
+        )
+
+    segments = [
+        item(0, 1231, 0.726, 2, 123),
+        item(143, 215, 0.628, 1, 4),
+        item(186, 1421, 0.813, 9, 244),
+    ]
+
+    filtered = _filter_spurious_segments(segments)
+
+    assert len(filtered) == 2
+    assert [segment.source_start for segment in filtered] == [1231, 1421]
