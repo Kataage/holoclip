@@ -114,8 +114,8 @@ class CandidateDetector:
         *,
         top_k: int = 5,
     ) -> list[ClipCandidate]:
-        if len(candidates) <= top_k:
-            return sorted(candidates, key=lambda item: item.confidence, reverse=True)
+        if not candidates:
+            return []
 
         payload = await self.llm.chat_json(
             final_review_messages(candidates, top_k=top_k),
@@ -123,9 +123,9 @@ class CandidateDetector:
             temperature=0.1,
             max_tokens=3072,
         )
-        ranked = payload.get("ranked", [])
+        ranked = payload.get("ranked")
         if not isinstance(ranked, list):
-            ranked = []
+            return sorted(candidates, key=lambda item: item.confidence, reverse=True)[:top_k]
 
         selected: list[ClipCandidate] = []
         seen: set[int] = set()
@@ -153,10 +153,7 @@ class CandidateDetector:
             if len(selected) >= top_k:
                 break
 
-        if selected:
-            return selected
-
-        return sorted(candidates, key=lambda item: item.confidence, reverse=True)[:top_k]
+        return selected
 
     async def run(
         self,
