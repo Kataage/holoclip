@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import Any
 
 from holoclip.analysis.prompts import discovery_messages, final_review_messages
@@ -78,17 +79,28 @@ class CandidateDetector:
         *,
         fast_model: str,
         strong_model: str,
+        fast_reasoning_effort: str = "low",
+        strong_reasoning_effort: str = "high",
+        progress: Callable[[str], None] | None = None,
     ) -> None:
         self.llm = llm
         self.fast_model = fast_model
         self.strong_model = strong_model
+        self.fast_reasoning_effort = fast_reasoning_effort
+        self.strong_reasoning_effort = strong_reasoning_effort
+        self.progress = progress
+
+    def _emit(self, message: str) -> None:
+        if self.progress is not None:
+            self.progress(message)
 
     async def _discover_chunk(self, chunk: TranscriptChunk) -> list[ClipCandidate]:
         payload = await self.llm.chat_json(
             discovery_messages(chunk),
             model=self.fast_model,
             temperature=0.2,
-            max_tokens=4096,
+            max_tokens=2048,
+            reasoning_effort=self.fast_reasoning_effort,
         )
         raw = payload.get("candidates", [])
         if not isinstance(raw, list):
@@ -104,9 +116,31 @@ class CandidateDetector:
         return found
 
     async def discover_broad(self, chunks: list[TranscriptChunk]) -> list[ClipCandidate]:
-        batches = await asyncio.gather(*(self._discover_chunk(chunk) for chunk in chunks))
-        flattened = [candidate for batch in batches for candidate in batch]
-        return dedupe_candidates(flattened)
+        if not chunks:
+            return []
+
+        async def run_one(
+            chunk: TranscriptChunk,
+        ) -> tuple[TranscriptChunk, list[ClipCandidate]]:
+            return chunk, await self._discover_chunk(chunk)
+
+        tasks = [asyncio.create_task(run_one(chunk)) for chunk in chunks]
+        flattened: list[ClipCandidate] = []
+        completed = 0
+
+        for task in asyncio.as_completed(tasks):
+            chunk, batch = await task
+            completed += 1
+            flattened.extend(batch)
+            self._emit(
+                f"[{completed}/{len(chunks)}] broad "
+                f"{chunk.start / 60:.1f}-{chunk.end / 60:.1f} min: "
+                f"{len(batch)} candidates"
+            )
+
+        deduped = dedupe_candidates(flattened)
+        self._emit(f"Broad discovery: {len(flattened)} raw -> {len(deduped)} deduped")
+        return deduped
 
     async def final_select(
         self,
@@ -117,11 +151,15 @@ class CandidateDetector:
         if not candidates:
             return []
 
+        self._emit(
+            f"Final review: {len(candidates)} candidates with {self.strong_model}"
+        )
         payload = await self.llm.chat_json(
             final_review_messages(candidates, top_k=top_k),
             model=self.strong_model,
             temperature=0.1,
             max_tokens=3072,
+            reasoning_effort=self.strong_reasoning_effort,
         )
         ranked = payload.get("ranked")
         if not isinstance(ranked, list):
@@ -153,6 +191,7 @@ class CandidateDetector:
             if len(selected) >= top_k:
                 break
 
+        self._emit(f"Final review: selected {len(selected)} candidates")
         return selected
 
     async def run(

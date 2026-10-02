@@ -4,7 +4,7 @@ import asyncio
 import json
 import random
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, Self
 
 import httpx
@@ -20,6 +20,17 @@ class NvidiaNimAuthorizationError(RuntimeError):
         if detail:
             message += f": {detail}"
         super().__init__(message)
+
+
+class NvidiaNimTimeoutError(RuntimeError):
+    def __init__(self, model: str, timeout_seconds: float, attempts: int) -> None:
+        self.model = model
+        self.timeout_seconds = timeout_seconds
+        self.attempts = attempts
+        super().__init__(
+            f"NVIDIA NIM timed out for {model} after {attempts} attempts "
+            f"(read timeout {timeout_seconds:.0f}s)"
+        )
 
 
 class _RateGate:
@@ -62,6 +73,7 @@ class NvidiaNimClient:
         settings: NimSettings,
         *,
         client: httpx.AsyncClient | None = None,
+        event_callback: Callable[[str], None] | None = None,
     ) -> None:
         settings.validate()
         self.settings = settings
@@ -69,6 +81,11 @@ class NvidiaNimClient:
         self._rate_gate = _RateGate(settings.rpm)
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(timeout=settings.timeout_seconds)
+        self._event_callback = event_callback
+
+    def _emit(self, message: str) -> None:
+        if self._event_callback is not None:
+            self._event_callback(message)
 
     async def __aenter__(self) -> Self:
         return self
@@ -104,14 +121,18 @@ class NvidiaNimClient:
         model: str | None = None,
         temperature: float = 0.2,
         max_tokens: int = 4096,
+        reasoning_effort: str | None = None,
     ) -> str:
+        resolved_model = model or self.settings.model
         payload = {
-            "model": model or self.settings.model,
+            "model": resolved_model,
             "messages": list(messages),
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": False,
         }
+        if reasoning_effort is not None:
+            payload["reasoning_effort"] = reasoning_effort
 
         async with self._semaphore:
             for attempt in range(self.settings.max_retries + 1):
@@ -125,9 +146,27 @@ class NvidiaNimClient:
                         },
                         json=payload,
                     )
-                except (httpx.TimeoutException, httpx.NetworkError):
+                except httpx.TimeoutException as exc:
+                    timeout_retry_limit = min(self.settings.max_retries, 2)
+                    if attempt >= timeout_retry_limit:
+                        raise NvidiaNimTimeoutError(
+                            resolved_model,
+                            self.settings.timeout_seconds,
+                            attempt + 1,
+                        ) from exc
+                    self._emit(
+                        f"NVIDIA NIM timeout: {resolved_model} "
+                        f"(retry {attempt + 1}/{timeout_retry_limit})"
+                    )
+                    await asyncio.sleep(min(15.0, (2**attempt) + random.random()))
+                    continue
+                except httpx.NetworkError:
                     if attempt >= self.settings.max_retries:
                         raise
+                    self._emit(
+                        f"NVIDIA NIM network error: {resolved_model} "
+                        f"(retry {attempt + 1}/{self.settings.max_retries})"
+                    )
                     await asyncio.sleep(min(60.0, (2**attempt) + random.random()))
                     continue
 
@@ -151,6 +190,10 @@ class NvidiaNimClient:
 
                 retryable = response.status_code == 429 or 500 <= response.status_code < 600
                 if retryable:
+                    self._emit(
+                        f"NVIDIA NIM HTTP {response.status_code}: {resolved_model} "
+                        f"(retry {attempt + 1}/{self.settings.max_retries})"
+                    )
                     if attempt >= self.settings.max_retries:
                         response.raise_for_status()
                     retry_after = response.headers.get("Retry-After")
@@ -172,11 +215,13 @@ class NvidiaNimClient:
         model: str | None = None,
         temperature: float = 0.1,
         max_tokens: int = 4096,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         text = await self.chat(
             messages,
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
         )
         return _extract_json(text)
