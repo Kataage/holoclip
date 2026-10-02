@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 from pydantic import BaseModel, Field
 
+from holoclip.alignment import WEAK_SINGLETON_MAX_CONFIDENCE
 from holoclip.examples import HumanClipExample, WeakNegativeExample, load_human_clip_store
 from holoclip.models import TranscriptSegment
 from holoclip.retrieval import RetrievalDocument
@@ -191,7 +192,10 @@ def build_human_example_audit(
                 f"segment #{index} starts {abs(source_delta):.1f}s before "
                 "the previous aligned source range ended"
             )
-        if segment.matched_anchors == 1 and segment.confidence < 0.62:
+        if (
+            segment.matched_anchors == 1
+            and segment.confidence < WEAK_SINGLETON_MAX_CONFIDENCE
+        ):
             warnings.append(
                 "weak isolated alignment: "
                 f"segment #{index} has one anchor and confidence "
