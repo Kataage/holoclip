@@ -20,6 +20,8 @@ Optional rejection reasons:
 - misinterprets joke or tone
 - boundaries are wrong
 
+Feedback is append-only JSONL. If the same stream/candidate is labeled more than once, the latest label wins in metric calculation. This makes corrections cheap and auditable.
+
 ## Primary metrics
 
 ### Top-K acceptance
@@ -33,13 +35,41 @@ The v0.1 practical target is that Top-5 regularly contains at least two usable c
 
 ### Known-clip recall
 
-For streams with existing human-made clips, map known clip windows back to the source transcript and test whether the detector surfaces an overlapping candidate.
+For streams with existing human-made clips, map known clip windows back to the source transcript and test whether the detector surfaces a candidate covering at least half of the known clip window.
 
 This is useful but not sufficient: the system should also discover worthwhile ideas that were never clipped.
 
 ### Candidate burden
 
-Track how many candidates a human must inspect per accepted item. The final product goal is near-zero operator effort.
+Track how many labeled candidates a human must inspect per accepted item. The final product goal is near-zero operator effort.
+
+## Running an evaluation
+
+Save one analyzed stream as an evaluation run:
+
+    holoclip analyze transcript.json --stream-id stream-001 --save-run data/evaluation/runs/stream-001.json
+
+Each saved candidate gets a stable candidate ID. The easiest review flow is:
+
+    holoclip review data/evaluation/runs/stream-001.json
+
+It shows one candidate at a time. Press a/m/r for accept/maybe/reject, s to skip, or q to stop. Already-labeled candidates are skipped by default.
+
+Direct labeling is also available:
+
+    holoclip label stream-001 CANDIDATE_ID accept
+    holoclip label stream-001 OTHER_ID maybe --reason "boundaries need work"
+    holoclip label stream-001 THIRD_ID reject --reason "weak payoff"
+
+Calculate metrics:
+
+    holoclip metrics --runs-dir data/evaluation/runs
+
+If known human-made source windows are available:
+
+    holoclip metrics --runs-dir data/evaluation/runs --known-clips data/evaluation/known_clips.json
+
+The example file at data/evaluation/known_clips.example.json documents that format.
 
 ## Avoid misleading evaluation
 
