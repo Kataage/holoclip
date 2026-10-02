@@ -351,7 +351,7 @@ For normal source acquisition Holoclip uses uv/uvx as a managed tool runtime:
 
 - default channel: `nightly`
 - each new Holoclip source-ingest process refreshes yt-dlp package metadata
-- the latest resolved yt-dlp version is then pinned for the lifetime of that provider/job
+- the selected-channel yt-dlp requirement is then run from uv's offline warmed cache for the lifetime of that provider/job
 - if extraction fails, Holoclip performs one forced runtime refresh and retries once
 - the exact yt-dlp version, channel, and JavaScript runtime are stored in human-example acquisition provenance
 
@@ -375,3 +375,8 @@ For reliable current YouTube extraction, Holoclip also checks for a supported Ja
 Deno >= 2.3 is preferred by yt-dlp; Node >= 22 is also supported and is enabled explicitly by
 Holoclip when selected. The managed yt-dlp package uses the `default` extra so the EJS component
 is present.
+
+
+A nightly build's displayed `yt-dlp --version` string is recorded as provenance only. Holoclip
+does **not** feed that display string back into a `yt-dlp==...` package requirement, because
+nightly display identifiers are not guaranteed to be valid registry version specifiers.

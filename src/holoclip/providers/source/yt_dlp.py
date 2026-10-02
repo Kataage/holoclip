@@ -109,8 +109,9 @@ class ManagedYtDlpRuntime:
     """Resolve one fresh yt-dlp runtime per Holoclip process.
 
     Normal operation uses uv/uvx to refresh yt-dlp package metadata and resolve the latest
-    release once. Subsequent yt-dlp calls in the same provider instance are pinned to that
-    exact version so the runtime cannot change halfway through an ingest job.
+    selected-channel release once. Subsequent yt-dlp calls use uv's offline cache for the same
+    prerelease/stable requirement so the displayed nightly build identifier is never incorrectly
+    reused as a package version specifier.
     """
 
     def __init__(
@@ -161,20 +162,25 @@ class ManagedYtDlpRuntime:
         resolve = [*launcher, "--refresh-package", "yt-dlp"]
         if self.channel == "nightly":
             resolve.extend(["--prerelease", "allow"])
-        resolve.extend(["--from", "yt-dlp[default]@latest", "yt-dlp", "--version"])
+        resolve.extend(["--from", "yt-dlp[default]", "yt-dlp", "--version"])
 
         result = _run_process(resolve, label="yt-dlp runtime refresh")
         version = (result.stdout.strip() or result.stderr.strip()).splitlines()[-1].strip()
         if not version:
             raise YtDlpError("yt-dlp runtime refresh returned an empty version")
 
-        prefix = [*launcher]
+        # yt-dlp nightly's displayed build identifier is not guaranteed to be a
+        # valid package specifier that can be fed back into PyPI/uv as
+        # "yt-dlp==<displayed version>". Warm uv's cache once with network
+        # access, then keep all commands in this provider on the cached
+        # prerelease resolution for the rest of the job.
+        prefix = [*launcher, "--offline"]
         if self.channel == "nightly":
             prefix.extend(["--prerelease", "allow"])
         prefix.extend(
             [
                 "--from",
-                f"yt-dlp[default]=={version}",
+                "yt-dlp[default]",
                 "yt-dlp",
             ]
         )
