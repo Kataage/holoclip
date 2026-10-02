@@ -353,8 +353,15 @@ def examples_align(
     typer.echo(
         f"alignment: {_clock(alignment.source_start)} - {_clock(alignment.source_end)} "
         f"confidence={alignment.confidence:.3f} "
-        f"anchors={alignment.matched_anchors}/{alignment.total_anchors}"
+        f"anchors={alignment.matched_anchors}/{alignment.total_anchors} "
+        f"segments={len(alignment.segments)}"
     )
+    for index, segment in enumerate(alignment.segments, start=1):
+        typer.echo(
+            f"  segment {index}: clip {_clock(segment.clip_start)}-{_clock(segment.clip_end)} "
+            f"-> source {_clock(segment.source_start)}-{_clock(segment.source_end)} "
+            f"confidence={segment.confidence:.3f} anchors={segment.matched_anchors}"
+        )
 
     for anchor in alignment.anchors[:5]:
         typer.echo(
@@ -399,8 +406,23 @@ def examples_align(
             "source_start": alignment.source_start if accepted else None,
             "source_end": alignment.source_end if accepted else None,
             "alignment_confidence": alignment.confidence,
-            "alignment_method": "transcript-anchor-v1",
+            "alignment_method": "transcript-anchor-v2",
             "alignment_matched_anchors": alignment.matched_anchors,
+            "alignment_segments": (
+                [
+                    {
+                        "clip_start": segment.clip_start,
+                        "clip_end": segment.clip_end,
+                        "source_start": segment.source_start,
+                        "source_end": segment.source_end,
+                        "confidence": segment.confidence,
+                        "matched_anchors": segment.matched_anchors,
+                    }
+                    for segment in alignment.segments
+                ]
+                if accepted
+                else []
+            ),
             "clip_transcript_path": str(clip_transcript_path),
             "source_transcript_path": str(source_transcript),
             "transcript_excerpt": excerpt,
