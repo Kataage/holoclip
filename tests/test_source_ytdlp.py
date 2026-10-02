@@ -159,10 +159,12 @@ def test_managed_runtime_refreshes_latest_nightly_once(monkeypatch) -> None:
     assert info.managed_by == "uvx"
     assert len(calls) == 1
     assert "--refresh-package" in calls[0]
-    assert "yt-dlp[default]@latest" in calls[0]
+    assert "yt-dlp[default]" in calls[0]
     assert "--prerelease" in calls[0]
     assert "allow" in calls[0]
-    assert "yt-dlp[default]==2026.10.02.010203" in command
+    assert "--offline" in command
+    assert "yt-dlp[default]" in command
+    assert all("==" not in item for item in command)
     assert command[-3:] == ["--js-runtimes", "node", "--version"]
 
 
