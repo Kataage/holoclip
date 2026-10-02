@@ -236,7 +236,11 @@ class YtDlpSourceProvider:
         profile: AcquisitionProfile = AcquisitionProfile.TRAINING_AUDIO,
     ) -> AcquiredSource:
         metadata = self.probe(url)
-        directory = output_root / _safe_component(metadata.external_id)
+        directory = (
+            output_root
+            / _safe_component(metadata.external_id)
+            / profile.value
+        )
         directory.mkdir(parents=True, exist_ok=True)
         info_path = directory / "media.info.json"
 
