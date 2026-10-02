@@ -168,8 +168,9 @@ def align_clip_to_source(
 
     clip_start = clip[0].start
     clip_end = clip[-1].end
-    source_start = max(0.0, clip_start + median_offset)
-    source_end = max(source_start + 0.001, clip_end + median_offset)
+    source_start = max(0.0, min(source[-1].end - 0.001, clip_start + median_offset))
+    source_end = min(source[-1].end, clip_end + median_offset)
+    source_end = max(source_start + 0.001, source_end)
 
     average_similarity = statistics.fmean(row[3] for row in selected)
     coverage = min(1.0, len(selected) / max(3, min(len(anchors), 8)))
