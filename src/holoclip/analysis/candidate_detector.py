@@ -261,14 +261,13 @@ class CandidateDetector:
                 )
                 for hit in bundle.negatives
             ]
-            candidate.retrieval_trace = CandidateRetrievalTrace(
-                embedding_model=bundle.embedding_model,
-                embedding_version=bundle.embedding_version,
-                positives=positive_hits,
-                weak_negatives=negative_hits,
-            )
-
             if positive_hits or negative_hits:
+                candidate.retrieval_trace = CandidateRetrievalTrace(
+                    embedding_model=bundle.embedding_model,
+                    embedding_version=bundle.embedding_version,
+                    positives=positive_hits,
+                    weak_negatives=negative_hits,
+                )
                 attached += 1
 
             evidence.append(
