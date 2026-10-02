@@ -242,3 +242,29 @@ for backward compatibility.
 During enrichment, source gaps between selected segments are preserved as
 `removed_between_selected_segments` weak negatives. This lets later retrieval learn not only
 what human editors selected, but also what they deliberately skipped between retained moments.
+
+
+## Migrate existing local data to the canonical store
+
+The current JSON/JSONL evaluation and human-example files remain valid during the migration
+period. Import them into the canonical SQLite store without deleting or rewriting the originals:
+
+~~~powershell
+uv run holoclip migrate-legacy
+~~~
+
+Defaults:
+
+~~~text
+evaluation runs: data/evaluation/runs/
+human examples: data/examples/human_clips.jsonl
+canonical DB:   data/holoclip.db
+~~~
+
+Use `--strict` when migration diagnostics should fail the command on ambiguous or malformed
+legacy rows. Migration is idempotent: rerunning the same import updates the same canonical IDs
+rather than creating duplicate entities.
+
+Legacy feedback JSONL remains in active use for the current review/metrics workflow because old
+feedback records do not contain a trustworthy creation timestamp. Holoclip does not invent one
+during migration.

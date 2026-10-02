@@ -33,6 +33,7 @@ from holoclip.evaluation import (
 )
 from holoclip.learning import enrich_human_clip_example
 from holoclip.media import play_media_segment
+from holoclip.migration import migrate_legacy_data, report_as_json
 from holoclip.models import ReviewDecision
 from holoclip.providers.llm.nvidia_nim import (
     NvidiaNimAuthorizationError,
@@ -576,6 +577,43 @@ def examples_stats(
     """Summarize the current human-made clip weak-supervision store."""
     stats = compute_human_clip_stats(load_human_clip_store(store))
     typer.echo(json.dumps(stats.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+
+@app.command()
+def migrate_legacy(
+    runs_dir: Path = typer.Option(
+        Path("data/evaluation/runs"),
+        "--runs-dir",
+    ),
+    examples_store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--examples-store",
+    ),
+    database: Path = typer.Option(
+        Path("data/holoclip.db"),
+        "--database",
+    ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Exit non-zero when migration diagnostics include errors.",
+    ),
+) -> None:
+    """Import existing evaluation/example data into the canonical SQLite store."""
+    with SQLiteCanonicalRepository(database) as repository:
+        report = migrate_legacy_data(
+            repository,
+            runs_dir=runs_dir,
+            examples_store=examples_store,
+        )
+
+    typer.echo(report_as_json(report))
+    typer.echo(
+        "legacy JSON/JSONL files were left unchanged; current review/metrics "
+        "commands continue to use them during the migration period"
+    )
+    if strict and report.errors:
+        raise typer.Exit(2)
 
 
 @app.command()
