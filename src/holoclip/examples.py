@@ -16,6 +16,23 @@ class ClipPerformance(BaseModel):
     normalized_score: float | None = None
 
 
+class AlignmentSegmentExample(BaseModel):
+    clip_start: float = Field(ge=0)
+    clip_end: float = Field(gt=0)
+    source_start: float = Field(ge=0)
+    source_end: float = Field(gt=0)
+    confidence: float = Field(ge=0, le=1)
+    matched_anchors: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_ranges(self) -> AlignmentSegmentExample:
+        if self.clip_end <= self.clip_start:
+            raise ValueError("clip_end must be greater than clip_start")
+        if self.source_end <= self.source_start:
+            raise ValueError("source_end must be greater than source_start")
+        return self
+
+
 class WeakNegativeExample(BaseModel):
     start: float = Field(ge=0)
     end: float = Field(gt=0)
@@ -44,6 +61,7 @@ class HumanClipExample(BaseModel):
     alignment_confidence: float | None = Field(default=None, ge=0, le=1)
     alignment_method: str | None = None
     alignment_matched_anchors: int | None = Field(default=None, ge=0)
+    alignment_segments: list[AlignmentSegmentExample] = Field(default_factory=list)
 
     clip_transcript_path: str | None = None
     source_transcript_path: str | None = None
