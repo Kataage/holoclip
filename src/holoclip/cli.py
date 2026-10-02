@@ -546,6 +546,11 @@ def examples_ingest_url(
         raise typer.Exit(2) from exc
     except NvidiaNimTimeoutError as exc:
         typer.echo(f"NVIDIA NIM timeout: {exc}", err=True)
+        typer.echo(
+            "Rerun the same command. Media/transcripts are reusable, and a failed "
+            "enrichment attempt will not overwrite the last good human example.",
+            err=True,
+        )
         raise typer.Exit(3) from exc
     except NvidiaEmbeddingAuthorizationError as exc:
         typer.echo(f"NVIDIA embedding authorization error: {exc}", err=True)
