@@ -19,6 +19,10 @@ from holoclip.examples import (
     upsert_human_clip_examples,
 )
 from holoclip.execution import StageArtifactCache
+from holoclip.example_ingest import (
+    SourceResolutionError,
+    ingest_human_example_from_urls,
+)
 from holoclip.evaluation import (
     FeedbackRecord,
     append_feedback,
@@ -40,6 +44,7 @@ from holoclip.providers.embedding.nvidia_nim import (
     NvidiaEmbeddingRateLimitDeferred,
     NvidiaNimEmbeddingClient,
 )
+from holoclip.providers.source.yt_dlp import YtDlpError, YtDlpSourceProvider
 from holoclip.providers.llm.nvidia_nim import (
     NvidiaNimAuthorizationError,
     NvidiaNimClient,
@@ -400,6 +405,147 @@ def _refresh_example_index(
         f"{stats.reused_documents} reused, "
         f"{stats.removed_documents} removed"
     )
+
+
+@app.command()
+def examples_ingest_url(
+    clip_url: str = typer.Argument(...),
+    source_url: str | None = typer.Option(
+        None,
+        "--source-url",
+        help=(
+            "Original source stream URL. When omitted, Holoclip tries to resolve "
+            "one unambiguous source link from the clip description."
+        ),
+    ),
+    store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--store",
+    ),
+    download_root: Path = typer.Option(
+        Path("data/sources/examples"),
+        "--download-root",
+    ),
+    transcript_root: Path = typer.Option(
+        Path("data/transcripts"),
+        "--transcript-root",
+    ),
+    database: Path = typer.Option(
+        Path("data/holoclip.db"),
+        "--database",
+    ),
+    min_confidence: float = typer.Option(
+        0.55,
+        "--min-confidence",
+        min=0.0,
+        max=1.0,
+    ),
+    weak_negative_window: float = typer.Option(
+        90.0,
+        "--weak-negative-window",
+        min=30.0,
+        max=300.0,
+    ),
+) -> None:
+    """Download, align, enrich and index one human-made clip from URLs."""
+    _load_env_file()
+
+    groq_settings = GroqTranscriptionSettings.from_env()
+    nim_settings = NimSettings.from_env()
+    embedding_settings = NimEmbeddingSettings.from_env()
+
+    try:
+        source_provider = YtDlpSourceProvider()
+    except RuntimeError as exc:
+        typer.echo(f"source provider error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+    async def _run():
+        with SQLiteCanonicalRepository(database) as repository:
+            stage_cache = StageArtifactCache(
+                repository,
+                Path("data/artifacts/stages"),
+            )
+            async with (
+                NvidiaNimClient(
+                    nim_settings,
+                    event_callback=typer.echo,
+                ) as llm,
+                NvidiaNimEmbeddingClient(embedding_settings) as embedding,
+            ):
+                return await ingest_human_example_from_urls(
+                    source_provider,
+                    clip_url=clip_url,
+                    source_url=source_url,
+                    download_root=download_root,
+                    transcript_root=transcript_root,
+                    examples_store=store,
+                    groq_settings=groq_settings,
+                    llm=llm,
+                    llm_model=nim_settings.model,
+                    llm_reasoning_effort=nim_settings.strong_reasoning_effort,
+                    embedding_provider=embedding,
+                    repository=repository,
+                    stage_cache=stage_cache,
+                    min_confidence=min_confidence,
+                    weak_negative_window_seconds=weak_negative_window,
+                    progress=typer.echo,
+                )
+
+    try:
+        result = asyncio.run(_run())
+    except SourceResolutionError as exc:
+        typer.echo(
+            "元配信を一意に決められませんでした。"
+            "候補を確認して --source-url を指定してください。",
+            err=True,
+        )
+        if not exc.candidates:
+            typer.echo("(概要欄から元配信候補を検出できませんでした)", err=True)
+        for index, candidate in enumerate(exc.candidates, start=1):
+            typer.echo(
+                f"  {index}. score={candidate.score:.2f} "
+                f"{candidate.url} [{candidate.reason}]",
+                err=True,
+            )
+            if candidate.context:
+                typer.echo(f"     {candidate.context}", err=True)
+        raise typer.Exit(4) from exc
+    except YtDlpError as exc:
+        typer.echo(f"yt-dlp error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except NvidiaNimAuthorizationError as exc:
+        typer.echo(f"NVIDIA NIM error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except NvidiaNimTimeoutError as exc:
+        typer.echo(f"NVIDIA NIM timeout: {exc}", err=True)
+        raise typer.Exit(3) from exc
+    except NvidiaEmbeddingAuthorizationError as exc:
+        typer.echo(f"NVIDIA embedding authorization error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except NvidiaEmbeddingRateLimitDeferred as exc:
+        typer.echo(f"NVIDIA embedding quota/rate limit: {exc}", err=True)
+        raise typer.Exit(3) from exc
+
+    typer.echo("")
+    typer.echo("human clip ingestion complete")
+    typer.echo(f"example_id: {result.example_id}")
+    typer.echo(f"clip: {result.clip_url}")
+    typer.echo(f"source: {result.source_url}")
+    typer.echo(
+        "source resolution: "
+        + ("auto" if result.source_auto_detected else "explicit")
+    )
+    typer.echo(
+        f"alignment: confidence={result.alignment_confidence:.3f} "
+        f"segments={result.alignment_segments} "
+        f"accepted={'yes' if result.aligned else 'no'}"
+    )
+    typer.echo(f"enriched: {'yes' if result.enriched else 'no'}")
+    typer.echo(f"clip media: {result.clip_media_path}")
+    typer.echo(f"source media: {result.source_media_path}")
+    typer.echo(f"clip transcript: {result.clip_transcript_path}")
+    typer.echo(f"source transcript: {result.source_transcript_path}")
 
 
 @app.command()
