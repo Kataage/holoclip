@@ -23,7 +23,9 @@ class NimSettings:
     max_concurrency: int = 2
     rpm: int = 20
     max_retries: int = 6
-    timeout_seconds: float = 180.0
+    timeout_seconds: float = 300.0
+    fast_reasoning_effort: str = "low"
+    strong_reasoning_effort: str = "high"
 
     @classmethod
     def from_env(cls) -> NimSettings:
@@ -37,7 +39,9 @@ class NimSettings:
             max_concurrency=_env_int("NVIDIA_NIM_MAX_CONCURRENCY", 2),
             rpm=_env_int("NVIDIA_NIM_RPM", 20),
             max_retries=_env_int("NVIDIA_NIM_MAX_RETRIES", 6),
-            timeout_seconds=_env_float("NVIDIA_NIM_TIMEOUT_SECONDS", 180.0),
+            timeout_seconds=_env_float("NVIDIA_NIM_TIMEOUT_SECONDS", 300.0),
+            fast_reasoning_effort=os.getenv("NVIDIA_NIM_FAST_REASONING_EFFORT", "low"),
+            strong_reasoning_effort=os.getenv("NVIDIA_NIM_STRONG_REASONING_EFFORT", "high"),
         )
 
     def validate(self) -> None:
@@ -47,6 +51,11 @@ class NimSettings:
             raise ValueError("NVIDIA_NIM_MAX_CONCURRENCY must be >= 1")
         if self.rpm < 1:
             raise ValueError("NVIDIA_NIM_RPM must be >= 1")
+        allowed_reasoning = {"low", "high", "max"}
+        if self.fast_reasoning_effort not in allowed_reasoning:
+            raise ValueError("NVIDIA_NIM_FAST_REASONING_EFFORT must be low, high, or max")
+        if self.strong_reasoning_effort not in allowed_reasoning:
+            raise ValueError("NVIDIA_NIM_STRONG_REASONING_EFFORT must be low, high, or max")
 
 
 @dataclass(frozen=True, slots=True)
