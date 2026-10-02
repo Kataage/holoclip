@@ -200,11 +200,11 @@ def discover(
 
 @app.command()
 def doctor() -> None:
-    """Check NVIDIA NIM account/model access without processing media."""
+    """Check NVIDIA NIM model listing and per-model inference access."""
     _load_env_file()
     settings = NimSettings.from_env()
 
-    async def _run() -> tuple[int, bool]:
+    async def _run() -> tuple[int, set[str], list[tuple[str, str, str | None]]]:
         async with NvidiaNimClient(settings) as client:
             models = await client.list_models()
             data = models.get("data", [])
@@ -213,31 +213,53 @@ def doctor() -> None:
                 for item in data
                 if isinstance(item, dict) and item.get("id")
             }
-            configured_present = (
-                settings.model in model_ids and settings.fast_model in model_ids
-            )
-            await client.chat(
-                [{"role": "user", "content": "Reply with OK only."}],
-                model=settings.fast_model,
-                temperature=0.0,
-                max_tokens=8,
-            )
-            return len(model_ids), configured_present
+
+            checks: list[tuple[str, str, str | None]] = []
+            for label, model in (
+                ("strong", settings.model),
+                ("fast", settings.fast_model),
+            ):
+                try:
+                    await client.chat(
+                        [{"role": "user", "content": "Reply with OK only."}],
+                        model=model,
+                        temperature=0.0,
+                        max_tokens=8,
+                    )
+                except NvidiaNimAuthorizationError as exc:
+                    checks.append((label, model, str(exc)))
+                else:
+                    checks.append((label, model, None))
+
+            return len(model_ids), model_ids, checks
 
     try:
-        model_count, configured_present = asyncio.run(_run())
+        model_count, model_ids, checks = asyncio.run(_run())
     except NvidiaNimAuthorizationError as exc:
-        typer.echo(f"NVIDIA NIM inference: FAIL ({exc})")
+        typer.echo(f"NVIDIA NIM models: FAIL ({exc})")
         typer.echo(
-            "If GET /v1/models works but chat inference returns 403, the account may be "
-            "missing NVIDIA Build Public API Endpoints access."
+            "The request failed before per-model inference checks. "
+            "Verify that holoclip is loading the same NVIDIA_API_KEY as the working client."
         )
         raise typer.Exit(2) from exc
 
     typer.echo(f"NVIDIA NIM models: OK ({model_count} listed)")
-    typer.echo(
-        "Configured GLM models: " + ("FOUND" if configured_present else "NOT FOUND")
-    )
+    failed = False
+    for label, model, error in checks:
+        listed = "listed" if model in model_ids else "not listed"
+        if error is None:
+            typer.echo(f"{label} model {model}: OK ({listed})")
+        else:
+            failed = True
+            typer.echo(f"{label} model {model}: FAIL ({listed}) - {error}")
+
+    if failed:
+        typer.echo(
+            "If one configured model works and the other fails, use the working model for both "
+            "NVIDIA_NIM_MODEL and NVIDIA_NIM_FAST_MODEL until the endpoint issue is resolved."
+        )
+        raise typer.Exit(2)
+
     typer.echo("NVIDIA NIM inference: OK")
 
 
