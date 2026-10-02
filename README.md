@@ -222,3 +222,23 @@ uninteresting.
 
 The enrichment records the model and extraction method so later retrieval decisions remain
 auditable.
+
+
+## Multi-cut alignment
+
+Human-made clips often remove long stretches from the original source or join several source
+moments into one clip. Alignment v2 therefore stores an explicit edit map instead of assuming
+one continuous source range:
+
+~~~text
+clip 00:00-00:30 -> source 10:00-10:30
+clip 00:30-01:00 -> source 20:00-20:30
+~~~
+
+`examples-align` prints every detected segment and, when saved, writes them to
+`alignment_segments`. The legacy `source_start/source_end` fields remain as a bounding range
+for backward compatibility.
+
+During enrichment, source gaps between selected segments are preserved as
+`removed_between_selected_segments` weak negatives. This lets later retrieval learn not only
+what human editors selected, but also what they deliberately skipped between retained moments.

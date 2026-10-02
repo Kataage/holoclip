@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from holoclip.examples import (
+    AlignmentSegmentExample,
     HumanClipExample,
     compute_human_clip_stats,
     load_human_clip_manifest,
@@ -74,3 +75,38 @@ def test_store_upserts_and_reports_stats(tmp_path: Path) -> None:
     assert stats.with_story_structure == 1
     assert stats.unique_streams == 1
     assert stats.unique_members == 1
+
+
+def test_alignment_segments_round_trip_in_store(tmp_path: Path) -> None:
+    store = tmp_path / "human_clips.jsonl"
+    item = HumanClipExample(
+        id="multi",
+        clip_url="https://example.invalid/multi",
+        clip_title="multi",
+        source_start=100,
+        source_end=220,
+        alignment_segments=[
+            AlignmentSegmentExample(
+                clip_start=0,
+                clip_end=30,
+                source_start=100,
+                source_end=130,
+                confidence=0.9,
+                matched_anchors=4,
+            ),
+            AlignmentSegmentExample(
+                clip_start=30,
+                clip_end=60,
+                source_start=190,
+                source_end=220,
+                confidence=0.88,
+                matched_anchors=3,
+            ),
+        ],
+    )
+
+    upsert_human_clip_examples(store, [item])
+    loaded = load_human_clip_store(store)[0]
+
+    assert len(loaded.alignment_segments) == 2
+    assert loaded.alignment_segments[1].source_start == 190

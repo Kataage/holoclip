@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from holoclip.examples import HumanClipExample
+from holoclip.examples import AlignmentSegmentExample, HumanClipExample
 from holoclip.learning import build_adjacent_weak_negatives, enrich_human_clip_example
 from holoclip.models import TranscriptSegment
 
@@ -112,3 +112,56 @@ async def test_enrich_human_clip_example_sets_structure_and_negatives() -> None:
     assert enriched.structure_method == "glm-structure-v1"
     assert enriched.structure_model == "strong-model"
     assert len(enriched.weak_negatives) == 2
+
+
+def test_multicut_gap_becomes_weak_negative() -> None:
+    source = [
+        seg(80, 90, "切り抜き前の話"),
+        seg(100, 120, "採用区間その1"),
+        seg(140, 160, "人間が削った中間部分"),
+        seg(180, 200, "採用区間その2"),
+        seg(220, 240, "切り抜き後の話"),
+    ]
+    item = HumanClipExample(
+        id="multicut",
+        clip_url="https://example.invalid/multicut",
+        clip_title="複数カット",
+        source_start=100,
+        source_end=200,
+        alignment_segments=[
+            AlignmentSegmentExample(
+                clip_start=0,
+                clip_end=20,
+                source_start=100,
+                source_end=120,
+                confidence=0.95,
+                matched_anchors=3,
+            ),
+            AlignmentSegmentExample(
+                clip_start=20,
+                clip_end=40,
+                source_start=180,
+                source_end=200,
+                confidence=0.95,
+                matched_anchors=3,
+            ),
+        ],
+    )
+
+    negatives = build_adjacent_weak_negatives(
+        item,
+        source,
+        window_seconds=60,
+        gap_seconds=10,
+    )
+
+    reasons = {negative.reason for negative in negatives}
+    assert "removed_between_selected_segments" in reasons
+    middle = next(
+        negative
+        for negative in negatives
+        if negative.reason == "removed_between_selected_segments"
+    )
+    assert middle.start == pytest.approx(130)
+    assert middle.end == pytest.approx(170)
+    assert "人間が削った中間部分" in middle.transcript_excerpt
