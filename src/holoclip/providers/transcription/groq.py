@@ -122,13 +122,13 @@ class GroqWhisperTranscriber:
                         f"{self.settings.base_url}/audio/transcriptions",
                         headers={"Authorization": f"Bearer {self.settings.api_key}"},
                         files={"file": (path.name, handle, "audio/mpeg")},
-                        data=[
-                            ("model", self.settings.model),
-                            ("language", self.settings.language),
-                            ("response_format", "verbose_json"),
-                            ("temperature", "0"),
-                            ("timestamp_granularities[]", "segment"),
-                        ],
+                        data={
+                            "model": self.settings.model,
+                            "language": self.settings.language,
+                            "response_format": "verbose_json",
+                            "temperature": "0",
+                            "timestamp_granularities[]": "segment",
+                        },
                     )
             except (httpx.TimeoutException, httpx.NetworkError):
                 if attempt >= self.settings.max_retries:
