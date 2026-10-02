@@ -6,7 +6,9 @@ from typing import Any
 import pytest
 
 from holoclip.config import GroqTranscriptionSettings
+from holoclip.clip_policy import ClipPolicyRule, PolicyDecision
 from holoclip.example_ingest import (
+    ClipPolicyGateError,
     SourceResolutionError,
     ingest_human_example_from_urls,
 )
@@ -25,9 +27,17 @@ from holoclip import example_ingest
 
 
 class FakeSourceProvider:
-    def __init__(self, tmp_path: Path, *, ambiguous: bool = False) -> None:
+    def __init__(
+        self,
+        tmp_path: Path,
+        *,
+        ambiguous: bool = False,
+        prohibited_source: bool = False,
+    ) -> None:
         self.tmp_path = tmp_path
         self.ambiguous = ambiguous
+        self.prohibited_source = prohibited_source
+        self.acquire_calls = 0
 
     def probe(self, url: str) -> SourceMetadata:
         if "clip" in url:
@@ -48,7 +58,11 @@ class FakeSourceProvider:
             url=url,
             webpage_url="https://www.youtube.com/watch?v=source",
             external_id="source",
-            title="元配信",
+            title=(
+                "〖切り抜き禁止〗元配信"
+                if self.prohibited_source
+                else "元配信"
+            ),
             channel="公式ch",
             provider_version="2026.10.02",
             provider_channel="nightly",
@@ -80,6 +94,7 @@ class FakeSourceProvider:
         *,
         profile: AcquisitionProfile = AcquisitionProfile.TRAINING_AUDIO,
     ) -> AcquiredSource:
+        self.acquire_calls += 1
         metadata = self.probe(url)
         path = output_root / metadata.external_id / "media.webm"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -318,3 +333,82 @@ async def test_failed_reingest_preserves_last_good_enriched_example(
     assert loaded[0].setup == "existing setup"
     assert loaded[0].why_selected == "existing reason"
     assert loaded[0].alignment_method == "older-good"
+
+
+
+@pytest.mark.asyncio
+async def test_source_level_no_clip_instruction_blocks_before_acquisition(
+    tmp_path: Path,
+) -> None:
+    provider = FakeSourceProvider(tmp_path, prohibited_source=True)
+    database = tmp_path / "holoclip.db"
+
+    with SQLiteCanonicalRepository(database) as repository:
+        cache = StageArtifactCache(repository, tmp_path / "artifacts")
+        with pytest.raises(ClipPolicyGateError) as caught:
+            await ingest_human_example_from_urls(
+                provider,
+                clip_url="https://www.youtube.com/watch?v=clip",
+                source_url=None,
+                download_root=tmp_path / "sources",
+                transcript_root=tmp_path / "transcripts",
+                examples_store=tmp_path / "human_clips.jsonl",
+                groq_settings=GroqTranscriptionSettings(api_key="test"),
+                llm=FakeLLM(),
+                llm_model="strong",
+                llm_reasoning_effort="high",
+                embedding_provider=FakeEmbeddingProvider(),
+                repository=repository,
+                stage_cache=cache,
+            )
+
+    assert caught.value.stage == "source_metadata"
+    assert caught.value.evaluation.decision is PolicyDecision.BLOCK
+    assert provider.acquire_calls == 0
+    assert not (tmp_path / "human_clips.jsonl").exists()
+
+
+@pytest.mark.asyncio
+async def test_range_policy_blocks_aligned_human_example_before_enrichment(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    async def fake_transcribe(media_path, settings, *, stage_cache=None, progress=None):
+        return clip_transcript() if "clip" in str(media_path) else source_transcript()
+
+    monkeypatch.setattr(example_ingest, "transcribe_media", fake_transcribe)
+
+    rule = ClipPolicyRule(
+        id="source-sensitive-range",
+        decision=PolicyDecision.BLOCK,
+        reason="talent explicitly requested this section not be clipped",
+        source_id="source",
+        start=115,
+        end=140,
+        evidence_url="https://example.invalid/source-request",
+    )
+    database = tmp_path / "holoclip.db"
+
+    with SQLiteCanonicalRepository(database) as repository:
+        cache = StageArtifactCache(repository, tmp_path / "artifacts")
+        with pytest.raises(ClipPolicyGateError) as caught:
+            await ingest_human_example_from_urls(
+                FakeSourceProvider(tmp_path),
+                clip_url="https://www.youtube.com/watch?v=clip",
+                source_url=None,
+                download_root=tmp_path / "sources",
+                transcript_root=tmp_path / "transcripts",
+                examples_store=tmp_path / "human_clips.jsonl",
+                groq_settings=GroqTranscriptionSettings(api_key="test", rpm=60000),
+                llm=FailingLLM(),
+                llm_model="strong",
+                llm_reasoning_effort="high",
+                embedding_provider=FakeEmbeddingProvider(),
+                repository=repository,
+                stage_cache=cache,
+                policy_rules=[rule],
+            )
+
+    assert caught.value.stage == "aligned_ranges"
+    assert caught.value.evaluation.decision is PolicyDecision.BLOCK
+    assert not (tmp_path / "human_clips.jsonl").exists()
