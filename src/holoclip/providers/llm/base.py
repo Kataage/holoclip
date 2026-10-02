@@ -12,6 +12,7 @@ class LLMProvider(Protocol):
         model: str | None = None,
         temperature: float = 0.2,
         max_tokens: int = 4096,
+        reasoning_effort: str | None = None,
     ) -> str: ...
 
     async def chat_json(
@@ -21,4 +22,5 @@ class LLMProvider(Protocol):
         model: str | None = None,
         temperature: float = 0.1,
         max_tokens: int = 4096,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]: ...
