@@ -6,6 +6,7 @@ import pytest
 
 from holoclip.alignment import ALIGNMENT_METHOD
 from holoclip.examples import (
+    WEAK_NEGATIVE_METHOD,
     AlignmentSegmentExample,
     HumanClipExample,
     WeakNegativeExample,
@@ -83,6 +84,7 @@ def enriched_example(
         topics=["新人時代"],
         members=["member-a"],
         context_requirement="low",
+        weak_negative_method=WEAK_NEGATIVE_METHOD,
         weak_negatives=[
             WeakNegativeExample(
                 start=10,
@@ -193,6 +195,7 @@ async def test_retrieval_returns_positive_and_negative_separately(
         payoff="強がりとの落差で笑いになる",
         why_selected="confidenceからfailureへの反転が明確",
         traits=["failure_after_confidence"],
+        weak_negative_method=WEAK_NEGATIVE_METHOD,
         weak_negatives=[
             WeakNegativeExample(
                 start=1,
