@@ -4,7 +4,11 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
-from holoclip.analysis.prompts import discovery_messages, final_review_messages
+from holoclip.analysis.prompts import (
+    discovery_messages,
+    final_review_messages,
+    guided_discovery_messages,
+)
 from holoclip.execution import StageArtifactCache, StageStatus, make_input_fingerprint
 from holoclip.models import (
     CandidateRetrievalHit,
@@ -16,6 +20,7 @@ from holoclip.models import (
 from holoclip.providers.embedding.base import EmbeddingProvider, EmbeddingProviderError
 from holoclip.providers.llm.base import LLMProvider
 from holoclip.retrieval import (
+    RetrievalBundle,
     clip_candidate_query_text,
     retrieve_structural_examples_many,
 )
@@ -55,6 +60,73 @@ def _candidate_from_item(item: dict[str, Any], chunk: TranscriptChunk) -> ClipCa
         )
     except (TypeError, ValueError):
         return None
+
+
+def _bundle_evidence(bundle: RetrievalBundle) -> dict[str, object]:
+    return {
+        "positive_examples": [
+            {
+                "example_id": hit.example_id,
+                "document_id": hit.document_id,
+                "similarity": round(hit.score, 4),
+                "structure": hit.text[:240],
+            }
+            for hit in bundle.positives
+        ],
+        "weak_negatives": [
+            {
+                "example_id": hit.example_id,
+                "document_id": hit.document_id,
+                "similarity": round(hit.score, 4),
+                "structure": hit.text[:240],
+                "reason": hit.metadata.get("reason"),
+            }
+            for hit in bundle.negatives
+        ],
+    }
+
+
+def _guided_query_text(
+    chunk: TranscriptChunk,
+    existing_candidates: list[ClipCandidate],
+) -> str:
+    if existing_candidates:
+        strongest = sorted(
+            existing_candidates,
+            key=lambda item: (
+                -item.confidence,
+                item.start,
+                item.end,
+                item.working_title,
+            ),
+        )[:3]
+        return "\n\n".join(
+            clip_candidate_query_text(candidate)
+            for candidate in strongest
+        )
+
+    excerpt = " ".join(chunk.text.split())
+    return f"transcript_excerpt: {excerpt[:1800]}"
+
+
+def merge_guided_candidates(
+    baseline: list[ClipCandidate],
+    guided: list[ClipCandidate],
+) -> list[ClipCandidate]:
+    baseline_copy = [item.model_copy(deep=True) for item in baseline]
+    non_overlapping = [
+        candidate
+        for candidate in guided
+        if not any(
+            _overlap_ratio(candidate, existing) >= 0.6
+            for existing in baseline_copy
+        )
+    ]
+    guided_deduped = dedupe_candidates(non_overlapping)
+    return sorted(
+        [*baseline_copy, *guided_deduped],
+        key=lambda item: (item.start, item.end, item.working_title),
+    )
 
 
 def _overlap_ratio(left: ClipCandidate, right: ClipCandidate) -> float:
@@ -239,6 +311,176 @@ class CandidateDetector:
         return deduped
 
 
+    async def _discover_guided_chunk(
+        self,
+        chunk: TranscriptChunk,
+        *,
+        existing_candidates: list[ClipCandidate],
+        retrieval_evidence: dict[str, object],
+    ) -> list[ClipCandidate]:
+        input_fingerprint = make_input_fingerprint(
+            {
+                "chunk_id": chunk.id,
+                "start": chunk.start,
+                "end": chunk.end,
+                "text": chunk.text,
+                "segment_indices": chunk.segment_indices,
+                "existing_candidates": [
+                    {
+                        "start": item.start,
+                        "end": item.end,
+                        "working_title": item.working_title,
+                        "setup": item.setup,
+                        "development": item.development,
+                        "payoff": item.payoff,
+                    }
+                    for item in existing_candidates
+                ],
+                "retrieval_evidence": retrieval_evidence,
+            }
+        )
+        payload = None
+
+        if self.stage_cache is not None:
+            payload = self.stage_cache.reusable_json(
+                stage="retrieval_guided_discovery",
+                subject_type="transcript_chunk",
+                subject_id=chunk.id,
+                input_fingerprint=input_fingerprint,
+                stage_version="1",
+                provider=self.cache_provider,
+                model=self.fast_model,
+                prompt_version="guided-discovery-v1",
+            )
+            if payload is not None:
+                self._emit(f"guided {chunk.id}: reused")
+
+        if payload is None:
+            run = None
+            if self.stage_cache is not None:
+                run = self.stage_cache.start(
+                    stage="retrieval_guided_discovery",
+                    subject_type="transcript_chunk",
+                    subject_id=chunk.id,
+                    input_fingerprint=input_fingerprint,
+                    stage_version="1",
+                    provider=self.cache_provider,
+                    model=self.fast_model,
+                    prompt_version="guided-discovery-v1",
+                )
+            try:
+                payload = await self.llm.chat_json(
+                    guided_discovery_messages(
+                        chunk,
+                        existing_candidates=existing_candidates,
+                        retrieval_evidence=retrieval_evidence,
+                    ),
+                    model=self.fast_model,
+                    temperature=0.1,
+                    max_tokens=2048,
+                    reasoning_effort=self.fast_reasoning_effort,
+                )
+            except Exception as exc:
+                if self.stage_cache is not None and run is not None:
+                    self.stage_cache.fail(
+                        run,
+                        status=StageStatus.FAILED_RETRYABLE,
+                        error=exc,
+                    )
+                raise
+
+            if self.stage_cache is not None and run is not None:
+                self.stage_cache.succeed_json(
+                    run,
+                    payload,
+                    kind="retrieval_guided_discovery",
+                )
+
+        raw = payload.get("candidates", [])
+        if not isinstance(raw, list):
+            return []
+
+        found: list[ClipCandidate] = []
+        for item in raw[:6]:
+            if not isinstance(item, dict):
+                continue
+            candidate = _candidate_from_item(item, chunk)
+            if candidate is not None:
+                found.append(candidate)
+        return found
+
+    async def discover_guided(
+        self,
+        chunks: list[TranscriptChunk],
+        baseline_candidates: list[ClipCandidate],
+    ) -> list[ClipCandidate]:
+        if not chunks:
+            return [item.model_copy(deep=True) for item in baseline_candidates]
+        if self.embedding_provider is None or self.retrieval_repository is None:
+            if self.strict_retrieval:
+                raise EmbeddingProviderError(
+                    "retrieval-guided discovery requires embedding provider and repository"
+                )
+            return [item.model_copy(deep=True) for item in baseline_candidates]
+
+        existing_by_chunk: dict[str, list[ClipCandidate]] = {
+            chunk.id: [] for chunk in chunks
+        }
+        for candidate in baseline_candidates:
+            for chunk_id in candidate.source_chunk_ids:
+                if chunk_id in existing_by_chunk:
+                    existing_by_chunk[chunk_id].append(candidate)
+
+        query_texts = [
+            _guided_query_text(
+                chunk,
+                existing_by_chunk.get(chunk.id, []),
+            )
+            for chunk in chunks
+        ]
+        try:
+            bundles = await retrieve_structural_examples_many(
+                self.embedding_provider,
+                self.retrieval_repository,
+                query_texts,
+                positive_k=self.retrieval_positive_k,
+                negative_k=self.retrieval_negative_k,
+            )
+        except EmbeddingProviderError:
+            if self.strict_retrieval:
+                raise
+            self._emit(
+                "Retrieval unavailable: guided discovery skipped"
+            )
+            return [item.model_copy(deep=True) for item in baseline_candidates]
+
+        guided: list[ClipCandidate] = []
+        for index, (chunk, bundle) in enumerate(
+            zip(chunks, bundles, strict=True),
+            start=1,
+        ):
+            evidence = _bundle_evidence(bundle)
+            batch = await self._discover_guided_chunk(
+                chunk,
+                existing_candidates=existing_by_chunk.get(chunk.id, []),
+                retrieval_evidence=evidence,
+            )
+            guided.extend(batch)
+            self._emit(
+                f"[{index}/{len(chunks)}] guided "
+                f"{chunk.start / 60:.1f}-{chunk.end / 60:.1f} min: "
+                f"{len(batch)} additional candidates"
+            )
+
+        merged = merge_guided_candidates(baseline_candidates, guided)
+        self._emit(
+            "Guided discovery: "
+            f"{len(baseline_candidates)} baseline + {len(guided)} raw guided "
+            f"-> {len(merged)} merged"
+        )
+        return merged
+
+
     async def _attach_retrieval(
         self,
         candidates: list[ClipCandidate],
@@ -290,29 +532,7 @@ class CandidateDetector:
                 )
                 attached += 1
 
-            evidence.append(
-                {
-                    "positive_examples": [
-                        {
-                            "example_id": hit.example_id,
-                            "document_id": hit.document_id,
-                            "similarity": round(hit.score, 4),
-                            "structure": hit.text[:240],
-                        }
-                        for hit in bundle.positives
-                    ],
-                    "weak_negatives": [
-                        {
-                            "example_id": hit.example_id,
-                            "document_id": hit.document_id,
-                            "similarity": round(hit.score, 4),
-                            "structure": hit.text[:240],
-                            "reason": hit.metadata.get("reason"),
-                        }
-                        for hit in bundle.negatives
-                    ],
-                }
-            )
+            evidence.append(_bundle_evidence(bundle))
 
         if attached:
             self._emit(
