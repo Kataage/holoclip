@@ -58,10 +58,12 @@ from holoclip.evaluation import (
     RetrievalABManifest,
     append_feedback,
     build_blind_ab_run,
+    build_guided_only_run,
     build_retrieval_ab_diff,
     build_run,
     candidate_pool_fingerprint,
     compare_evaluation_metrics,
+    compute_guided_discovery_metrics,
     compute_metrics,
     latest_feedback_index,
     load_feedback,
@@ -423,11 +425,20 @@ def retrieval_ab(
     baseline_path = output_root / "baseline" / f"{resolved_stream_id}.json"
     retrieval_path = output_root / "retrieval" / f"{resolved_stream_id}.json"
     blind_path = output_root / "blind" / f"{resolved_stream_id}.json"
+    guided_only_path = (
+        output_root / "guided-only" / f"{resolved_stream_id}.json"
+    )
     manifest_path = output_root / "manifests" / f"{resolved_stream_id}.json"
 
     existing = [
         path
-        for path in (baseline_path, retrieval_path, blind_path, manifest_path)
+        for path in (
+            baseline_path,
+            retrieval_path,
+            blind_path,
+            guided_only_path,
+            manifest_path,
+        )
         if path.exists()
     ]
     if existing and not overwrite:
@@ -529,6 +540,12 @@ def retrieval_ab(
                     retrieval_pool,
                     top_k=top_k,
                 )
+                guided_only_run = build_guided_only_run(
+                    stream_id=resolved_stream_id,
+                    transcript_path=str(transcript),
+                    baseline_pool=broad,
+                    guided_pool=retrieval_pool,
+                )
 
             shared_metadata = {
                 "experiment": "retrieval-guided-ab-v3",
@@ -586,6 +603,7 @@ def retrieval_ab(
             save_run(baseline_run, baseline_path)
             save_run(retrieval_run, retrieval_path)
             save_run(blind_run, blind_path)
+            save_run(guided_only_run, guided_only_path)
             save_retrieval_ab_manifest(
                 RetrievalABManifest(
                     stream_id=resolved_stream_id,
@@ -593,6 +611,7 @@ def retrieval_ab(
                     baseline_run_path=str(baseline_path),
                     retrieval_run_path=str(retrieval_path),
                     blind_run_path=str(blind_path),
+                    guided_only_run_path=str(guided_only_path),
                     candidate_pool_count=len(broad),
                     candidate_pool_fingerprint=pool_fingerprint,
                     retrieval_candidate_pool_count=len(retrieval_pool),
@@ -636,6 +655,8 @@ def retrieval_ab(
                 "baseline_run": str(baseline_path),
                 "retrieval_run": str(retrieval_path),
                 "blind_run": str(blind_path),
+                "guided_only_candidates": len(guided_only_run.candidates),
+                "guided_only_run": str(guided_only_path),
                 "manifest": str(manifest_path),
             }
 
@@ -2256,6 +2277,44 @@ def retrieval_ab_diff(
     typer.echo(
         json.dumps(
             diff.model_dump(mode="json"),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@app.command()
+def guided_discovery_metrics(
+    output_root: Path = typer.Option(
+        Path("data/evaluation/ab"),
+        "--output-root",
+    ),
+    feedback_file: Path = typer.Option(
+        Path("data/evaluation/feedback.jsonl"),
+        "--feedback-file",
+    ),
+) -> None:
+    """Measure intrinsic quality and selector misses for guided-only candidates."""
+    guided_runs = load_runs(output_root / "guided-only")
+    treatment_runs = load_runs(output_root / "retrieval")
+    guided_streams = {run.stream_id for run in guided_runs}
+    treatment_streams = {run.stream_id for run in treatment_runs}
+    if guided_streams != treatment_streams:
+        typer.echo(
+            "guided-only and retrieval directories do not contain "
+            "the same stream ids",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    metrics = compute_guided_discovery_metrics(
+        guided_runs,
+        treatment_runs,
+        load_feedback(feedback_file),
+    )
+    typer.echo(
+        json.dumps(
+            metrics.model_dump(mode="json"),
             ensure_ascii=False,
             indent=2,
         )
