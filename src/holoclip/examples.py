@@ -69,6 +69,7 @@ class HumanClipExample(BaseModel):
 
     clip_transcript_path: str | None = None
     source_transcript_path: str | None = None
+    clip_duration_seconds: float | None = Field(default=None, ge=0)
     transcript_excerpt: str | None = None
 
     members: list[str] = Field(default_factory=list)
