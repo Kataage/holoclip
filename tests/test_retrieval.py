@@ -251,3 +251,36 @@ async def test_quality_downgrade_removes_previously_indexed_documents(
     assert second.skipped_quality_rejected == 0
     assert second.removed_documents == 3
     assert remaining == []
+
+
+
+def test_retrieval_corpus_fingerprint_is_order_independent() -> None:
+    first = RetrievalDocument(
+        id="a",
+        kind="positive",
+        example_id="example-a",
+        text="setup: a",
+        text_fingerprint="fp-a",
+        embedding_model="model",
+        embedding_version=RETRIEVAL_VERSION,
+        embedding=[1.0, 0.0],
+    )
+    second = RetrievalDocument(
+        id="b",
+        kind="weak_negative",
+        example_id="example-b",
+        text="weak_negative_reason: b",
+        text_fingerprint="fp-b",
+        embedding_model="model",
+        embedding_version=RETRIEVAL_VERSION,
+        embedding=[0.0, 1.0],
+    )
+
+    assert retrieval_corpus_fingerprint([first, second]) == (
+        retrieval_corpus_fingerprint([second, first])
+    )
+
+    changed = second.model_copy(update={"text_fingerprint": "fp-b2"})
+    assert retrieval_corpus_fingerprint([first, second]) != (
+        retrieval_corpus_fingerprint([first, changed])
+    )
