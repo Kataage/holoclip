@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 import typer
+from holoclip.provider_benchmark import app as provider_benchmark_app
 
 from holoclip.alignment import ALIGNMENT_METHOD, align_clip_to_source
 from holoclip.analysis.candidate_detector import CandidateDetector
@@ -118,6 +119,7 @@ from holoclip.transcription import transcribe_media
 
 
 app = typer.Typer(no_args_is_help=True)
+app.add_typer(provider_benchmark_app, name="providers")
 
 
 def _load_env_file(path: Path = Path(".env")) -> None:

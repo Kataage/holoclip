@@ -91,7 +91,8 @@ class CloudAdapters:
             if images:
                 body["image"] = media[0][0].split(",", 1)[1]
             operation = entry.model
-            # Deliberate worst-case neuron reservation; exact observed usage is reported separately.
+            # Planning estimate, not an authoritative upper bound. The verified
+            # Free account's server-side hard cap is the monetary invariant.
             estimate["neurons"] = max_tokens * 0.2 + estimate["tokens"] * 0.1
         else:
             content = [{"type": "text", "text": prompt}]

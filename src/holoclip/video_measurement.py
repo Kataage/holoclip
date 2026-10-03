@@ -11,7 +11,7 @@ from pathlib import Path
 from holoclip.domain import stable_id
 from holoclip.video_semantics import MeasuredFrame, MeasuredVideoWindow
 
-VERSION = "ffprobe-pyscenedetect-frames-v1"
+VERSION = "ffprobe-pyscenedetect-frames-v2"
 
 
 def checksum_file(path: Path) -> str:
@@ -104,7 +104,8 @@ def measure_window(media: Path, root: Path, *, asset_id: str, start: float, end:
             cached = MeasuredVideoWindow.model_validate(raw["window"])
             if checksum_file(Path(cached.video_path)) == cached.media_sha256 and all(
                 Path(f.locator).exists() and checksum_file(Path(f.locator)) == f.checksum for f in cached.frames
-            ) and all(Path(p).exists() for p in cached.contact_sheet_paths):
+            ) and raw.get("sheet_checksums") and all(Path(p).exists() and checksum_file(Path(p)) == sha
+                    for p, sha in raw["sheet_checksums"].items()):
                 return cached
     output.mkdir(parents=True, exist_ok=True)
     ffmpeg = shutil.which("ffmpeg")
@@ -138,6 +139,8 @@ def measure_window(media: Path, root: Path, *, asset_id: str, start: float, end:
         contact_sheet_paths=contact_sheets(frames, output), transcript=transcript or {},
         measured_events=measured_events or {}, extraction_version=VERSION)
     manifest.write_text(json.dumps({"input": identity, "window": window.model_dump(mode="json"),
+        "sheet_checksums": {p: checksum_file(Path(p)) for sheet in window.contact_sheet_paths
+                            for p in (sheet, str(Path(sheet).with_suffix(".json")))},
         "ffmpeg_version": subprocess.run([ffmpeg, "-version"], capture_output=True,
                                           text=True).stdout.splitlines()[0],
         "shots": shots, "pts": pts}, indent=2, ensure_ascii=False), encoding="utf-8")
