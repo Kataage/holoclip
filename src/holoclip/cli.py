@@ -413,7 +413,7 @@ def retrieval_ab(
         help="Replace an existing paired run for the same stream id.",
     ),
 ) -> None:
-    """Run paired retrieval-OFF/ON final selection over one frozen broad pool."""
+    """Run baseline vs retrieval-guided discovery/final-selection evaluation."""
     _load_env_file()
     nim_settings = NimSettings.from_env()
     embedding_settings = NimEmbeddingSettings.from_env()
@@ -508,16 +508,37 @@ def retrieval_ab(
                     final_temperature=final_temperature,
                     strict_retrieval=True,
                 )
-                typer.echo("A/B retrieval final review: retrieval ON")
-                retrieval_candidates = await retrieval_detector.final_select(
+                typer.echo("A/B retrieval-guided discovery: retrieval ON")
+                retrieval_pool = await retrieval_detector.discover_guided(
+                    chunks,
                     broad,
+                )
+                retrieval_pool_fingerprint = candidate_pool_fingerprint(
+                    retrieval_pool
+                )
+                guided_added_candidates = max(
+                    0,
+                    len(retrieval_pool) - len(broad),
+                )
+                typer.echo(
+                    "A/B retrieval final review: "
+                    f"{len(retrieval_pool)} candidates "
+                    f"({guided_added_candidates} added by guided discovery)"
+                )
+                retrieval_candidates = await retrieval_detector.final_select(
+                    retrieval_pool,
                     top_k=top_k,
                 )
 
             shared_metadata = {
-                "experiment": "retrieval-ab-v1",
+                "experiment": "retrieval-guided-ab-v2",
                 "candidate_pool_count": len(broad),
                 "candidate_pool_fingerprint": pool_fingerprint,
+                "retrieval_candidate_pool_count": len(retrieval_pool),
+                "retrieval_candidate_pool_fingerprint": (
+                    retrieval_pool_fingerprint
+                ),
+                "guided_added_candidates": guided_added_candidates,
                 "retrieval_version": RETRIEVAL_VERSION,
                 "retrieval_document_count": len(documents),
                 "retrieval_corpus_fingerprint": corpus_fingerprint,
@@ -568,6 +589,11 @@ def retrieval_ab(
                     blind_run_path=str(blind_path),
                     candidate_pool_count=len(broad),
                     candidate_pool_fingerprint=pool_fingerprint,
+                    retrieval_candidate_pool_count=len(retrieval_pool),
+                    retrieval_candidate_pool_fingerprint=(
+                        retrieval_pool_fingerprint
+                    ),
+                    guided_added_candidates=guided_added_candidates,
                     retrieval_document_count=len(documents),
                     retrieval_corpus_fingerprint=corpus_fingerprint,
                     retrieval_version=RETRIEVAL_VERSION,
@@ -588,6 +614,13 @@ def retrieval_ab(
                 "stream_id": resolved_stream_id,
                 "broad_candidates": len(broad),
                 "candidate_pool_fingerprint": pool_fingerprint,
+                "retrieval_candidates_after_guided_discovery": len(
+                    retrieval_pool
+                ),
+                "retrieval_candidate_pool_fingerprint": (
+                    retrieval_pool_fingerprint
+                ),
+                "guided_added_candidates": guided_added_candidates,
                 "retrieval_documents": len(documents),
                 "retrieval_corpus_fingerprint": corpus_fingerprint,
                 "baseline_selected": len(baseline_candidates),
