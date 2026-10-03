@@ -221,40 +221,48 @@ Record:
 
 Final normalization remains a RenderPlan decision; the observer measures what the human edit did.
 
-### 3.6 Japanese subtitle/text observation: PaddleOCR provider
+### 3.6 Japanese subtitle/text observation: zero-cost cloud OCR path
 
-Use a replaceable TextObservationProvider.
+Use a replaceable TextObservationProvider, but do not require a local AI/OCR model for the initial production path.
 
-Initial default benchmark target:
-- PaddleOCR 3.x
-- PP-OCRv5 Japanese recognition
+Initial production strategy:
+1. detect and track candidate text regions deterministically with OpenCV
+2. crop representative text regions
+3. send only those bounded crops to the zero-cost cloud vision provider
+4. receive Japanese text plus confidence
+5. keep region coordinates/timing authoritative from OpenCV tracking, not from the VLM
 
-OCR is isolated from the core package because it is a heavy dependency.
+Primary text-reading provider:
+- Gemini 3.8 Flash Free Tier
 
-The provider returns:
-- text
-- confidence
-- bounding polygon
-- frame/time range
-- orientation
+Free cloud fallback:
+- NVIDIA NIM free image/VLM endpoint
 
-Do not OCR every video frame. Detect/track stable text regions and OCR representative frames.
+This separates:
+- **where/when text exists** -> deterministic local measurement
+- **what the text says** -> free cloud vision inference
 
-PP-OCRv6 may replace the initial recognizer only after a corpus benchmark demonstrates equal or better Japanese clip-caption performance.
+Do not OCR every video frame. Track stable regions and inspect only representative changes.
 
-### 3.7 Speech/word timing
+A dedicated OCR API/model may replace the recognition step later only if it is also verifiably zero-cost and wins the Holoclip Japanese-caption benchmark.
+
+### 3.7 Speech/word timing: Groq Free Plan
 
 Retain the existing transcript pipeline for coarse semantics.
 
 Add a replaceable WordTimingProvider for selected training/runtime ranges.
 
-Preferred local option:
-- Whisper large-v3 word timestamps / compatible faster implementation
+Initial production provider:
+- Groq Free Plan
+- `whisper-large-v3`
+- request both segment and word timestamps where needed
 
 Use word timing to link:
 - spoken word
 - displayed caption
 - emphasis interval
+
+The system must use the free-plan quota only. A 429/quota exhaustion never upgrades to paid processing; the stage becomes BLOCKED_QUOTA and resumes after reset.
 
 Word timing is not required to ingest a clip if unavailable; missing timing degrades the relevant observation dimension.
 
@@ -343,7 +351,121 @@ Remotion is functionally capable of programmatic video/motion composition, but i
 
 VapourSynth may be benchmarked later for specialized frame-processing/filter pipelines, but it is not required for the first production renderer.
 
-### 3.11 Semantic video understanding: VLM-backed VideoUnderstandingProvider
+### 3.11 Zero-cost cloud AI policy
+
+**Hard product constraint: paid AI/API usage is forbidden in the production path.**
+
+Local AI inference is intentionally excluded from the initial provider set. This does **not** prohibit free deterministic local media processing such as FFmpeg, OpenCV, PySceneDetect, librosa or Motion Canvas.
+
+Initial zero-cost AI stack:
+
+#### Native video / semantic vision
+Primary:
+- Google Gemini Developer API Free Tier
+- `gemini-3.8-flash`
+- native video understanding
+- bounded file/video inputs
+- agentic/static video modes as appropriate
+
+Use:
+- semantic understanding of selected source ranges
+- human-finished-clip analysis
+- visual event/reaction/game/UI understanding
+- text reading on bounded detected text crops
+- semantic render QA where visual understanding is required
+
+Do not send entire long streams unnecessarily. Extract the selected range with FFmpeg and use Gemini Files API/inline media, or use a public YouTube URL only when it is quota-efficient.
+
+#### Free image-VLM fallback
+Primary fallback:
+- NVIDIA API Catalog Free Endpoint
+- `z-ai/glm-5.3-flash` when available for the required image capability
+
+Secondary fallback:
+- NVIDIA API Catalog Free Endpoint
+- `meta/llama-3.2-90b-vision-instruct`
+- `meta/llama-3.2-11b-vision-instruct` for cheaper/lighter fallback
+
+These fallbacks operate on shot-aware representative frames/contact sheets when native video service is quota-blocked or unavailable.
+
+#### Strong text/editorial reasoning
+Preferred zero-cost providers, in order:
+1. NVIDIA NIM Free Endpoint `z-ai/glm-5.3`
+2. Gemini 3.8 Flash Free Tier
+3. other explicitly verified Free Endpoint only after benchmark
+
+If the preferred strong endpoint times out, use another **free** verified provider. Never switch to a paid partner/serverless endpoint.
+
+#### Fast text/image reasoning
+Preferred:
+- NVIDIA NIM Free Endpoint `z-ai/glm-5.3-flash`
+
+#### Embeddings
+Preferred:
+- NVIDIA NIM Free Endpoint `nvidia/nemotron-3-embed-1b`
+
+#### Speech-to-text / word timing
+Preferred:
+- Groq Free Plan `whisper-large-v3`
+Fallback:
+- `whisper-large-v3-turbo` only when speed is more important and quality benchmark permits
+
+### 3.12 Zero-cost enforcement
+
+"Free tier" is not merely documentation; it is a runtime policy.
+
+Implement a provider registry with:
+- provider
+- model ID
+- capability
+- endpoint class
+- cost class: FREE_TIER / FREE_ENDPOINT
+- verified_at date
+- verification URL/reference
+- known quota units
+- whether billing must remain disabled
+- data-use/privacy note
+
+Runtime rules:
+- no provider/model without current zero-cost verification may run
+- no paid partner/serverless endpoint may be configured as automatic fallback
+- no API request is retried by enabling billing
+- quota exhaustion => BLOCKED_QUOTA, persist progress, resume later
+- authentication/availability failure => try only another verified zero-cost provider
+- if no zero-cost provider is available => stop that stage safely
+- all expensive stages are cached to avoid wasting free quota
+- maintain a daily quota ledger per provider/model
+- use conservative internal budgets below published free limits
+- re-check provider/free-tier status periodically and before production promotion
+
+Gemini free-tier requests are currently eligible for product-improvement use by Google. Therefore:
+- only public/source media intended for this workflow should be sent through the free path
+- secrets/private user material must not be uploaded by default
+- use `store=false` where supported
+- delete temporary uploaded files after successful processing when the API permits it
+
+### 3.13 Zero-cost quota strategy
+
+Gemini free-tier video:
+- prefer short selected clips instead of full multi-hour archives
+- exploit existing Editorial/Timeline narrowing before VLM upload
+- treat the documented daily public-YouTube video allowance as a hard scheduling budget
+- Files API artifacts are temporary and should be deleted after use
+- one successful semantic observation is cached and never re-requested for the same fingerprint/model/prompt
+
+Groq free-plan ASR:
+- chunk audio to remain within free upload constraints
+- observe free-plan RPM/RPD/audio limits
+- preserve completed chunks and resume after quota reset
+
+NVIDIA free endpoints:
+- heavy calls remain sequential unless the endpoint explicitly permits more
+- timeout/rate-limit state is persisted
+- never redirect to a paid partner endpoint
+
+The scheduler optimizes for **eventual completion at zero monetary cost**, not fastest wall-clock completion.
+
+### 3.14 Semantic video understanding: VLM-backed VideoUnderstandingProvider
 
 A perfect editing system must understand not only how pixels changed, but what is happening in the video.
 
@@ -393,7 +515,7 @@ Suggested semantic observation schema:
 - evidence frame/shot IDs
 - uncertainty/unknown
 
-### 3.12 VLM sampling policy
+### 3.15 VLM sampling policy
 
 Do not send entire long-form streams frame-by-frame to a VLM.
 
@@ -411,7 +533,7 @@ Use coarse-to-fine, event-driven visual understanding:
 
 This keeps visual semantics affordable and resumable.
 
-### 3.13 Runtime VLM role
+### 3.16 Runtime VLM role
 
 VLM understanding is used both during training and production.
 
@@ -431,7 +553,7 @@ If VLM evidence is unavailable or low confidence:
 - fall back to safe source framing or deterministic measured layout rules
 - mark advanced visual actions unavailable
 
-### 3.14 VisualTargetProvider
+### 3.17 VisualTargetProvider
 
 Keep **VisualTargetProvider** distinct from general VLM understanding.
 
@@ -450,7 +572,9 @@ VisualTargetProvider may use:
 
 The VLM must not be treated as a pixel-accurate tracker unless benchmark evidence supports it.
 
-### 3.15 Heavy ML provider policy
+### 3.18 Heavy ML provider policy
+
+Local AI inference is not part of the initial candidate set. Benchmark only external zero-cost providers unless this product constraint is explicitly changed later.
 
 Do not hard-code the architecture to:
 - a community anime-face detector
@@ -984,7 +1108,7 @@ holoclip core
         |
         +-- external FFmpeg/ffprobe
         |
-        +-- optional editing-analysis environment
+        +-- deterministic editing-analysis environment
               numpy
               opencv-python-headless
               scenedetect
@@ -992,8 +1116,10 @@ holoclip core
               soundfile
               pyloudnorm
         |
-        +-- optional OCR provider environment
-              PaddleOCR/PaddlePaddle
+        +-- zero-cost cloud AI providers
+              Gemini Developer API Free Tier
+              NVIDIA API Catalog Free Endpoints
+              Groq Free Plan
         |
         +-- isolated motion-graphics worker
               Node.js
@@ -1005,11 +1131,13 @@ Heavy OCR/CV dependencies must not make ordinary transcript candidate discovery 
 
 Provider outputs are JSON/Pydantic contracts and can be produced by subprocess workers if dependency conflicts require isolation on Windows.
 
-## 16. Resource policy for the current Windows/RTX3060 environment
+## 16. Resource policy for the current Windows environment
 
-- FFmpeg/OpenCV/PySceneDetect/audio measurement should run CPU-first.
-- GPU is optional for OCR/word timing and should not be a hard dependency.
-- Heavy training-corpus analysis is resumable and may run when GPU is available.
+- Local AI inference is excluded from the initial production design.
+- FFmpeg/OpenCV/PySceneDetect/audio measurement run locally as deterministic non-AI processing.
+- VLM/LLM/embedding/ASR inference uses verified zero-cost cloud endpoints.
+- The local RTX3060 is therefore not required for the AI inference path and remains available for the user's other workloads.
+- Heavy training-corpus analysis is resumable and quota-aware.
 - Never require all frames to be processed at full resolution.
 - Coarse-to-fine analysis:
   1. alignment window
@@ -1077,9 +1205,11 @@ Only then is the publishing layer allowed to become the primary next milestone.
 - FFmpeg / ffprobe: authoritative media execution/probing layer.
 - PySceneDetect 0.7.x: scene/cut/fade observation.
 - OpenCV: feature matching, homography, tracking and geometric measurement.
-- PaddleOCR 3.x / Japanese-capable PP-OCR model: subtitle/text observation.
-- VLM-backed VideoUnderstandingProvider: semantic understanding of bounded video/shot windows; provider/model chosen by benchmark rather than hard-coded.
-- Whisper large-v3 compatible word timing: speech/caption linkage.
+- Gemini 3.8 Flash Free Tier: primary native-video semantic understanding and bounded crop text reading.
+- NVIDIA NIM Free Endpoints: free image-VLM/text reasoning fallback and strong/fast reasoning providers.
+- NVIDIA nemotron-3-embed-1b Free Endpoint: structural embeddings.
+- Groq Free Plan whisper-large-v3: ASR and word timing.
+- VLM-backed VideoUnderstandingProvider: semantic understanding of bounded video/shot windows, using zero-cost cloud providers only.
 - librosa: bounded audio feature extraction and DTW refinement.
 - pyloudnorm: BS.1770-style loudness measurement.
 - ASS/SSA + libass: rich deterministic subtitle render representation.
