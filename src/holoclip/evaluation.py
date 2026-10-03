@@ -31,6 +31,7 @@ class RetrievalABManifest(BaseModel):
     baseline_run_path: str
     retrieval_run_path: str
     blind_run_path: str | None = None
+    guided_only_run_path: str | None = None
     candidate_pool_count: int
     candidate_pool_fingerprint: str
     retrieval_candidate_pool_count: int | None = None
@@ -79,6 +80,19 @@ class EvaluationMetrics(BaseModel):
     candidates_per_accept: float | None
     known_clips: int
     known_clip_recall: float | None
+
+
+class GuidedDiscoveryMetrics(BaseModel):
+    streams: int
+    guided_only_candidates: int
+    labeled_candidates: int
+    accepted: int
+    maybe: int
+    rejected: int
+    accept_rate: float | None
+    usable_rate: float | None
+    accepted_not_selected: int
+    usable_not_selected: int
 
 
 class RetrievalABDiffCandidate(BaseModel):
@@ -185,6 +199,110 @@ def build_blind_ab_run(
             "blinded": True,
         },
         candidates=candidates,
+    )
+
+
+def build_guided_only_run(
+    *,
+    stream_id: str,
+    transcript_path: str,
+    baseline_pool: list[ClipCandidate],
+    guided_pool: list[ClipCandidate],
+    media_path: str | None = None,
+) -> EvaluationRun:
+    baseline_ids = {
+        make_candidate_id(stream_id, candidate)
+        for candidate in baseline_pool
+    }
+    by_id: dict[str, EvaluationCandidate] = {}
+    for candidate in guided_pool:
+        candidate_id = make_candidate_id(stream_id, candidate)
+        if candidate_id in baseline_ids or candidate_id in by_id:
+            continue
+        blinded = candidate.model_copy(deep=True)
+        blinded.retrieval_trace = None
+        blinded.confidence = 0.5
+        by_id[candidate_id] = EvaluationCandidate(
+            id=candidate_id,
+            rank=1,
+            candidate=blinded,
+        )
+
+    def blind_key(item: EvaluationCandidate) -> str:
+        raw = (
+            f"guided-only-blind-v1|{stream_id}|{item.id}"
+        ).encode("utf-8")
+        return hashlib.sha256(raw).hexdigest()
+
+    ordered = sorted(by_id.values(), key=blind_key)
+    return EvaluationRun(
+        stream_id=stream_id,
+        transcript_path=transcript_path,
+        media_path=media_path,
+        metadata={
+            "experiment": "guided-only-blind-v1",
+            "blinded": True,
+        },
+        candidates=[
+            item.model_copy(update={"rank": index + 1})
+            for index, item in enumerate(ordered)
+        ],
+    )
+
+
+def compute_guided_discovery_metrics(
+    guided_only_runs: list[EvaluationRun],
+    treatment_runs: list[EvaluationRun],
+    feedback: list[FeedbackRecord],
+) -> GuidedDiscoveryMetrics:
+    feedback_index = latest_feedback_index(feedback)
+    treatment_ids = {
+        (run.stream_id, item.id)
+        for run in treatment_runs
+        for item in run.candidates
+    }
+
+    guided_only_candidates = 0
+    labeled = 0
+    accepted = 0
+    maybe = 0
+    rejected = 0
+    accepted_not_selected = 0
+    usable_not_selected = 0
+
+    for run in guided_only_runs:
+        for item in run.candidates:
+            guided_only_candidates += 1
+            record = feedback_index.get((run.stream_id, item.id))
+            if record is None:
+                continue
+
+            labeled += 1
+            selected = (run.stream_id, item.id) in treatment_ids
+            if record.decision is ReviewDecision.ACCEPT:
+                accepted += 1
+                if not selected:
+                    accepted_not_selected += 1
+                    usable_not_selected += 1
+            elif record.decision is ReviewDecision.MAYBE:
+                maybe += 1
+                if not selected:
+                    usable_not_selected += 1
+            else:
+                rejected += 1
+
+    usable = accepted + maybe
+    return GuidedDiscoveryMetrics(
+        streams=len({run.stream_id for run in guided_only_runs}),
+        guided_only_candidates=guided_only_candidates,
+        labeled_candidates=labeled,
+        accepted=accepted,
+        maybe=maybe,
+        rejected=rejected,
+        accept_rate=(accepted / labeled if labeled else None),
+        usable_rate=(usable / labeled if labeled else None),
+        accepted_not_selected=accepted_not_selected,
+        usable_not_selected=usable_not_selected,
     )
 
 
