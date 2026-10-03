@@ -156,6 +156,7 @@ async def _detect_candidates(
                 progress=typer.echo,
                 stage_cache=stage_cache,
                 cache_provider="nvidia_nim",
+                editorial_profile=editorial_profile,
             )
             return await detector.run(chunks, top_k=top_k)
 
@@ -172,8 +173,20 @@ async def _detect_candidates(
                 cache_provider="nvidia_nim",
                 embedding_provider=embedding_client,
                 retrieval_repository=retrieval_repository,
+                editorial_profile=editorial_profile,
             )
             return await detector.run(chunks, top_k=top_k)
+
+
+def _load_ready_editorial_profile(
+    path: Path | None,
+) -> EditorialProfile | None:
+    if path is None or not path.exists():
+        return None
+    profile = load_editorial_profile(path)
+    if not profile.readiness.ready:
+        return None
+    return profile
 
 
 @app.command()
