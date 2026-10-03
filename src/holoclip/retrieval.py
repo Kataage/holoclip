@@ -17,7 +17,7 @@ from holoclip.models import ClipCandidate
 from holoclip.providers.embedding.base import EmbeddingProvider
 
 
-RETRIEVAL_VERSION = "human-structure-v1"
+RETRIEVAL_VERSION = "human-structure-v2"
 
 
 class RetrievalDocumentKind(StrEnum):
@@ -110,12 +110,6 @@ def human_example_structural_text(example: HumanClipExample) -> str | None:
     lines = [f"{label}: {value.strip()}" for label, value in core if value.strip()]
     if example.traits:
         lines.append(f"traits: {_clean_list(example.traits)}")
-    if example.topics:
-        lines.append(f"topics: {_clean_list(example.topics)}")
-    if example.members:
-        lines.append(f"members: {_clean_list(example.members)}")
-    if example.relationship_context:
-        lines.append(f"relationship: {example.relationship_context.strip()}")
     lines.append(f"context_requirement: {example.context_requirement}")
     return "\n".join(lines)
 
@@ -125,17 +119,12 @@ def weak_negative_structural_text(
     index: int,
 ) -> str:
     negative = example.weak_negatives[index]
-    lines = [
-        f"weak_negative_reason: {negative.reason}",
-        f"unselected_source_excerpt: {negative.transcript_excerpt.strip()}",
-    ]
-    if example.topics:
-        lines.append(f"parent_topics: {_clean_list(example.topics)}")
-    if example.members:
-        lines.append(f"parent_members: {_clean_list(example.members)}")
-    if example.traits:
-        lines.append(f"parent_positive_traits: {_clean_list(example.traits)}")
-    return "\n".join(lines)
+    return "\n".join(
+        [
+            f"weak_negative_reason: {negative.reason}",
+            f"unselected_source_excerpt: {negative.transcript_excerpt.strip()}",
+        ]
+    )
 
 
 def build_retrieval_document_drafts(
@@ -168,6 +157,7 @@ def build_retrieval_document_drafts(
                         "traits": example.traits,
                         "context_requirement": example.context_requirement,
                         "source_event_id": example.source_event_id,
+                        "relationship_context": example.relationship_context,
                     },
                 )
             )
@@ -197,6 +187,8 @@ def build_retrieval_document_drafts(
                             "end": negative.end,
                             "members": example.members,
                             "topics": example.topics,
+                            "traits": example.traits,
+                            "relationship_context": example.relationship_context,
                         },
                     )
                 )
