@@ -154,11 +154,20 @@ async def ingest_human_example_from_urls(
     )
     if metadata_policy.decision is PolicyDecision.BLOCK:
         raise ClipPolicyGateError(metadata_policy, stage="source_metadata")
-    if (
-        metadata_policy.decision is PolicyDecision.REVIEW
-        and not allow_policy_review
-    ):
-        raise ClipPolicyGateError(metadata_policy, stage="source_metadata")
+    immediate_review_findings = [
+        finding
+        for finding in metadata_policy.findings
+        if finding.decision is PolicyDecision.REVIEW
+        and not finding.defer_until_ranges
+    ]
+    if immediate_review_findings and not allow_policy_review:
+        raise ClipPolicyGateError(
+            ClipPolicyEvaluation(
+                decision=PolicyDecision.REVIEW,
+                findings=immediate_review_findings,
+            ),
+            stage="source_metadata",
+        )
 
     if progress is not None:
         progress("acquiring human-made clip audio")
@@ -221,6 +230,7 @@ async def ingest_human_example_from_urls(
             transcript=source_segments,
             rules=policy_rules,
             operation=PolicyOperation.LEARN,
+            deferred_findings=metadata_policy.findings,
         )
         if range_policy.decision is PolicyDecision.BLOCK:
             raise ClipPolicyGateError(range_policy, stage="aligned_ranges")

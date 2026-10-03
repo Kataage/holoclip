@@ -11,7 +11,7 @@ from holoclip.models import TranscriptSegment
 from holoclip.providers.source.base import SourceMetadata
 
 
-POLICY_VERSION = "clip-policy-v1"
+POLICY_VERSION = "clip-policy-v2"
 
 
 class PolicyDecision(StrEnum):
@@ -77,6 +77,8 @@ class PolicyFinding(BaseModel):
     end: float | None = None
     evidence_url: str | None = None
     evidence_text: str | None = None
+    scope_query: str | None = None
+    defer_until_ranges: bool = False
 
 
 class ClipPolicyEvaluation(BaseModel):
@@ -105,6 +107,30 @@ _EXPLICIT_NO_CLIP_PHRASES = (
     "don't clip",
     "no clipping",
     "clips prohibited",
+)
+
+
+_SCOPED_RESTRICTION_HINTS = (
+    "だけ",
+    "部分",
+    "箇所",
+    "ところ",
+    "トピック",
+    "話題",
+    "この件",
+    "該当",
+    "のみ",
+)
+
+_WHOLE_SOURCE_HINTS = (
+    "この配信",
+    "本配信",
+    "この動画",
+    "本動画",
+    "全編",
+    "全体",
+    "すべて",
+    "全て",
 )
 
 _SPOKEN_RESTRICTION_PHRASES = (
@@ -140,6 +166,85 @@ def _contains_any(text: str | None, phrases: tuple[str, ...]) -> str | None:
         if _normalized(phrase) in normalized:
             return phrase
     return None
+
+
+
+def _restriction_context(
+    text: str | None,
+    phrase: str,
+) -> tuple[str | None, bool]:
+    if not text:
+        return None, False
+
+    normalized_phrase = _normalized(phrase)
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        normalized_line = _normalized(line)
+        index = normalized_line.find(normalized_phrase)
+        if index < 0:
+            continue
+
+        whole_source = any(
+            _normalized(hint) in normalized_line
+            for hint in _WHOLE_SOURCE_HINTS
+        )
+        scoped = any(
+            _normalized(hint) in normalized_line
+            for hint in _SCOPED_RESTRICTION_HINTS
+        )
+        if whole_source and not scoped:
+            return line[:500], False
+        if scoped:
+            return line[:500], True
+        return line[:500], False
+
+    return None, False
+
+
+def _scope_keywords(scope_query: str | None) -> list[str]:
+    if not scope_query:
+        return []
+
+    normalized = _normalized(scope_query)
+    keywords: list[str] = []
+
+    import re
+
+    for match in re.findall(r"\d+周年", normalized):
+        if match not in keywords:
+            keywords.append(match)
+
+    for match in re.findall(r"#[^\s、。！!？?]+", normalized):
+        if len(match) >= 3 and match not in keywords:
+            keywords.append(match)
+
+    quoted_patterns = (
+        r"「([^」]{2,30})」",
+        r"『([^』]{2,30})』",
+        r'"([^"]{2,30})"',
+    )
+    for pattern in quoted_patterns:
+        for match in re.findall(pattern, scope_query):
+            value = _normalized(match).strip()
+            if value and value not in keywords:
+                keywords.append(value)
+
+    return keywords
+
+
+def _selected_transcript_text(
+    transcript: list[TranscriptSegment],
+    ranges: list[tuple[float, float]],
+) -> str:
+    selected = [
+        segment.text
+        for segment in transcript
+        if any(
+            _overlaps(segment.start, segment.end, start, end)
+            for start, end in ranges
+        )
+    ]
+    return _normalized(" ".join(selected))
 
 
 def _decision(findings: list[PolicyFinding]) -> PolicyDecision:
@@ -244,17 +349,36 @@ def evaluate_source_metadata(
         _EXPLICIT_NO_CLIP_PHRASES,
     )
     if description_phrase is not None:
-        findings.append(
-            PolicyFinding(
-                decision=PolicyDecision.BLOCK,
-                reason=(
-                    "source description contains an explicit no-clipping instruction: "
-                    f"{description_phrase}"
-                ),
-                source="source_metadata.description",
-                evidence_text=description_phrase,
-            )
+        context, scoped = _restriction_context(
+            metadata.description,
+            description_phrase,
         )
+        if scoped:
+            findings.append(
+                PolicyFinding(
+                    decision=PolicyDecision.REVIEW,
+                    reason=(
+                        "source description contains a scoped no-clipping instruction; "
+                        "defer the decision until aligned source ranges can be checked"
+                    ),
+                    source="source_metadata.description_scoped",
+                    evidence_text=context or description_phrase,
+                    scope_query=context,
+                    defer_until_ranges=True,
+                )
+            )
+        else:
+            findings.append(
+                PolicyFinding(
+                    decision=PolicyDecision.BLOCK,
+                    reason=(
+                        "source description contains an explicit no-clipping instruction: "
+                        f"{description_phrase}"
+                    ),
+                    source="source_metadata.description",
+                    evidence_text=context or description_phrase,
+                )
+            )
 
     if metadata.live_status in {"is_live", "is_upcoming"}:
         findings.append(
@@ -299,8 +423,48 @@ def evaluate_source_ranges(
     rules: list[ClipPolicyRule] | None = None,
     operation: PolicyOperation = PolicyOperation.LEARN,
     spoken_marker_margin_seconds: float = 120.0,
+    deferred_findings: list[PolicyFinding] | None = None,
 ) -> ClipPolicyEvaluation:
     findings: list[PolicyFinding] = []
+
+    selected_text = _selected_transcript_text(transcript or [], ranges)
+    for deferred in deferred_findings or []:
+        if not deferred.defer_until_ranges:
+            continue
+        keywords = _scope_keywords(deferred.scope_query)
+        if not keywords:
+            findings.append(
+                PolicyFinding(
+                    decision=PolicyDecision.REVIEW,
+                    reason=(
+                        "scoped no-clipping instruction could not be mapped "
+                        "confidently to a specific aligned topic"
+                    ),
+                    source=deferred.source,
+                    evidence_text=deferred.evidence_text,
+                    scope_query=deferred.scope_query,
+                )
+            )
+            continue
+
+        matched = [
+            keyword
+            for keyword in keywords
+            if _normalized(keyword) in selected_text
+        ]
+        if matched:
+            findings.append(
+                PolicyFinding(
+                    decision=PolicyDecision.BLOCK,
+                    reason=(
+                        "aligned source range overlaps a topic explicitly marked "
+                        f"no-clipping in the source description: {', '.join(matched)}"
+                    ),
+                    source=deferred.source,
+                    evidence_text=deferred.evidence_text,
+                    scope_query=deferred.scope_query,
+                )
+            )
 
     for rule in rules or []:
         if operation not in rule.operations or not rule.is_range_rule:
