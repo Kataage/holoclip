@@ -332,14 +332,30 @@ def compute_alignment_quality_metrics(
     )
 
 
-def _source_hint_delta(example: HumanClipExample) -> float | None:
+def _source_hint_url(example: HumanClipExample) -> str | None:
     provenance = example.acquisition_provenance
-    raw_url = (
-        provenance.get("resolved_source_url")
-        or provenance.get("requested_source_url")
-        or example.source_url
-    )
-    hint = parse_youtube_time_hint(str(raw_url) if raw_url else None)
+    requested = provenance.get("requested_source_url")
+    if requested:
+        return str(requested)
+    resolved = provenance.get("resolved_source_url")
+    if resolved:
+        return str(resolved)
+    return example.source_url
+
+
+def _source_hint_is_authoritative(example: HumanClipExample) -> bool:
+    provenance = example.acquisition_provenance
+    requested = provenance.get("requested_source_url")
+    if requested and parse_youtube_time_hint(str(requested)) is not None:
+        return True
+    if provenance.get("source_auto_detected") is True:
+        return False
+    return True
+
+
+def _source_hint_delta(example: HumanClipExample) -> float | None:
+    raw_url = _source_hint_url(example)
+    hint = parse_youtube_time_hint(raw_url)
     if hint is None or not example.alignment_segments:
         return None
     return example.alignment_segments[0].source_start - hint
@@ -390,6 +406,7 @@ def evaluate_human_example_learning_quality(
     source_hint_delta = _source_hint_delta(example)
     if (
         source_hint_delta is not None
+        and _source_hint_is_authoritative(example)
         and abs(source_hint_delta) > SOURCE_HINT_REVIEW_DELTA_SECONDS
     ):
         reasons.append(LearningQualityReason.SOURCE_HINT_DISAGREEMENT)
