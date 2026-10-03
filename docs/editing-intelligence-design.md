@@ -343,20 +343,140 @@ Remotion is functionally capable of programmatic video/motion composition, but i
 
 VapourSynth may be benchmarked later for specialized frame-processing/filter pipelines, but it is not required for the first production renderer.
 
-### 3.11 Heavy ML providers remain optional
+### 3.11 Semantic video understanding: VLM-backed VideoUnderstandingProvider
 
-Do not make the first Editing Intelligence implementation depend on:
+A perfect editing system must understand not only how pixels changed, but what is happening in the video.
+
+OpenCV, shot detection and OCR measure:
+- where a crop/zoom happened
+- where a cut occurred
+- what text was visible
+
+They do not reliably answer:
+- which visible subject is currently important
+- whether the payoff is a facial/avatar reaction or an in-game event
+- which game/UI region carries the meaning
+- whether a visual gag occurred without a strong transcript signal
+- whether several visible participants react differently
+- whether a context overlay points at an important object/state
+- whether a zoom emphasized the speaker, the game, an item, or a reaction
+
+Introduce a replaceable **VideoUnderstandingProvider** backed by a VLM.
+
+The provider is a required semantic observation layer for production Editing Readiness, but no single VLM implementation is permanently mandatory.
+
+Supported provider styles:
+- native video VLM over bounded short clips
+- multi-image VLM over shot-aware sampled frames/contact sheets
+
+The provider must consume measured IDs and bounded media windows. It returns semantic observations linked to:
+- source asset ID
+- shot IDs
+- transcript segment IDs
+- measured start/end windows
+- sampled frame IDs
+
+It must NOT invent authoritative timestamps.
+
+Suggested semantic observation schema:
+- visible subjects / participant roles
+- dominant visual focus
+- meaningful screen regions
+- facial/avatar reaction description
+- gameplay/UI event description
+- object/item/context references
+- scene purpose
+- visual surprise/change
+- multi-participant interaction
+- recommended focus target candidates
+- confidence
+- evidence frame/shot IDs
+- uncertainty/unknown
+
+### 3.12 VLM sampling policy
+
+Do not send entire long-form streams frame-by-frame to a VLM.
+
+Use coarse-to-fine, event-driven visual understanding:
+
+1. Editorial discovery narrows source ranges.
+2. PySceneDetect establishes shot boundaries.
+3. Deterministic sampling selects representative frames per shot.
+4. OCR/OpenCV/audio/transcript events mark regions requiring denser inspection.
+5. VideoUnderstandingProvider examines:
+   - representative shot frames
+   - short clips around reactions/payoffs/cuts
+   - denser frames only when motion or semantics are ambiguous.
+6. Results are cached by media fingerprint, measured window, frame IDs, provider/model/version and prompt version.
+
+This keeps visual semantics affordable and resumable.
+
+### 3.13 Runtime VLM role
+
+VLM understanding is used both during training and production.
+
+Training:
+- explain what a measured human edit visually emphasized
+- distinguish face/avatar focus from gameplay/UI/object focus
+- link learned visual editing mechanisms to semantic triggers
+
+Runtime on an unseen source:
+- inspect only the selected TimelinePlan ranges
+- identify the visual subject/region relevant to each narrative beat
+- provide candidates to ReframePlan/OverlayPlan generation
+- validate whether a learned visual-emphasis pattern applies
+
+If VLM evidence is unavailable or low confidence:
+- do not fabricate semantic crop/focus targets
+- fall back to safe source framing or deterministic measured layout rules
+- mark advanced visual actions unavailable
+
+### 3.14 VisualTargetProvider
+
+Keep **VisualTargetProvider** distinct from general VLM understanding.
+
+VideoUnderstandingProvider answers:
+> What is happening and what appears semantically important?
+
+VisualTargetProvider answers:
+> Given that semantic target, where exactly is it in image coordinates over time?
+
+VisualTargetProvider may use:
+- tracking
+- detection
+- segmentation
+- template matching
+- model-specific region grounding
+
+The VLM must not be treated as a pixel-accurate tracker unless benchmark evidence supports it.
+
+### 3.15 Heavy ML provider policy
+
+Do not hard-code the architecture to:
 - a community anime-face detector
 - a specific YOLO checkpoint
-- a video-language model
+- a specific VLM
 - an audio-event classifier
 
 Introduce interfaces for:
+- VideoUnderstandingProvider
 - VisualTargetProvider
 - AudioEventProvider
 - OCRProvider
 
-Only promote a provider to default after a measured benchmark on the Holoclip corpus.
+Provider promotion is benchmark-based.
+
+For VLM providers benchmark at minimum:
+- semantic event accuracy on held-out human clips
+- focus-target correctness
+- hallucination rate
+- shot/beat grounding accuracy
+- Japanese context comprehension
+- runtime
+- API/GPU/VRAM cost
+- reproducibility/caching behavior
+
+Only providers that pass the Holoclip visual-understanding benchmark may become production defaults.
 
 ## 4. Training asset contract
 
@@ -484,7 +604,24 @@ Derive:
 
 A transform crossing a shot boundary must be split.
 
-### 5.8 Audio transformation observation
+### 5.8 Semantic visual observation with VLM
+
+For each relevant measured shot/window, produce VLM semantic observations.
+
+Training compares:
+- what the source visually contained
+- what the finished edit emphasized
+- which narrative beat the emphasis served
+
+Examples:
+- measured punch-in + VLM identifies surprised avatar reaction
+- measured crop + VLM identifies important game UI/result region
+- source switch + VLM identifies another participant's reaction
+- context card + VLM identifies the object/event being explained
+
+The VLM result never replaces the measured transform. It explains the semantic trigger/purpose.
+
+### 5.9 Audio transformation observation
 
 Measure source vs output:
 - loudness change
@@ -502,7 +639,7 @@ Residual audio may indicate:
 
 Do not classify residual type as SFX/BGM without a reliable provider; unknown_added_audio is valid.
 
-### 5.9 Narrative beat linkage
+### 5.10 Narrative beat linkage
 
 Link measured editing events to:
 - hook
@@ -538,6 +675,8 @@ Each trusted analyzable example produces one persisted card with:
 - pause removal/preservation observations
 - subtitle events
 - visual transform events
+- semantic visual/VLM observations
+- visual target observations where available
 - overlay events
 - audio transform events
 - transition events
@@ -607,6 +746,8 @@ Initial conservative gate:
 - >= 80% of cards have temporal-map coverage >= 80%
 - >= 80% of caption-heavy cards have usable text observation
 - >= 80% of cards have usable visual-transform observation
+- >= 80% of visually relevant cards have grounded VLM semantic observation on their key beats
+- all CORE patterns whose trigger/action depends on visual semantics have validated VLM support
 - audio measurement available on >= 90% of cards
 
 ### Learned mechanism maturity
@@ -886,8 +1027,8 @@ Finished human-video media/evidence is retained and reproducibly addressable.
 ### Gate B — Source/output temporal map
 Measured source↔finished time mapping works with confidence and unknown states.
 
-### Gate C — Visual/text/audio observation
-Independent observation providers produce provenance-backed events.
+### Gate C — Visual/text/audio/semantic-video observation
+Independent observation providers produce provenance-backed events, including grounded VLM semantic observations for visually relevant beats.
 
 ### Gate D — Editing Learning Cards
 One trusted example can be fully represented without LLM-invented media facts.
@@ -937,6 +1078,7 @@ Only then is the publishing layer allowed to become the primary next milestone.
 - PySceneDetect 0.7.x: scene/cut/fade observation.
 - OpenCV: feature matching, homography, tracking and geometric measurement.
 - PaddleOCR 3.x / Japanese-capable PP-OCR model: subtitle/text observation.
+- VLM-backed VideoUnderstandingProvider: semantic understanding of bounded video/shot windows; provider/model chosen by benchmark rather than hard-coded.
 - Whisper large-v3 compatible word timing: speech/caption linkage.
 - librosa: bounded audio feature extraction and DTW refinement.
 - pyloudnorm: BS.1770-style loudness measurement.
