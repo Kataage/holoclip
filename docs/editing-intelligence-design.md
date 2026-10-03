@@ -233,7 +233,7 @@ Initial production strategy:
 5. keep region coordinates/timing authoritative from OpenCV tracking, not from the VLM
 
 Primary text-reading provider:
-- Gemini 3.8 Flash Free Tier
+- Gemini Developer API Free Tier, selected by verified capability
 
 Free cloud fallback:
 - NVIDIA NIM free image/VLM endpoint
@@ -360,12 +360,22 @@ Local AI inference is intentionally excluded from the initial provider set. This
 Initial zero-cost AI stack:
 
 #### Native video / semantic vision
-Primary:
+Primary policy:
 - Google Gemini Developer API Free Tier
-- `gemini-3.8-flash`
-- native video understanding
-- bounded file/video inputs
-- agentic/static video modes as appropriate
+- model selected at runtime from the provider registry by:
+  1. FREE_TIER status verified recently
+  2. video input capability
+  3. structured output support
+  4. benchmark quality
+  5. current quota availability
+
+Current verified API baseline as of 2026-10-04:
+- `gemini-3.5-flash-lite`: Free Tier, text/image/video/audio input
+- `gemini-3.6-flash`: Free Tier, but not relied upon because free consumer-app access is changing and API entitlements may also change
+
+Do not hard-code a non-Lite Gemini model as the permanent primary.
+
+The runtime selector should prefer the strongest currently verified free video-capable model, but must be able to fall back to Flash-Lite without architecture changes.
 
 Use:
 - semantic understanding of selected source ranges
@@ -391,8 +401,10 @@ These fallbacks operate on shot-aware representative frames/contact sheets when 
 #### Strong text/editorial reasoning
 Preferred zero-cost providers, in order:
 1. NVIDIA NIM Free Endpoint `z-ai/glm-5.3`
-2. Gemini 3.8 Flash Free Tier
+2. strongest currently verified free Gemini API text model from the provider registry
 3. other explicitly verified Free Endpoint only after benchmark
+
+Gemini consumer-plan model availability is never used as evidence of API availability.
 
 If the preferred strong endpoint times out, use another **free** verified provider. Never switch to a paid partner/serverless endpoint.
 
@@ -449,7 +461,9 @@ Gemini free-tier requests are currently eligible for product-improvement use by 
 Gemini free-tier video:
 - prefer short selected clips instead of full multi-hour archives
 - exploit existing Editorial/Timeline narrowing before VLM upload
-- treat the documented daily public-YouTube video allowance as a hard scheduling budget
+- never assume Gemini App subscription entitlements equal Gemini Developer API entitlements
+- re-verify free API model access before each production learning cycle
+- if only a Flash-Lite-class video model remains free, use it and benchmark quality; do not pay for Flash/Pro
 - Files API artifacts are temporary and should be deleted after use
 - one successful semantic observation is cached and never re-requested for the same fingerprint/model/prompt
 
@@ -1205,7 +1219,7 @@ Only then is the publishing layer allowed to become the primary next milestone.
 - FFmpeg / ffprobe: authoritative media execution/probing layer.
 - PySceneDetect 0.7.x: scene/cut/fade observation.
 - OpenCV: feature matching, homography, tracking and geometric measurement.
-- Gemini 3.8 Flash Free Tier: primary native-video semantic understanding and bounded crop text reading.
+- Gemini Developer API Free Tier: capability-routed video/text vision provider; current baseline is `gemini-3.5-flash-lite`, subject to runtime free-status verification.
 - NVIDIA NIM Free Endpoints: free image-VLM/text reasoning fallback and strong/fast reasoning providers.
 - NVIDIA nemotron-3-embed-1b Free Endpoint: structural embeddings.
 - Groq Free Plan whisper-large-v3: ASR and word timing.
