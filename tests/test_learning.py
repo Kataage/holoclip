@@ -116,7 +116,7 @@ async def test_enrich_human_clip_example_sets_structure_and_negatives() -> None:
     assert enriched.payoff == "もやし生活なので困らなかったと笑う"
     assert enriched.context_requirement == "low"
     assert enriched.traits == ["setup_payoff", "unexpected_confession"]
-    assert enriched.structure_method == "glm-structure-v1"
+    assert enriched.structure_method == "glm-structure-v2"
     assert enriched.structure_model == "strong-model"
     assert enriched.weak_negative_method == WEAK_NEGATIVE_METHOD
     assert len(enriched.weak_negatives) == 2
