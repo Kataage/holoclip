@@ -47,6 +47,29 @@ class CandidateRetrievalTrace(BaseModel):
     selector_reason: str | None = None
 
 
+class EditorialEditSpan(BaseModel):
+    source_start: float = Field(ge=0)
+    source_end: float = Field(gt=0)
+    start_segment_id: str
+    end_segment_id: str
+    purpose: str = "other"
+
+    @model_validator(mode="after")
+    def validate_span(self):
+        if self.source_end <= self.source_start:
+            raise ValueError("edit span must have positive duration")
+        return self
+
+
+class EditorialEditPlan(BaseModel):
+    profile_fingerprint: str
+    pattern_ids: list[str]
+    spans: list[EditorialEditSpan]
+    reason: str
+    selected_seconds: float = Field(gt=0)
+    omitted_seconds: float = Field(ge=0)
+
+
 class ClipCandidate(BaseModel):
     start: float = Field(ge=0)
     end: float = Field(gt=0)
@@ -61,6 +84,7 @@ class ClipCandidate(BaseModel):
     source_chunk_ids: list[str] = Field(default_factory=list)
     warnings: list[CandidateWarning] = Field(default_factory=list)
     retrieval_trace: CandidateRetrievalTrace | None = None
+    editorial_edit_plan: EditorialEditPlan | None = None
 
     @model_validator(mode="after")
     def validate_range(self) -> ClipCandidate:

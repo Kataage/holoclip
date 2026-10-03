@@ -9,6 +9,11 @@ from holoclip.analysis.prompts import (
     final_review_messages,
     guided_discovery_messages,
 )
+from holoclip.editorial_profile import (
+    EditorialProfile,
+    editorial_profile_prompt_payload,
+    validate_editorial_profile,
+)
 from holoclip.execution import StageArtifactCache, StageStatus, make_input_fingerprint
 from holoclip.models import (
     CandidateRetrievalHit,
@@ -183,6 +188,7 @@ class CandidateDetector:
         retrieval_negative_k: int = 3,
         final_temperature: float = 0.1,
         strict_retrieval: bool = False,
+        editorial_profile: EditorialProfile | None = None,
     ) -> None:
         self.llm = llm
         self.fast_model = fast_model
@@ -198,12 +204,17 @@ class CandidateDetector:
         self.retrieval_negative_k = retrieval_negative_k
         self.final_temperature = final_temperature
         self.strict_retrieval = strict_retrieval
+        checked_profile = validate_editorial_profile(editorial_profile) if editorial_profile else None
+        self.editorial_profile = checked_profile if checked_profile and checked_profile.readiness.ready else None
+        self._editorial_profile_payload = editorial_profile_prompt_payload(self.editorial_profile) if self.editorial_profile else None
+        self._editorial_profile_fingerprint = self.editorial_profile.fingerprint if self.editorial_profile else None
 
     def _emit(self, message: str) -> None:
         if self.progress is not None:
             self.progress(message)
 
     async def _discover_chunk(self, chunk: TranscriptChunk) -> list[ClipCandidate]:
+        profile_payload = self._editorial_profile_payload
         input_fingerprint = make_input_fingerprint(
             {
                 "chunk_id": chunk.id,
@@ -211,6 +222,9 @@ class CandidateDetector:
                 "end": chunk.end,
                 "text": chunk.text,
                 "segment_indices": chunk.segment_indices,
+                "editorial_profile_fingerprint": (
+                    self._editorial_profile_fingerprint
+                ),
             }
         )
         payload = None
@@ -224,7 +238,11 @@ class CandidateDetector:
                 stage_version="1",
                 provider=self.cache_provider,
                 model=self.fast_model,
-                prompt_version="discovery-v1",
+                prompt_version=(
+                    "discovery-editorial-profile-v1"
+                    if self.editorial_profile is not None
+                    else "discovery-v1"
+                ),
             )
             if payload is not None:
                 self._emit(f"broad {chunk.id}: reused")
@@ -240,11 +258,18 @@ class CandidateDetector:
                     stage_version="1",
                     provider=self.cache_provider,
                     model=self.fast_model,
-                    prompt_version="discovery-v1",
+                    prompt_version=(
+                        "discovery-editorial-profile-v1"
+                        if self.editorial_profile is not None
+                        else "discovery-v1"
+                    ),
                 )
             try:
                 payload = await self.llm.chat_json(
-                    discovery_messages(chunk),
+                    discovery_messages(
+                        chunk,
+                        editorial_profile=profile_payload,
+                    ),
                     model=self.fast_model,
                     temperature=0.2,
                     max_tokens=2048,
@@ -337,6 +362,7 @@ class CandidateDetector:
                     for item in existing_candidates
                 ],
                 "retrieval_evidence": retrieval_evidence,
+                "editorial_profile": self._editorial_profile_fingerprint,
             }
         )
         payload = None
@@ -374,6 +400,7 @@ class CandidateDetector:
                         chunk,
                         existing_candidates=existing_candidates,
                         retrieval_evidence=retrieval_evidence,
+                        editorial_profile=self._editorial_profile_payload,
                     ),
                     model=self.fast_model,
                     temperature=0.1,
@@ -559,17 +586,27 @@ class CandidateDetector:
         self._emit(
             f"Final review: {len(review_candidates)} candidates with {self.strong_model}"
         )
-        payload = await self.llm.chat_json(
-            final_review_messages(
-                review_candidates,
-                top_k=top_k,
-                retrieval_evidence=retrieval_evidence,
-            ),
-            model=self.strong_model,
-            temperature=self.final_temperature,
-            max_tokens=3072,
-            reasoning_effort=self.strong_reasoning_effort,
-        )
+        messages = final_review_messages(review_candidates, top_k=top_k,
+            retrieval_evidence=retrieval_evidence, editorial_profile=self._editorial_profile_payload)
+        fingerprint = make_input_fingerprint({"messages": messages,
+            "temperature": self.final_temperature, "reasoning_effort": self.strong_reasoning_effort})
+        cache_args = dict(stage="final_candidate_selection", subject_type="candidate_pool",
+            subject_id=fingerprint, input_fingerprint=fingerprint, stage_version="1",
+            provider=self.cache_provider, model=self.strong_model,
+            prompt_version="final-editorial-review-v1" if self.editorial_profile else "final-review-v1")
+        payload = self.stage_cache.reusable_json(**cache_args) if self.stage_cache else None
+        if payload is None:
+            run = self.stage_cache.start(**cache_args) if self.stage_cache else None
+            try:
+                payload = await self.llm.chat_json(messages, model=self.strong_model,
+                    temperature=self.final_temperature, max_tokens=3072,
+                    reasoning_effort=self.strong_reasoning_effort)
+            except Exception as exc:
+                if run:
+                    self.stage_cache.fail(run, status=StageStatus.FAILED_RETRYABLE, error=exc)
+                raise
+            if run:
+                self.stage_cache.succeed_json(run, payload, kind="final_candidate_selection")
         ranked = payload.get("ranked")
         if not isinstance(ranked, list):
             return sorted(

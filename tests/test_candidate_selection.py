@@ -16,9 +16,11 @@ class FakeLLM:
         self.response = response
         self.calls = 0
         self.kwargs: list[dict[str, object]] = []
+        self.args: list[tuple[object, ...]] = []
 
     async def chat_json(self, *args: object, **kwargs: object) -> dict[str, object]:
         self.calls += 1
+        self.args.append(tuple(args))
         self.kwargs.append(dict(kwargs))
         return self.response
 
@@ -244,3 +246,59 @@ def test_merge_guided_candidates_zero_new_keeps_baseline_unchanged() -> None:
     assert [item.model_dump() for item in merged] == [
         item.model_dump() for item in baseline
     ]
+
+
+
+@pytest.mark.asyncio
+async def test_ready_editorial_profile_is_sent_to_broad_discovery(learned_ready_profile) -> None:
+    llm = FakeLLM({"candidates": []})
+    detector = CandidateDetector(
+        llm,
+        fast_model="fast",
+        strong_model="strong",
+        editorial_profile=learned_ready_profile,
+    )
+    chunk = TranscriptChunk(
+        id="chunk-0000",
+        start=0,
+        end=60,
+        text="雑談から意外な展開になり最後にオチがつく",
+        segment_indices=[0],
+    )
+
+    result = await detector.discover_broad([chunk])
+
+    assert result == []
+    messages = llm.args[0][0]
+    user_prompt = messages[1]["content"]
+    assert "Learned editorial profile" in user_prompt
+    assert "Contrast payoff" in user_prompt
+    assert "Reject unresolved rambling" in user_prompt
+
+
+@pytest.mark.asyncio
+async def test_unready_editorial_profile_is_not_used(learned_ready_profile) -> None:
+    profile = learned_ready_profile.model_copy(deep=True)
+    profile.learning_cards = profile.learning_cards[:9]
+    profile.readiness = profile.readiness.model_copy(
+        update={"ready": False, "reasons": ["not enough examples"]}
+    )
+    llm = FakeLLM({"candidates": []})
+    detector = CandidateDetector(
+        llm,
+        fast_model="fast",
+        strong_model="strong",
+        editorial_profile=profile,
+    )
+    chunk = TranscriptChunk(
+        id="chunk-0000",
+        start=0,
+        end=60,
+        text="雑談",
+        segment_indices=[0],
+    )
+
+    await detector.discover_broad([chunk])
+
+    messages = llm.args[0][0]
+    assert "Learned editorial profile" not in messages[1]["content"]

@@ -17,10 +17,61 @@ Video editing, thumbnails and publishing are intentionally deferred until this r
         -> broad discovery with the fast NIM model
         -> overlap dedupe
         -> editorial selection with the strong NIM model
-        -> saved evaluation run
-        -> human accept / maybe / reject
+        -> measured boundary / multi-cut plan when learning is ready
+        -> saved candidates and automatic evaluation artifacts
 
 NVIDIA NIM access is wrapped by a conservative process-local concurrency and RPM limiter. Groq transcription similarly uses a conservative request rate and stops instead of falling through to a paid provider.
+
+## Corpus editorial learning
+
+Holoclip now learns an explicit corpus-level editorial model from trusted aligned human-made clips.
+Individual example retrieval remains supporting evidence and is not called learned editorial intelligence.
+
+The autonomous flow is:
+
+    human-made clips -> source alignment / unchanged quality gate
+        -> deterministic full learning cards and contextual omissions
+        -> cached per-card contrast / measured beat observations (fast NIM)
+        -> bounded batch pattern induction (strong NIM)
+        -> bounded cross-batch mechanism consolidation (strong NIM)
+        -> automatic support evidence assessment
+        -> persisted Editorial Profile and recomputed readiness
+        -> profile-guided broad discovery / final selection / measured edit plan
+
+```powershell
+uv run holoclip examples-learn-profile
+uv run holoclip examples-learning-status
+uv run holoclip examples-grow-corpus --cycles 20
+```
+
+The last command searches public human clips without requiring clip URLs, resolves their sources,
+quarantines uncertain/policy-review examples, acquires audio, transcribes, aligns, enriches, indexes,
+and refreshes the profile. Each cycle is bounded and resumable. Continue beyond the initial target
+with `--target-trusted 100 --target-streams 50`. `--discover-only` performs metadata discovery only.
+
+Normal `analyze` and `discover` refresh missing/stale profiles using stage caches after trusted
+examples change. Profiles that are unready or have stale provenance are ignored automatically.
+
+The minimum production gate is 30 trusted clips, 15 trusted source streams, 5 core patterns and
+80% trusted-example coverage by core patterns. Core requires 3 trusted clips from 2 distinct streams;
+code derives counts, checks cited IDs and automatically assesses actual supporting evidence.
+Emerging mechanisms and unsupported principles do not drive production discovery.
+
+The initial local corpus has **11 clips, 9 trusted, 2 review, 10 total source streams and 8 trusted
+source streams**. It is **not ready**. Existing accept/maybe/reject labels are frozen validation
+records; `label` and `review` refuse new labels while readiness is false.
+
+Once learning is ready, run an automated comparison on an unseen transcript:
+
+```powershell
+uv run holoclip editorial-ab unseen.json --stream-id unseen-source-id
+```
+
+This checks training leakage and compares identical discovery/selector settings with profile ON/OFF.
+Its blinded LLM diagnostic is not human acceptance or proof of generalization. Optional human
+confirmation belongs at the end and should use only a small blind sample.
+
+See [editorial learning](docs/editorial-learning.md) for provenance, cache, boundary and scaling contracts.
 
 ## Setup
 
@@ -58,7 +109,7 @@ This automatically:
 4. runs NIM candidate discovery
 5. writes an evaluation run under data/evaluation/runs/
 
-Then review the generated candidates:
+Operator review is deferred until corpus learning is ready and an automatic unseen-stream ON/OFF comparison has run. Existing labels are retained for later validation. Optional final review commands are described below:
 
 ~~~powershell
 uv run holoclip review data\evaluation\runs\stream.json

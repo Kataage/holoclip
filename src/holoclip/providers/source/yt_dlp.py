@@ -389,6 +389,27 @@ class YtDlpSourceProvider:
             js_runtime=js_runtime,
             manage_updates=manage_updates,
         )
+        self._metadata_cache: dict[str, SourceMetadata] = {}
+
+    def search_public_clips(self, query: str, *, limit: int = 10, offset: int = 0) -> list[SourceMetadata]:
+        """Public metadata discovery only. Resolution/policy gates precede acquisition."""
+        if not 1 <= limit <= 50 or offset < 0:
+            raise ValueError("invalid public discovery page")
+        result = self._run_yt_dlp(
+            ["--skip-download", "--flat-playlist", "--dump-single-json",
+             "--playlist-start", str(offset + 1), "--playlist-end", str(offset + limit),
+             f"ytsearch{offset + limit}:{query}"], label="public clip metadata discovery")
+        payload = json.loads(result.stdout)
+        items = []
+        for row in payload.get("entries", []):
+            video_id = row.get("id") if isinstance(row, dict) else None
+            if not video_id or not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+                continue
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            items.append(SourceMetadata(provider="yt-dlp", url=url, webpage_url=url,
+                external_id=video_id, title=row.get("title") or video_id,
+                channel=row.get("channel"), channel_id=row.get("channel_id"), duration=row.get("duration")))
+        return items
 
     @property
     def runtime_info(self) -> YtDlpRuntimeInfo:
@@ -421,6 +442,8 @@ class YtDlpSourceProvider:
                 ) from second_error
 
     def probe(self, url: str) -> SourceMetadata:
+        if url in self._metadata_cache:
+            return self._metadata_cache[url].model_copy(deep=True)
         result = self._run_yt_dlp(
             [
                 "--no-playlist",
@@ -436,11 +459,13 @@ class YtDlpSourceProvider:
             raise YtDlpError("yt-dlp metadata output was not valid JSON") from exc
         if not isinstance(payload, dict):
             raise YtDlpError("yt-dlp metadata output must be a JSON object")
-        return _metadata_from_payload(
+        metadata = _metadata_from_payload(
             url,
             payload,
             runtime=self.runtime_info,
         )
+        self._metadata_cache[url] = metadata
+        return metadata.model_copy(deep=True)
 
     def source_candidates(
         self,
