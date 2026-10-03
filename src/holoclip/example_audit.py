@@ -584,6 +584,10 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
             "explained clip uncovered: "
             f"{report.alignment_quality.explained_uncovered_clip_seconds:.1f}s"
         ),
+        (
+            "largest unexplained clip gap: "
+            f"{report.alignment_quality.largest_unexplained_clip_gap:.1f}s"
+        ),
         f"source selected: {report.source_selected_seconds:.1f}s",
         f"removed/gap inside bounding range: {report.source_gap_seconds:.1f}s",
         (
