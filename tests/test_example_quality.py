@@ -100,8 +100,8 @@ def test_coherent_anchor_gaps_count_toward_explained_coverage() -> None:
     item = example_with_segments(
         [
             aligned_segment(0, 40, 100, 140, confidence=0.8, anchors=2),
-            aligned_segment(80, 100, 158, 178, confidence=0.9, anchors=1),
-            aligned_segment(140, 180, 218, 258, confidence=0.85, anchors=3),
+            aligned_segment(80, 100, 198, 218, confidence=0.9, anchors=1),
+            aligned_segment(140, 180, 278, 318, confidence=0.85, anchors=3),
         ]
     )
 
