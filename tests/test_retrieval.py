@@ -14,8 +14,10 @@ from holoclip.examples import (
 from holoclip.repository import SQLiteCanonicalRepository
 from holoclip.retrieval import (
     RETRIEVAL_VERSION,
+    RetrievalDocument,
     build_retrieval_document_drafts,
     index_human_examples,
+    retrieval_corpus_fingerprint,
     retrieve_structural_examples,
 )
 
