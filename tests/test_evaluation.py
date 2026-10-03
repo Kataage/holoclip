@@ -3,13 +3,19 @@ from holoclip.evaluation import (
     EvaluationRun,
     FeedbackRecord,
     KnownClip,
+    build_blind_ab_run,
     build_run,
     candidate_pool_fingerprint,
     compare_evaluation_metrics,
     compute_metrics,
     known_clip_hit,
 )
-from holoclip.models import ClipCandidate, ReviewDecision
+from holoclip.models import (
+    CandidateRetrievalHit,
+    CandidateRetrievalTrace,
+    ClipCandidate,
+    ReviewDecision,
+)
 
 
 def candidate(start: float, end: float, title: str) -> ClipCandidate:
@@ -212,3 +218,83 @@ def test_compare_evaluation_metrics_returns_retrieval_minus_baseline() -> None:
     assert delta["accept_at_3_mean"] == 1.0
     assert delta["accept_at_5_mean"] == 1.0
     assert delta["usable_at_5_mean"] == 1.0
+
+
+
+def test_blind_ab_run_unions_candidates_and_hides_variant_evidence() -> None:
+    shared = candidate(10, 20, "shared")
+    baseline_only = candidate(30, 40, "baseline-only")
+    retrieval_only = candidate(50, 60, "retrieval-only")
+    retrieval_only.retrieval_trace = CandidateRetrievalTrace(
+        embedding_model="embed",
+        embedding_version="v1",
+        positives=[
+            CandidateRetrievalHit(
+                document_id="doc",
+                example_id="example",
+                score=0.9,
+            )
+        ],
+    )
+    retrieval_only.confidence = 0.99
+
+    baseline = build_run(
+        stream_id="stream",
+        transcript_path="stream.json",
+        candidates=[shared, baseline_only],
+        metadata={"variant": "baseline"},
+    )
+    retrieval = build_run(
+        stream_id="stream",
+        transcript_path="stream.json",
+        candidates=[retrieval_only, shared],
+        metadata={"variant": "retrieval"},
+    )
+
+    blind = build_blind_ab_run(baseline, retrieval)
+
+    expected_ids = {
+        *(item.id for item in baseline.candidates),
+        *(item.id for item in retrieval.candidates),
+    }
+    assert {item.id for item in blind.candidates} == expected_ids
+    assert len(blind.candidates) == 3
+    assert [item.rank for item in blind.candidates] == [1, 2, 3]
+    assert all(item.candidate.retrieval_trace is None for item in blind.candidates)
+    assert all(item.candidate.confidence == 0.5 for item in blind.candidates)
+    assert blind.metadata == {
+        "experiment": "retrieval-ab-blind-v1",
+        "blinded": True,
+    }
+
+
+def test_blind_ab_order_is_independent_of_variant_rank() -> None:
+    a = candidate(10, 20, "a")
+    b = candidate(30, 40, "b")
+    first_baseline = build_run(
+        stream_id="stream",
+        transcript_path="stream.json",
+        candidates=[a, b],
+    )
+    first_retrieval = build_run(
+        stream_id="stream",
+        transcript_path="stream.json",
+        candidates=[b, a],
+    )
+    second_baseline = build_run(
+        stream_id="stream",
+        transcript_path="stream.json",
+        candidates=[b, a],
+    )
+    second_retrieval = build_run(
+        stream_id="stream",
+        transcript_path="stream.json",
+        candidates=[a, b],
+    )
+
+    first = build_blind_ab_run(first_baseline, first_retrieval)
+    second = build_blind_ab_run(second_baseline, second_retrieval)
+
+    assert [item.id for item in first.candidates] == [
+        item.id for item in second.candidates
+    ]
