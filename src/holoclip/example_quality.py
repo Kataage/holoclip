@@ -172,6 +172,33 @@ def _largest_uncovered_gap(
     return largest
 
 
+def is_trustworthy_alignment_boundary(segment) -> bool:
+    return (
+        segment.matched_anchors >= 2
+        or segment.confidence >= TRUSTED_MIN_ALIGNMENT_CONFIDENCE
+    )
+
+
+def explained_clip_bridge_seconds(left, right) -> float:
+    clip_gap = right.clip_start - left.clip_end
+    source_gap = right.source_start - left.source_end
+    if clip_gap <= 0:
+        return 0.0
+    if clip_gap > EXPLAINED_BRIDGE_MAX_CLIP_GAP_SECONDS:
+        return 0.0
+    if not (
+        is_trustworthy_alignment_boundary(left)
+        and is_trustworthy_alignment_boundary(right)
+    ):
+        return 0.0
+    if source_gap < clip_gap - EXPLAINED_BRIDGE_CLOCK_TOLERANCE_SECONDS:
+        return 0.0
+    source_cut = max(0.0, source_gap - clip_gap)
+    if source_cut > EXPLAINED_BRIDGE_MAX_SOURCE_CUT_SECONDS:
+        return 0.0
+    return clip_gap
+
+
 def compute_alignment_quality_metrics(
     example: HumanClipExample,
 ) -> AlignmentQualityMetrics:
