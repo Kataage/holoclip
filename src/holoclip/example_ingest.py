@@ -111,6 +111,7 @@ async def ingest_human_example_from_urls(
     *,
     clip_url: str,
     source_url: str | None,
+    source_start_hint_seconds: float | None = None,
     download_root: Path,
     transcript_root: Path,
     examples_store: Path,
@@ -304,6 +305,10 @@ async def ingest_human_example_from_urls(
             "requested_source_url": source_url,
             "resolved_source_url": resolved_source_url,
             "source_auto_detected": source_auto_detected,
+            "source_start_hint_seconds": source_start_hint_seconds,
+            "source_start_hint_authoritative": (
+                source_start_hint_seconds is not None
+            ),
             "source_resolution_reason": (
                 chosen_source.reason if chosen_source is not None else "explicit_source_url"
             ),
