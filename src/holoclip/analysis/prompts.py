@@ -28,7 +28,11 @@ Return JSON only.
 """
 
 
-def discovery_messages(chunk: TranscriptChunk) -> list[dict[str, str]]:
+def discovery_messages(
+    chunk: TranscriptChunk,
+    *,
+    editorial_profile: dict[str, object] | None = None,
+) -> list[dict[str, str]]:
     schema = {
         "candidates": [
             {
@@ -46,10 +50,22 @@ def discovery_messages(chunk: TranscriptChunk) -> list[dict[str, str]]:
             }
         ]
     }
+    learned = ""
+    if editorial_profile is not None:
+        learned = (
+            "Learned editorial profile from trusted human-made clips:\n"
+            f"{json.dumps(editorial_profile, ensure_ascii=False)}\n\n"
+            "Use this profile as the primary editorial prior. Match observable "
+            "mechanisms, required evidence, rejection cues and boundary rules; "
+            "do not force a pattern when the transcript does not support it. "
+            "The profile describes reusable editing behavior, not topic templates.\n\n"
+        )
+
     user = (
         f"Chunk id: {chunk.id}\n"
         f"Valid time range: {chunk.start:.3f} - {chunk.end:.3f} seconds\n\n"
-        "Transcript:\n"
+        + learned
+        + "Transcript:\n"
         f"{chunk.text}\n\n"
         "Return candidates whose timestamps stay inside the valid time range. "
         "Zero candidates is allowed. JSON shape example:\n"
