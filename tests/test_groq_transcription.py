@@ -10,6 +10,9 @@ from holoclip.providers.transcription.groq import (
 )
 
 
+pytestmark = pytest.mark.usefixtures("free_cost_guard")
+
+
 @pytest.mark.asyncio
 async def test_transcription_offsets_segment_timestamps(tmp_path: Path) -> None:
     audio = tmp_path / "chunk.mp3"

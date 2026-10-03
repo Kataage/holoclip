@@ -1,5 +1,6 @@
 import pytest
 
+
 from holoclip.editorial_profile import (
     EditorialLearningCard,
     EditorialPattern,
@@ -8,6 +9,19 @@ from holoclip.editorial_profile import (
     card_fingerprint,
     validate_editorial_profile,
 )
+
+
+@pytest.fixture
+def free_cost_guard(tmp_path, monkeypatch):
+    """Explicit mock entitlement; no test bypass exists in production code."""
+    from test_cost_policy import NOW, guard_at
+    from holoclip.providers.cost import CostGuard
+    guard = guard_at(tmp_path / "quota.db")
+    guard.accounts += guard_at(tmp_path / "quota.db", provider="groq").accounts
+    guard.clock = lambda: NOW
+    monkeypatch.setattr(CostGuard, "from_env", classmethod(lambda cls: guard))
+    monkeypatch.setenv("HOLOCLIP_DATA_CLASS", "public")
+    return guard
 
 
 @pytest.fixture

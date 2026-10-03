@@ -9,6 +9,7 @@ from typing import Any, Self
 import httpx
 
 from holoclip.config import NimEmbeddingSettings
+from holoclip.providers.cost import CostGuard, QuotaBlocked
 from holoclip.providers.embedding.base import EmbeddingProviderError
 
 
@@ -16,13 +17,13 @@ class NvidiaEmbeddingAuthorizationError(EmbeddingProviderError):
     pass
 
 
-class NvidiaEmbeddingRateLimitDeferred(EmbeddingProviderError):
+class NvidiaEmbeddingRateLimitDeferred(EmbeddingProviderError, QuotaBlocked):
     def __init__(self, retry_after: float | None = None) -> None:
         self.retry_after = retry_after
         message = "NVIDIA embedding endpoint rate/quota limited"
         if retry_after is not None:
             message += f"; retry after approximately {retry_after:.0f} seconds"
-        super().__init__(message)
+        RuntimeError.__init__(self, message)
 
 
 class _RateGate:
@@ -46,12 +47,14 @@ class NvidiaNimEmbeddingClient:
         settings: NimEmbeddingSettings,
         *,
         client: httpx.AsyncClient | None = None,
+        cost_guard: CostGuard | None = None,
     ) -> None:
         settings.validate()
         self.settings = settings
         self._client = client or httpx.AsyncClient(timeout=settings.timeout_seconds)
         self._owns_client = client is None
         self._rate_gate = _RateGate(settings.rpm)
+        self._cost_guard = cost_guard or CostGuard.from_env()
 
     @property
     def model(self) -> str:
@@ -89,8 +92,11 @@ class NvidiaNimEmbeddingClient:
 
             for attempt in range(self.settings.max_retries + 1):
                 try:
-                    response = await self._client.post(
-                        f"{self.settings.base_url}/embeddings",
+                    response = await self._cost_guard.post(
+                        self._client, provider="nvidia", model=self.settings.model,
+                        base_url=self.settings.base_url, key=self.settings.api_key,
+                        operation="embeddings",
+                        estimate={"requests": 1, "tokens": sum(len(t.encode("utf-8")) for t in batch)},
                         headers={
                             "Authorization": f"Bearer {self.settings.api_key}",
                             "Content-Type": "application/json",
@@ -137,13 +143,7 @@ class NvidiaNimEmbeddingClient:
                         retry_after = float(raw_retry) if raw_retry else None
                     except ValueError:
                         retry_after = None
-                    if retry_after is not None and retry_after > 120:
-                        raise NvidiaEmbeddingRateLimitDeferred(retry_after)
-                    if attempt >= self.settings.max_retries:
-                        raise NvidiaEmbeddingRateLimitDeferred(retry_after)
-                    delay = retry_after if retry_after is not None else float(2**attempt)
-                    await asyncio.sleep(min(120.0, delay + random.random()))
-                    continue
+                    raise NvidiaEmbeddingRateLimitDeferred(retry_after)
 
                 if 500 <= response.status_code < 600 and attempt < self.settings.max_retries:
                     await asyncio.sleep(min(30.0, (2**attempt) + random.random()))
