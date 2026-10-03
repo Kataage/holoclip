@@ -111,8 +111,8 @@ def test_local_gap_recovery_fills_strong_bounded_match() -> None:
     ]
     source = [
         segment(100, "冒頭の確実な一致です", 5),
-        segment(120, "途中の固有な話題アルファです", 5),
-        segment(125, "途中の固有な話題ベータです", 5),
+        segment(125, "途中の固有な話題アルファです", 5),
+        segment(130, "途中の固有な話題ベータです", 5),
         segment(160, "最後の確実な一致です", 5),
     ]
     primary = [
@@ -182,8 +182,8 @@ def test_local_gap_recovery_fills_strong_bounded_match() -> None:
     middle = recovered[1]
     assert middle.clip_start == 10
     assert middle.clip_end == 20
-    assert middle.source_start == pytest.approx(120, abs=1)
-    assert middle.source_end == pytest.approx(130, abs=1)
+    assert middle.source_start == pytest.approx(125, abs=1)
+    assert middle.source_end == pytest.approx(135, abs=1)
     assert middle.matched_anchors == 2
 
 
