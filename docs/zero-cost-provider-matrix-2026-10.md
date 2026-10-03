@@ -1,6 +1,9 @@
 # Zero-Cost AI Provider Matrix — 2026-10-04
 
 Status: research baseline  
+Revalidation: see [2026-10-04 implementation audit](provider-foundation-audit-2026-10-04.md).
+Its unavailable/diagnostic findings supersede candidate availability below; no
+PRIMARY/SECONDARY wording in this research snapshot grants production qualification.
 Applies to: #80, #92, #94, #97  
 Policy: ZERO_COST_ONLY  
 Constraint: local AI inference is excluded from the initial provider set. Local deterministic media tooling remains allowed.

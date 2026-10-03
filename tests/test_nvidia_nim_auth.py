@@ -11,6 +11,9 @@ from holoclip.providers.llm.nvidia_nim import (
 )
 
 
+pytestmark = pytest.mark.usefixtures("free_cost_guard")
+
+
 @pytest.mark.asyncio
 async def test_chat_classifies_403_authorization_failure() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:

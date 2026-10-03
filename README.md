@@ -91,7 +91,10 @@ NVIDIA_API_KEY=...
 GROQ_API_KEY=...
 ~~~
 
-No paid-provider fallback exists.
+AI requests enforce [ZERO_COST_ONLY](docs/zero-cost-runtime.md). Supply current
+credential-bound free-account evidence and declare public workflow data before
+running inference. Model/endpoint overrides must match the verified registry.
+Missing evidence blocks safely; no billing activation or paid fallback exists.
 
 ## One-command discovery
 

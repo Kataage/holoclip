@@ -10,16 +10,17 @@ from typing import Any, Self
 import httpx
 
 from holoclip.config import GroqTranscriptionSettings
+from holoclip.providers.cost import CostGuard, QuotaBlocked
 from holoclip.models import TranscriptSegment
 
 
-class GroqRateLimitDeferred(RuntimeError):
+class GroqRateLimitDeferred(QuotaBlocked):
     def __init__(self, retry_after: float | None = None) -> None:
         self.retry_after = retry_after
         message = "Groq free-tier rate/quota limit reached"
         if retry_after is not None:
             message += f"; retry after approximately {retry_after:.0f} seconds"
-        super().__init__(message)
+        RuntimeError.__init__(self, message)
 
 
 class _RateGate:
@@ -90,12 +91,14 @@ class GroqWhisperTranscriber:
         settings: GroqTranscriptionSettings,
         *,
         client: httpx.AsyncClient | None = None,
+        cost_guard: CostGuard | None = None,
     ) -> None:
         settings.validate()
         self.settings = settings
         self._rate_gate = _RateGate(settings.rpm)
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(timeout=settings.timeout_seconds)
+        self._cost_guard = cost_guard or CostGuard.from_env()
 
     async def __aenter__(self) -> Self:
         return self
@@ -118,8 +121,12 @@ class GroqWhisperTranscriber:
 
             try:
                 with path.open("rb") as handle:
-                    response = await self._client.post(
-                        f"{self.settings.base_url}/audio/transcriptions",
+                    response = await self._cost_guard.post(
+                        self._client, provider="groq", model=self.settings.model,
+                        base_url=self.settings.base_url, key=self.settings.api_key,
+                        operation="audio/transcriptions",
+                        estimate={"requests": 1, "audio_seconds": self.settings.chunk_seconds,
+                                  "uploaded_bytes": path.stat().st_size},
                         headers={"Authorization": f"Bearer {self.settings.api_key}"},
                         files={"file": (path.name, handle, "audio/mpeg")},
                         data={
@@ -151,15 +158,7 @@ class GroqWhisperTranscriber:
                 except ValueError:
                     retry_after = None
 
-                if retry_after is not None and retry_after > 120:
-                    raise GroqRateLimitDeferred(retry_after)
-
-                if attempt >= self.settings.max_retries:
-                    raise GroqRateLimitDeferred(retry_after)
-
-                delay = retry_after if retry_after is not None else float(2**attempt)
-                await asyncio.sleep(min(120.0, delay + random.random()))
-                continue
+                raise GroqRateLimitDeferred(retry_after)
 
             if 500 <= response.status_code < 600:
                 if attempt >= self.settings.max_retries:

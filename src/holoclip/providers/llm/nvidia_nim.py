@@ -10,6 +10,7 @@ from typing import Any, Self
 import httpx
 
 from holoclip.config import NimSettings
+from holoclip.providers.cost import CostGuard, QuotaBlocked
 
 
 class NvidiaNimAuthorizationError(RuntimeError):
@@ -74,6 +75,7 @@ class NvidiaNimClient:
         *,
         client: httpx.AsyncClient | None = None,
         event_callback: Callable[[str], None] | None = None,
+        cost_guard: CostGuard | None = None,
     ) -> None:
         settings.validate()
         self.settings = settings
@@ -82,6 +84,7 @@ class NvidiaNimClient:
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(timeout=settings.timeout_seconds)
         self._event_callback = event_callback
+        self._cost_guard = cost_guard or CostGuard.from_env()
 
     def _emit(self, message: str) -> None:
         if self._event_callback is not None:
@@ -95,9 +98,11 @@ class NvidiaNimClient:
             await self._client.aclose()
 
     async def list_models(self) -> dict[str, Any]:
+        self._cost_guard.model("nvidia", self.settings.model, self.settings.base_url)
         response = await self._client.get(
             f"{self.settings.base_url}/models",
             headers={"Authorization": f"Bearer {self.settings.api_key}"},
+            follow_redirects=False,
         )
         if response.status_code in {401, 403}:
             detail = None
@@ -138,8 +143,13 @@ class NvidiaNimClient:
             for attempt in range(self.settings.max_retries + 1):
                 await self._rate_gate.wait()
                 try:
-                    response = await self._client.post(
-                        f"{self.settings.base_url}/chat/completions",
+                    response = await self._cost_guard.post(
+                        self._client,
+                        provider="nvidia", model=resolved_model,
+                        base_url=self.settings.base_url, key=self.settings.api_key,
+                        operation="chat/completions",
+                        estimate={"requests": 1, "tokens": max_tokens + sum(
+                            len(m["content"].encode("utf-8")) for m in messages)},
                         headers={
                             "Authorization": f"Bearer {self.settings.api_key}",
                             "Content-Type": "application/json",
@@ -188,7 +198,9 @@ class NvidiaNimClient:
                         pass
                     raise NvidiaNimAuthorizationError(response.status_code, detail)
 
-                retryable = response.status_code == 429 or 500 <= response.status_code < 600
+                if response.status_code == 429:
+                    raise QuotaBlocked()
+                retryable = 500 <= response.status_code < 600
                 if retryable:
                     self._emit(
                         f"NVIDIA NIM HTTP {response.status_code}: {resolved_model} "

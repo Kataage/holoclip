@@ -265,6 +265,13 @@ class StageArtifactCache:
         error: BaseException,
         retry_after: float | None = None,
     ) -> StageRun:
+        from holoclip.providers.cost import CostPolicyError, QuotaBlocked
+
+        if isinstance(error, QuotaBlocked):
+            status = StageStatus.BLOCKED_QUOTA
+            retry_after = error.retry_after
+        elif isinstance(error, CostPolicyError):
+            status = StageStatus.BLOCKED_DEPENDENCY
         if status not in {
             StageStatus.FAILED_RETRYABLE,
             StageStatus.FAILED_TERMINAL,

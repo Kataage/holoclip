@@ -7,6 +7,9 @@ from holoclip.config import NimEmbeddingSettings
 from holoclip.providers.embedding.nvidia_nim import NvidiaNimEmbeddingClient
 
 
+pytestmark = pytest.mark.usefixtures("free_cost_guard")
+
+
 @pytest.mark.asyncio
 async def test_embedding_client_uses_passage_and_query_input_types() -> None:
     seen: list[dict] = []

@@ -62,7 +62,7 @@ class NimSettings:
 class GroqTranscriptionSettings:
     api_key: str
     base_url: str = "https://api.groq.com/openai/v1"
-    model: str = "whisper-large-v3-turbo"
+    model: str = "whisper-large-v3"
     language: str = "ja"
     rpm: int = 15
     max_retries: int = 6
@@ -76,7 +76,7 @@ class GroqTranscriptionSettings:
             base_url=os.getenv(
                 "GROQ_BASE_URL", "https://api.groq.com/openai/v1"
             ).rstrip("/"),
-            model=os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo"),
+            model=os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3"),
             language=os.getenv("GROQ_WHISPER_LANGUAGE", "ja"),
             rpm=_env_int("GROQ_WHISPER_RPM", 15),
             max_retries=_env_int("GROQ_WHISPER_MAX_RETRIES", 6),
