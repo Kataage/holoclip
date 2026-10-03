@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from holoclip.examples import HumanClipExample, WeakNegativeExample
+from holoclip.examples import (
+    WEAK_NEGATIVE_METHOD,
+    HumanClipExample,
+    WeakNegativeExample,
+)
 from holoclip.execution import (
     StageArtifactCache,
     StageStatus,
@@ -304,6 +308,7 @@ async def enrich_human_clip_example(
         source_segments,
         window_seconds=weak_negative_window_seconds,
     )
+    updated.weak_negative_method = WEAK_NEGATIVE_METHOD
     updated.structure_method = "glm-structure-v1"
     updated.structure_model = model
     return updated
