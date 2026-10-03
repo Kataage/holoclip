@@ -3,8 +3,6 @@ import pytest
 from holoclip.alignment import ALIGNMENT_METHOD
 from holoclip.editorial_profile import (
     EditorialPattern,
-    EditorialProfile,
-    LearningReadiness,
     PatternMaturity,
     build_editorial_learning_cards,
     editorial_profile_prompt_payload,
@@ -73,18 +71,14 @@ def trusted_example(
 
 
 def test_learning_cards_capture_selection_and_edit_geometry() -> None:
-    card = build_editorial_learning_cards(
-        [trusted_example("a", stream_id="stream-a")]
-    )[0]
+    card = build_editorial_learning_cards([trusted_example("a", stream_id="stream-a")])[0]
 
     assert card.example_id == "a"
     assert card.selected_source_seconds == 60
     assert card.source_span_seconds == 80
     assert card.removed_source_gap_seconds == [20]
     assert card.weak_negative_refs == ["a:weak:0"]
-    assert card.weak_negative_reasons == [
-        "removed_between_selected_segments"
-    ]
+    assert card.weak_negative_reasons == ["removed_between_selected_segments"]
 
 
 class FakeLLM:
@@ -94,6 +88,20 @@ class FakeLLM:
 
     async def chat_json(self, messages, **kwargs):
         self.calls.append((messages, kwargs))
+        if "Assess each proposed pattern" in messages[1]["content"]:
+            import json
+
+            data = json.loads(messages[1]["content"].split("\n", 1)[1])
+            return {
+                "assessments": [
+                    {
+                        "pattern_id": p["pattern_id"],
+                        "supports": True,
+                        "reason": "selected evidence supports the mechanism",
+                    }
+                    for p in data["patterns"]
+                ]
+            }
         return self.payloads.pop(0)
 
 
@@ -138,7 +146,17 @@ async def test_profile_induction_validates_support_and_keeps_small_corpus_unread
             }
         ],
     }
-    llm = FakeLLM([partial, consolidated])
+    consolidated = {
+        **consolidated,
+        **{
+            k: [
+                {"text": text, "support_example_ids": ["a", "b", "c"], "weak_negative_refs": []}
+                for text in partial[k]
+            ]
+            for k in ("global_principles", "rejection_principles", "boundary_principles")
+        },
+    }
+    llm = FakeLLM([{}, {}, {}, consolidated])
 
     profile = await induce_editorial_profile(
         llm,
@@ -156,46 +174,21 @@ async def test_profile_induction_validates_support_and_keeps_small_corpus_unread
     assert pattern.support_stream_ids == ["stream-a", "stream-b", "stream-c"]
     assert pattern.weak_negative_refs == ["a:weak:0"]
     assert profile.readiness.ready is False
-    assert any(
-        reason.startswith("trusted_examples")
-        for reason in profile.readiness.reasons
+    assert any(reason.startswith("trusted_examples") for reason in profile.readiness.reasons)
+
+
+def test_prompt_payload_uses_only_core_patterns_by_default(learned_ready_profile) -> None:
+    profile = learned_ready_profile.model_copy(deep=True)
+    profile.patterns.append(
+        EditorialPattern(
+            id="emerging",
+            name="singleton",
+            mechanism="one example mechanism",
+            support_example_ids=["e0"],
+            maturity=PatternMaturity.CORE,
+        )
     )
-
-
-def test_prompt_payload_uses_only_core_patterns_by_default() -> None:
-    profile = EditorialProfile(
-        model="strong",
-        corpus_fingerprint="fp",
-        trusted_example_ids=["a"],
-        trusted_examples=1,
-        unique_streams=1,
-        patterns=[
-            EditorialPattern(
-                id="core",
-                name="core",
-                mechanism="core mechanism",
-                support_example_ids=["a", "b", "c"],
-                support_stream_ids=["s1", "s2"],
-                maturity=PatternMaturity.CORE,
-            ),
-            EditorialPattern(
-                id="emerging",
-                name="emerging",
-                mechanism="emerging mechanism",
-                support_example_ids=["a"],
-                support_stream_ids=["s1"],
-                maturity=PatternMaturity.EMERGING,
-            ),
-        ],
-        readiness=LearningReadiness(
-            ready=True,
-            trusted_examples=30,
-            unique_streams=15,
-            core_patterns=5,
-            core_coverage_ratio=0.8,
-        ),
-    )
-
     payload = editorial_profile_prompt_payload(profile)
-
-    assert [item["id"] for item in payload["patterns"]] == ["core"]
+    assert payload is not None
+    assert len(payload["patterns"]) == 5
+    assert all(item["name"] != "singleton" for item in payload["patterns"])

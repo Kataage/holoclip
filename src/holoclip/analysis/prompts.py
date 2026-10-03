@@ -101,6 +101,7 @@ def guided_discovery_messages(
     *,
     existing_candidates: list[ClipCandidate],
     retrieval_evidence: dict[str, object],
+    editorial_profile: dict[str, object] | None = None,
 ) -> list[dict[str, str]]:
     schema = {
         "candidates": [
@@ -145,7 +146,7 @@ def guided_discovery_messages(
     )
     return [
         {"role": "system", "content": GUIDED_DISCOVERY_SYSTEM},
-        {"role": "user", "content": user},
+        {"role": "user", "content": _profile_instruction(editorial_profile) + user},
     ]
 
 
@@ -174,6 +175,7 @@ def final_review_messages(
     *,
     top_k: int,
     retrieval_evidence: list[dict[str, object]] | None = None,
+    editorial_profile: dict[str, object] | None = None,
 ) -> list[dict[str, str]]:
     compact = []
     for index, candidate in enumerate(candidates):
@@ -193,6 +195,8 @@ def final_review_messages(
             }
         if retrieval_evidence is not None and index < len(retrieval_evidence):
             item["retrieval"] = retrieval_evidence[index]
+        if candidate.editorial_edit_plan is not None:
+            item["measured_edit_plan"] = candidate.editorial_edit_plan.model_dump(mode="json")
         compact.append(item)
 
     user = (
@@ -204,5 +208,15 @@ def final_review_messages(
     )
     return [
         {"role": "system", "content": FINAL_REVIEW_SYSTEM},
-        {"role": "user", "content": user},
+        {"role": "user", "content": _profile_instruction(editorial_profile) + user},
     ]
+
+
+def _profile_instruction(profile: dict | None) -> str:
+    if profile is None:
+        return ""
+    return ("Learned editorial profile (primary prior; retrieval is supporting evidence):\n"
+            + json.dumps(profile, ensure_ascii=False)
+            + "\nRequire the observed mechanism and its must-have elements, avoid contextual near misses, "
+              "retain necessary setup and reaction, and use learned start/end/cut principles. "
+              "Do not force a pattern on unsupported material.\n\n")

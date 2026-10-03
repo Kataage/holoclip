@@ -18,6 +18,9 @@ from holoclip.clip_policy import (
     load_policy_rules,
 )
 from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings, NimSettings
+from holoclip.corpus_growth import grow_corpus
+from holoclip.editorial_planning import plan_candidate_boundaries
+from holoclip.editorial_evaluation import run_editorial_ab
 from holoclip.example_batch import (
     BatchStatus,
     load_batch_manifest,
@@ -78,6 +81,8 @@ from holoclip.editorial_profile import (
     induce_editorial_profile,
     load_editorial_profile,
     save_editorial_profile,
+    build_editorial_learning_cards,
+    card_fingerprint,
 )
 from holoclip.evaluation_leak import build_evaluation_leak_report
 from holoclip.learning import (
@@ -135,6 +140,9 @@ async def _detect_candidates(
     stage_cache: StageArtifactCache | None = None,
     retrieval_repository: SQLiteCanonicalRepository | None = None,
     editorial_profile: EditorialProfile | None = None,
+    editorial_profile_path: Path | None = None,
+    evaluation_transcript: Path | None = None,
+    source_stream_id: str | None = None,
 ):
     chunks = chunk_segments(
         segments,
@@ -146,6 +154,40 @@ async def _detect_candidates(
         f"(fast={settings.fast_model}, final={settings.model})"
     )
     async with NvidiaNimClient(settings, event_callback=typer.echo) as client:
+        if editorial_profile_path is not None:
+            editorial_profile = await _refresh_editorial_profile(
+                client, settings=settings, stage_cache=stage_cache,
+                path=editorial_profile_path,
+            )
+        if editorial_profile and editorial_profile.readiness.ready and evaluation_transcript is not None:
+            try:
+                report = await run_editorial_ab(client, transcript=evaluation_transcript,
+                    stream_id=source_stream_id or evaluation_transcript.stem,
+                    examples=load_human_clip_store(Path(editorial_profile.induction_config.get(
+                        "corpus_store", str(editorial_profile_path.parent / "human_clips.jsonl")
+                        if editorial_profile_path else "data/examples/human_clips.jsonl"))),
+                    profile=editorial_profile, fast_model=settings.fast_model, strong_model=settings.model,
+                    fast_reasoning_effort=settings.fast_reasoning_effort,
+                    strong_reasoning_effort=settings.strong_reasoning_effort, stage_cache=stage_cache,
+                    top_k=top_k)
+                report_id = make_human_clip_example_id(str(evaluation_transcript.resolve()))
+                report_path = Path("data/evaluation/editorial-ab") / editorial_profile.fingerprint[:16] / f"{report_id}.json"
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+                typer.echo(f"Automatic unseen-stream ON/OFF diagnostic: {report_path}")
+            except ValueError as exc:
+                typer.echo(f"Automatic ON/OFF deferred: {exc}")
+        async def discover_and_plan(detector):
+            broad = await detector.discover_broad(chunks)
+            if editorial_profile and editorial_profile.readiness.ready:
+                # Strong preliminary selection bounds planning cost, then final selection
+                # sees the actual retained spans and compression of each planned candidate.
+                shortlist = await detector.final_select(broad, top_k=min(20, max(top_k * 2, 10)))
+                planned = await plan_candidate_boundaries(client, shortlist, segments,
+                    profile=editorial_profile, model=settings.model,
+                    reasoning_effort=settings.strong_reasoning_effort, stage_cache=stage_cache)
+                return await detector.final_select(planned, top_k=top_k)
+            return await detector.final_select(broad, top_k=top_k)
         if retrieval_repository is None:
             detector = CandidateDetector(
                 client,
@@ -158,7 +200,7 @@ async def _detect_candidates(
                 cache_provider="nvidia_nim",
                 editorial_profile=editorial_profile,
             )
-            return await detector.run(chunks, top_k=top_k)
+            return await discover_and_plan(detector)
 
         embedding_settings = NimEmbeddingSettings.from_env()
         async with NvidiaNimEmbeddingClient(embedding_settings) as embedding_client:
@@ -175,7 +217,7 @@ async def _detect_candidates(
                 retrieval_repository=retrieval_repository,
                 editorial_profile=editorial_profile,
             )
-            return await detector.run(chunks, top_k=top_k)
+            return await discover_and_plan(detector)
 
 
 def _load_ready_editorial_profile(
@@ -184,9 +226,39 @@ def _load_ready_editorial_profile(
     if path is None or not path.exists():
         return None
     profile = load_editorial_profile(path)
+    store = Path(profile.induction_config.get("corpus_store", str(path.parent / "human_clips.jsonl")))
+    if not store.exists() or card_fingerprint(build_editorial_learning_cards(load_human_clip_store(store))) != profile.corpus_fingerprint:
+        return None
     if not profile.readiness.ready:
         return None
     return profile
+
+
+async def _refresh_editorial_profile(client, *, settings, stage_cache, path: Path, store: Path | None = None):
+    existing = load_editorial_profile(path) if path.exists() else None
+    store = store or Path(existing.induction_config.get("corpus_store", str(path.parent / "human_clips.jsonl")) if existing else path.parent / "human_clips.jsonl")
+    examples = load_human_clip_store(store)
+    cards = build_editorial_learning_cards(examples)
+    if not cards:
+        return None
+    if (existing is None or existing.corpus_fingerprint != card_fingerprint(cards)
+            or existing.model != settings.model or existing.observation_model != settings.fast_model
+            or existing.induction_config.get("reasoning_effort") != settings.strong_reasoning_effort
+            or existing.induction_config.get("observation_reasoning_effort") != settings.fast_reasoning_effort
+            or existing.version != "editorial-profile-v2"):
+        typer.echo("Trusted corpus changed: refreshing editorial profile with cached stages")
+        existing = await induce_editorial_profile(
+            client, examples, model=settings.model, reasoning_effort=settings.strong_reasoning_effort,
+            observation_model=settings.fast_model, observation_reasoning_effort=settings.fast_reasoning_effort,
+            stage_cache=stage_cache, cache_provider="nvidia_nim",
+            plan_path=path.with_suffix(".batches.json"), cards_directory=path.parent / "learning_cards",
+            progress=typer.echo,
+        )
+        existing.induction_config["corpus_store"] = str(store)
+        save_editorial_profile(existing, path)
+    typer.echo(f"Editorial readiness={existing.readiness.ready}: "
+               f"{existing.trusted_examples} trusted / {existing.unique_streams} streams")
+    return existing if existing.readiness.ready else None
 
 
 @app.command()
@@ -227,6 +299,9 @@ def analyze(
             stage_cache=stage_cache,
             retrieval_repository=repository,
             editorial_profile=_load_ready_editorial_profile(editorial_profile),
+            editorial_profile_path=editorial_profile,
+            evaluation_transcript=transcript,
+            source_stream_id=stream_id or transcript.stem,
         )
 
         if save_run_path is not None:
@@ -354,6 +429,9 @@ def discover(
             stage_cache=stage_cache,
             retrieval_repository=repository,
             editorial_profile=_load_ready_editorial_profile(editorial_profile),
+            editorial_profile_path=editorial_profile,
+            evaluation_transcript=transcript_path,
+            source_stream_id=resolved_stream_id,
         )
         save_run(
             build_run(
@@ -405,11 +483,13 @@ def examples_learn_profile(
         "--database",
     ),
     batch_size: int = typer.Option(
-        12,
+        8,
         "--batch-size",
         min=2,
-        max=50,
+        max=12,
     ),
+    diagnostic_fast: bool = typer.Option(False, "--diagnostic-fast",
+        help="Generate a non-production diagnostic profile with the fast model if strong NIM is unavailable."),
 ) -> None:
     """Learn a corpus-level editorial model from trusted human-made clips."""
     _load_env_file()
@@ -424,11 +504,17 @@ def examples_learn_profile(
             return await induce_editorial_profile(
                 llm,
                 examples,
-                model=settings.model,
-                reasoning_effort=settings.strong_reasoning_effort,
+                model=settings.fast_model if diagnostic_fast else settings.model,
+                reasoning_effort=settings.fast_reasoning_effort if diagnostic_fast else settings.strong_reasoning_effort,
                 batch_size=batch_size,
                 stage_cache=stage_cache,
                 cache_provider="nvidia_nim",
+                observation_model=settings.fast_model,
+                observation_reasoning_effort=settings.fast_reasoning_effort,
+                plan_path=output.with_suffix(".batches.json"),
+                cards_directory=output.parent / "learning_cards",
+                progress=typer.echo,
+                production_eligible=not diagnostic_fast,
             )
 
     try:
@@ -448,6 +534,7 @@ def examples_learn_profile(
         typer.echo(f"editorial learning error: {exc}", err=True)
         raise typer.Exit(4) from exc
 
+    profile.induction_config["corpus_store"] = str(store)
     save_editorial_profile(profile, output)
     typer.echo(
         json.dumps(
@@ -542,6 +629,102 @@ def evaluation_leak_check(
     )
     if report.suspected_overlap:
         raise typer.Exit(5)
+
+
+@app.command()
+def examples_grow_corpus(
+    store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
+    state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
+    database: Path = typer.Option(Path("data/holoclip.db")),
+    profile: Path = typer.Option(Path("data/examples/editorial_profile.json")),
+    policy_file: Path = typer.Option(Path("data/policy/clip_rules.jsonl")),
+    scan_limit: int = typer.Option(20, min=1, max=100),
+    max_new_examples: int = typer.Option(3, min=1, max=100),
+    target_trusted: int = typer.Option(30, min=30),
+    target_streams: int = typer.Option(15, min=15),
+    discover_only: bool = typer.Option(False),
+    cycles: int = typer.Option(1, min=1, max=100),
+) -> None:
+    """Discover public human clips, quarantine uncertainty, ingest sequentially, then relearn."""
+    _load_env_file()
+    settings = NimSettings.from_env()
+    groq = GroqTranscriptionSettings.from_env()
+    embedding_settings = NimEmbeddingSettings.from_env()
+    provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
+    rules = load_policy_rules(policy_file)
+
+    async def run():
+        with SQLiteCanonicalRepository(database) as repository:
+            cache = StageArtifactCache(repository, Path("data/artifacts/stages"))
+            if discover_only:
+                async def unused(**kwargs):
+                    raise AssertionError("metadata-only discovery cannot acquire audio")
+                return await grow_corpus(provider, store=store, state_path=state, ingest=unused,
+                    policy_rules=rules, scan_limit=scan_limit, max_new_examples=max_new_examples,
+                    target_trusted=target_trusted, target_streams=target_streams, discover_only=True,
+                    progress=typer.echo)
+            async with (NvidiaNimClient(settings, event_callback=typer.echo) as llm,
+                        NvidiaNimEmbeddingClient(embedding_settings) as embedding):
+                async def ingest(**kwargs):
+                    return await ingest_human_example_from_urls(provider, **kwargs,
+                        download_root=Path("data/sources/examples"), transcript_root=Path("data/transcripts"),
+                        examples_store=store, groq_settings=groq, llm=llm, llm_model=settings.model,
+                        llm_reasoning_effort=settings.strong_reasoning_effort, embedding_provider=embedding,
+                        repository=repository, stage_cache=cache, policy_rules=rules,
+                        allow_policy_review=False, progress=typer.echo)
+                for cycle in range(cycles):
+                    typer.echo(f"Corpus growth cycle {cycle + 1}/{cycles}")
+                    report = await grow_corpus(provider, store=store, state_path=state, ingest=ingest,
+                        policy_rules=rules, scan_limit=scan_limit, max_new_examples=max_new_examples,
+                        target_trusted=target_trusted, target_streams=target_streams, progress=typer.echo)
+                    await _refresh_editorial_profile(llm, settings=settings, stage_cache=cache, path=profile, store=store)
+                    if report["trusted_examples"] >= target_trusted and report["trusted_streams"] >= target_streams:
+                        break
+                return report
+    report = asyncio.run(run())
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+def _require_learning_ready_for_review(path: Path) -> None:
+    if _load_ready_editorial_profile(path) is None:
+        typer.echo("Editorial learning is not ready. Operator labels remain frozen validation data; "
+                   "grow the trusted human corpus and run automated learning first.", err=True)
+        raise typer.Exit(6)
+
+
+@app.command()
+def editorial_ab(
+    transcript: Path = typer.Argument(..., exists=True),
+    stream_id: str = typer.Option(...),
+    profile: Path = typer.Option(Path("data/examples/editorial_profile.json")),
+    output: Path = typer.Option(Path("data/evaluation/editorial_ab.json")),
+    database: Path = typer.Option(Path("data/holoclip.db")),
+    top_k: int = typer.Option(5, min=1, max=10),
+) -> None:
+    """Automatically compare profile ON/OFF on an unseen stream after readiness."""
+    ready = _load_ready_editorial_profile(profile)
+    if ready is None:
+        typer.echo("Editorial learning readiness=false; ON/OFF evaluation is deferred.", err=True)
+        raise typer.Exit(6)
+    _load_env_file()
+    settings = NimSettings.from_env()
+    examples = load_human_clip_store(Path(ready.induction_config.get("corpus_store", str(profile.parent / "human_clips.jsonl"))))
+    async def run():
+        with SQLiteCanonicalRepository(database) as repository:
+            cache = StageArtifactCache(repository, Path("data/artifacts/stages"))
+            async with NvidiaNimClient(settings, event_callback=typer.echo) as llm:
+                return await run_editorial_ab(llm, transcript=transcript, stream_id=stream_id,
+                    examples=examples, profile=ready, fast_model=settings.fast_model, strong_model=settings.model,
+                    fast_reasoning_effort=settings.fast_reasoning_effort,
+                    strong_reasoning_effort=settings.strong_reasoning_effort, stage_cache=cache, top_k=top_k)
+    try:
+        report = asyncio.run(run())
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(6) from exc
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    typer.echo(f"Saved automatic ON/OFF diagnostic: {output}")
 
 
 @app.command()
@@ -2260,8 +2443,10 @@ def label(
         Path("data/evaluation/feedback.jsonl"),
         "--feedback-file",
     ),
+    editorial_profile: Path = typer.Option(Path("data/examples/editorial_profile.json")),
 ) -> None:
     """Append one accept/maybe/reject judgment to the evaluation log."""
+    _require_learning_ready_for_review(editorial_profile)
     append_feedback(
         FeedbackRecord(
             stream_id=stream_id,
@@ -2315,7 +2500,8 @@ def review(
         help="Seconds of transcript context before and after a candidate.",
     ),
 ) -> None:
-    """Review one saved run with single-key-style choices."""
+    """Review one saved run with single-key-style choices after automated learning."""
+    _require_learning_ready_for_review(Path("data/examples/editorial_profile.json"))
     run = load_run(run_file)
     latest = latest_feedback_index(load_feedback(feedback_file))
     transcript_path = Path(run.transcript_path)

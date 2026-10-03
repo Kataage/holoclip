@@ -2,6 +2,23 @@
 
 The central problem is ranking human-interest moments, not generating fluent explanations.
 
+## Learning-first policy
+
+Existing operator feedback is preserved as future holdout/calibration evidence. It is not an input
+to corpus induction. Do not request new accept/maybe/reject labels while editorial readiness is
+false. `label` and `review` enforce this policy. Learn from the trusted human corpus first, validate
+support and geometry automatically, pass readiness, then run `editorial-ab` on unseen streams.
+Only a small final blind human sample may follow if needed. The label instructions below describe
+that later validation interface, not the current development loop.
+
+The engineering floor is 30 trusted clips / 15 trusted streams / 5 verified core patterns / 80% core
+coverage. A profile file alone does not satisfy this gate. Readiness also rejects incomplete core
+mechanisms, missing principle provenance and unassessed core support.
+
+`uv run holoclip editorial-ab unseen.json --stream-id UNSEEN_ID` runs a cached automatic ON/OFF
+comparison only after readiness. The automatic judge sees anonymized arms, not learned profile
+metadata. Its result is diagnostic; it is not an independent human quality measurement.
+
 ## Labels
 
 For each surfaced candidate:
@@ -85,7 +102,7 @@ Start small:
 - streams with known successful clips
 - quiet or low-event streams
 
-Scale example ingestion only after the ranking loop shows useful signal.
+Expand trusted human examples before requesting operator ranking judgments. Preserve alignment quality gates and reserve unseen streams for later validation.
 
 
 ## Beyond Top-K: editorial-system evaluation

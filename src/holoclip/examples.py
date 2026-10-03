@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -123,6 +124,21 @@ class HumanClipExampleStats(BaseModel):
 
 def make_human_clip_example_id(clip_url: str) -> str:
     return hashlib.sha256(clip_url.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def human_clip_identity(clip_url: str) -> str:
+    """Deduplicate canonical videos without changing historical example IDs."""
+    parsed = urlparse(clip_url.strip())
+    host = (parsed.hostname or "").lower()
+    if host in {"youtu.be", "www.youtu.be"}:
+        return "youtube:" + parsed.path.strip("/").split("/")[0]
+    if host in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+        video_id = parse_qs(parsed.query).get("v", [None])[0]
+        if not video_id and parsed.path.startswith(("/live/", "/shorts/", "/embed/")):
+            video_id = parsed.path.split("/")[2]
+        if video_id:
+            return "youtube:" + video_id
+    return clip_url.strip()
 
 
 def _normalize_manifest_item(item: dict[str, Any]) -> dict[str, Any]:

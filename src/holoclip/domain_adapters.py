@@ -84,6 +84,22 @@ def candidate_to_source_moment(
     )
 
 
+def candidate_to_clip_timeline(source_asset_id: str, candidate: ClipCandidate) -> ClipTimeline:
+    plan = candidate.editorial_edit_plan
+    ranges = [(s.source_start, s.source_end) for s in plan.spans] if plan else [(candidate.start, candidate.end)]
+    segments = []
+    for i, (start, end) in enumerate(ranges):
+        try:
+            purpose = TimelinePurpose(plan.spans[i].purpose) if plan else TimelinePurpose.OTHER
+        except ValueError:
+            purpose = TimelinePurpose.OTHER
+        segments.append(TimelineSegment(id=make_timeline_segment_id(source_asset_id, start, end, i),
+            source_asset_id=source_asset_id, source_start=start, source_end=end, output_order=i,
+            purpose=purpose, confidence=candidate.confidence))
+    return ClipTimeline(id=make_clip_timeline_id([s.id for s in segments]), segments=segments,
+                        estimated_duration=sum(end - start for start, end in ranges))
+
+
 def alignment_to_clip_timeline(
     source_asset_id: str,
     alignment: ClipSourceAlignment,

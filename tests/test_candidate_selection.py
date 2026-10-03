@@ -7,12 +7,6 @@ from holoclip.analysis.candidate_detector import (
     dedupe_candidates,
     merge_guided_candidates,
 )
-from holoclip.editorial_profile import (
-    EditorialPattern,
-    EditorialProfile,
-    LearningReadiness,
-    PatternMaturity,
-)
 from holoclip.evaluation import candidate_pool_fingerprint
 from holoclip.models import ClipCandidate, TranscriptChunk
 
@@ -255,48 +249,14 @@ def test_merge_guided_candidates_zero_new_keeps_baseline_unchanged() -> None:
 
 
 
-def ready_profile() -> EditorialProfile:
-    return EditorialProfile(
-        model="strong",
-        corpus_fingerprint="profile-fp",
-        trusted_example_ids=[f"e{i}" for i in range(30)],
-        trusted_examples=30,
-        unique_streams=15,
-        global_principles=["Prefer a clear turn and payoff."],
-        rejection_principles=["Reject unresolved rambling."],
-        boundary_principles=["Include enough setup to understand the turn."],
-        patterns=[
-            EditorialPattern(
-                id="p1",
-                name="Contrast payoff",
-                mechanism="ordinary setup turns into a surprising payoff",
-                observable_cues=["clear turn"],
-                must_have=["payoff"],
-                anti_patterns=["no turn"],
-                support_example_ids=["e1", "e2", "e3"],
-                support_stream_ids=["s1", "s2"],
-                maturity=PatternMaturity.CORE,
-                confidence=0.9,
-            )
-        ],
-        readiness=LearningReadiness(
-            ready=True,
-            trusted_examples=30,
-            unique_streams=15,
-            core_patterns=5,
-            core_coverage_ratio=0.8,
-        ),
-    )
-
-
 @pytest.mark.asyncio
-async def test_ready_editorial_profile_is_sent_to_broad_discovery() -> None:
+async def test_ready_editorial_profile_is_sent_to_broad_discovery(learned_ready_profile) -> None:
     llm = FakeLLM({"candidates": []})
     detector = CandidateDetector(
         llm,
         fast_model="fast",
         strong_model="strong",
-        editorial_profile=ready_profile(),
+        editorial_profile=learned_ready_profile,
     )
     chunk = TranscriptChunk(
         id="chunk-0000",
@@ -317,8 +277,9 @@ async def test_ready_editorial_profile_is_sent_to_broad_discovery() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unready_editorial_profile_is_not_used() -> None:
-    profile = ready_profile().model_copy(deep=True)
+async def test_unready_editorial_profile_is_not_used(learned_ready_profile) -> None:
+    profile = learned_ready_profile.model_copy(deep=True)
+    profile.learning_cards = profile.learning_cards[:9]
     profile.readiness = profile.readiness.model_copy(
         update={"ready": False, "reasons": ["not enough examples"]}
     )
