@@ -324,23 +324,31 @@ def test_stale_profile_is_ignored_by_cli(tmp_path, learned_ready_profile):
 async def test_normal_flow_relearns_changed_trusted_corpus_without_operator_labels(tmp_path):
     path = tmp_path / "editorial_profile.json"
     store = tmp_path / "human_clips.jsonl"
-    upsert_human_clip_examples(
-        store, [trusted_example("0", stream_id="s0"), trusted_example("1", stream_id="s1")]
-    )
+    initial = [
+        trusted_example(str(i), stream_id=f"s{i // 2}")
+        for i in range(30)
+    ]
+    upsert_human_clip_examples(store, initial)
     settings = NimSettings(api_key="test", model="strong", fast_model="fast")
     llm = CorpusLLM()
     with SQLiteCanonicalRepository(tmp_path / "db") as repo:
         cache = StageArtifactCache(repo, tmp_path / "artifacts")
-        args = dict(settings=settings, stage_cache=cache, path=path)
-        assert await _refresh_editorial_profile(llm, **args) is None
+        args = dict(settings=settings, stage_cache=cache, path=path, store=store)
+        await _refresh_editorial_profile(llm, **args)
         previous = load_editorial_profile(path)
+        assert previous.trusted_examples == 30
+        assert previous.unique_streams == 15
         calls = len(llm.calls)
-        assert await _refresh_editorial_profile(llm, **args) is None
+        await _refresh_editorial_profile(llm, **args)
         assert len(llm.calls) == calls
-        upsert_human_clip_examples(store, [trusted_example("2", stream_id="s2")])
-        assert await _refresh_editorial_profile(llm, **args) is None
+        upsert_human_clip_examples(
+            store,
+            [trusted_example("new-example", stream_id="new-stream")],
+        )
+        await _refresh_editorial_profile(llm, **args)
         updated = load_editorial_profile(path)
-        assert updated.trusted_examples == 3
+        assert updated.trusted_examples == 31
+        assert updated.unique_streams == 16
         assert updated.corpus_fingerprint != previous.corpus_fingerprint
 
 
