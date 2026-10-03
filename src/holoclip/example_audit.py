@@ -13,7 +13,12 @@ from holoclip.example_quality import (
     LearningQualityReason,
     evaluate_human_example_learning_quality,
 )
-from holoclip.examples import HumanClipExample, WeakNegativeExample, load_human_clip_store
+from holoclip.examples import (
+    WEAK_NEGATIVE_METHOD,
+    HumanClipExample,
+    WeakNegativeExample,
+    load_human_clip_store,
+)
 from holoclip.models import TranscriptSegment
 from holoclip.retrieval import RetrievalDocument, build_retrieval_document_drafts
 from holoclip.structure_validation import (
@@ -68,6 +73,9 @@ class HumanExampleAuditReport(BaseModel):
     )
     learning_quality: LearningQuality = LearningQuality.REVIEW
     learning_quality_reasons: list[LearningQualityReason] = Field(default_factory=list)
+    positive_retrieval_eligible: bool = False
+    weak_negatives_eligible: int = 0
+    weak_negatives_suppressed: int = 0
 
     declared_source_url: str | None = None
     declared_source_start_hint: float | None = None
@@ -319,6 +327,21 @@ def build_human_example_audit(
         alignment_quality=alignment_quality,
         learning_quality=learning_quality.decision,
         learning_quality_reasons=learning_quality.reasons,
+        positive_retrieval_eligible=(
+            learning_quality.decision is LearningQuality.TRUSTED
+        ),
+        weak_negatives_eligible=(
+            len(example.weak_negatives)
+            if learning_quality.decision is LearningQuality.TRUSTED
+            and example.weak_negative_method == WEAK_NEGATIVE_METHOD
+            else 0
+        ),
+        weak_negatives_suppressed=(
+            len(example.weak_negatives)
+            if learning_quality.decision is not LearningQuality.TRUSTED
+            or example.weak_negative_method != WEAK_NEGATIVE_METHOD
+            else 0
+        ),
         declared_source_url=str(declared_source_url) if declared_source_url else None,
         declared_source_start_hint=declared_source_start_hint,
         first_alignment_delta_from_hint=first_alignment_delta,
@@ -413,6 +436,9 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
                 else "-"
             )
         ),
+        f"positive retrieval eligible: {report.positive_retrieval_eligible}",
+        f"weak negatives eligible: {report.weak_negatives_eligible}",
+        f"weak negatives suppressed: {report.weak_negatives_suppressed}",
     ]
 
     if report.declared_source_url:
