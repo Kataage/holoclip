@@ -169,3 +169,57 @@ def test_growth_keeps_running_after_count_floors_if_model_is_unready(tmp_path, m
     )
     assert result.exit_code == 0, result.output
     assert targets == [33, 33, 33]
+
+
+
+def test_growth_continues_when_profile_refresh_fails(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    store = tmp_path / "human_clips.jsonl"
+    upsert_human_clip_examples(
+        store,
+        [trusted_example(str(i), stream_id=f"s{i // 2}") for i in range(30)],
+    )
+
+    class Context:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+    monkeypatch.setattr(cli, "_load_env_file", lambda: None)
+    monkeypatch.setattr(cli, "YtDlpSourceProvider", lambda **kwargs: object())
+    monkeypatch.setattr(cli, "NvidiaNimClient", Context)
+    monkeypatch.setattr(cli, "NvidiaNimEmbeddingClient", Context)
+    targets = []
+
+    async def grow(*args, **kwargs):
+        targets.append(kwargs["target_trusted"])
+        return {"trusted_examples": 30, "trusted_streams": 15}
+
+    async def refresh(*args, **kwargs):
+        raise ValueError("strong editorial induction unavailable")
+
+    monkeypatch.setattr(cli, "grow_corpus", grow)
+    monkeypatch.setattr(cli, "_refresh_editorial_profile", refresh)
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "examples-grow-corpus",
+            "--store",
+            str(store),
+            "--profile",
+            str(tmp_path / "profile.json"),
+            "--database",
+            str(tmp_path / "db"),
+            "--cycles",
+            "3",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert targets == [33, 33, 33]
+    assert "continuing acquisition" in result.output
