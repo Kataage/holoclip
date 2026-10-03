@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -60,6 +61,8 @@ class FreeModel(BaseModel):
     verification_references: tuple[str, ...]
     quota_snapshot: dict[str, float]
     data_use: str
+    data_retention: str = "UNVERIFIED; public media only; review provider account terms"
+    geographic_restrictions: str = "Provider/account dependent; no entitlement inferred"
     public_data_only: Literal[True] = True
     paid_fallback_allowed: Literal[False] = False
     max_images: int = 0
@@ -222,6 +225,21 @@ class CostGuard:
         self.ledger = ledger
         self.accounts = accounts
         self.registry = free_registry() if registry is None else registry
+        if registry is None:
+            for account in accounts:
+                if account.provider != "cloudflare" or not re.fullmatch(r"[a-f0-9]{32}", account.account_id):
+                    continue
+                template = self.registry["groq:qwen/qwen3.8-27b"].model_dump()
+                model = "@cf/meta/llama-3.2-11b-vision-instruct"
+                base = f"https://api.cloudflare.com/client/v4/accounts/{account.account_id}/ai/run"
+                entry = FreeModel.model_validate(template | {"provider": "cloudflare", "model": model,
+                    "base_url": base, "operations": {model}, "max_images": 1,
+                    "quota_snapshot": {"neurons": 10000},
+                    "verification_references": (
+                        "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+                        "https://developers.cloudflare.com/workers-ai/models/llama-3.2-11b-vision-instruct/"),
+                    "data_use": "Public media only; https://developers.cloudflare.com/workers-ai/platform/data-usage/"})
+                self.registry[entry.identity] = entry
         self.clock = clock or (lambda: datetime.now(UTC))
         self.policy = CostPolicy.ZERO_COST_ONLY
 
