@@ -71,6 +71,7 @@ class AlignmentQualityMetrics(BaseModel):
     anchor_coverage_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
 
     weak_singleton_count: int = 0
+    weak_singleton_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
     non_monotonic_transition_count: int = 0
     largest_backward_jump_seconds: float = 0.0
 
@@ -289,6 +290,11 @@ def compute_alignment_quality_metrics(
         if item.matched_anchors == 1
         and item.confidence < WEAK_SINGLETON_MAX_CONFIDENCE
     )
+    weak_singleton_ratio = (
+        weak_singleton_count / len(segments)
+        if segments
+        else 0.0
+    )
     non_monotonic_transition_count = 0
     largest_backward_jump_seconds = 0.0
     previous_source_end: float | None = None
@@ -336,6 +342,7 @@ def compute_alignment_quality_metrics(
         total_anchors=total_anchors,
         anchor_coverage_ratio=anchor_coverage_ratio,
         weak_singleton_count=weak_singleton_count,
+        weak_singleton_ratio=weak_singleton_ratio,
         non_monotonic_transition_count=non_monotonic_transition_count,
         largest_backward_jump_seconds=largest_backward_jump_seconds,
     )
@@ -407,10 +414,21 @@ def evaluate_human_example_learning_quality(
         if metrics.largest_unexplained_clip_gap > gap_threshold:
             reasons.append(LearningQualityReason.LARGE_UNCOVERED_CLIP_GAP)
 
-    if metrics.weak_singleton_count:
-        reasons.append(LearningQualityReason.WEAK_SINGLETON_ALIGNMENT)
     if metrics.non_monotonic_transition_count:
         reasons.append(LearningQualityReason.NON_MONOTONIC_ALIGNMENT)
+
+    weak_singleton_is_material = (
+        metrics.weak_singleton_count > 0
+        and (
+            metrics.weak_singleton_ratio >= 0.25
+            or LearningQualityReason.MARGINAL_ALIGNMENT_CONFIDENCE in reasons
+            or LearningQualityReason.LOW_CLIP_COVERAGE in reasons
+            or LearningQualityReason.LARGE_UNCOVERED_CLIP_GAP in reasons
+            or LearningQualityReason.NON_MONOTONIC_ALIGNMENT in reasons
+        )
+    )
+    if weak_singleton_is_material:
+        reasons.append(LearningQualityReason.WEAK_SINGLETON_ALIGNMENT)
 
     source_hint_delta = _source_hint_delta(example)
     if (
