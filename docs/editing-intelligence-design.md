@@ -355,72 +355,100 @@ VapourSynth may be benchmarked later for specialized frame-processing/filter pip
 
 **Hard product constraint: paid AI/API usage is forbidden in the production path.**
 
-Local AI inference is intentionally excluded from the initial provider set. This does **not** prohibit free deterministic local media processing such as FFmpeg, OpenCV, PySceneDetect, librosa or Motion Canvas.
+Local AI inference is intentionally excluded from the initial provider set. Free deterministic local media processing such as FFmpeg, OpenCV, PySceneDetect, librosa and Motion Canvas remains allowed.
 
-Initial zero-cost AI stack:
+Do not define an "AI stack" as a fixed list of vendors. Maintain a **zero-cost candidate topology**, then let the capability router use only models that pass #99 for the relevant capability.
 
-#### Native video / semantic vision
-Primary policy:
-- Google Gemini Developer API Free Tier
-- model selected at runtime from the provider registry by:
-  1. FREE_TIER status verified recently
-  2. video input capability
-  3. structured output support
-  4. benchmark quality
-  5. current quota availability
+#### Native-video candidates
 
-Current verified API baseline as of 2026-10-04:
-- `gemini-3.5-flash-lite`: Free Tier, text/image/video/audio input
-- `gemini-3.6-flash`: Free Tier, but not relied upon because free consumer-app access is changing and API entitlements may also change
+Benchmark at minimum:
+- Google Gemini Developer API: strongest currently verified Free Tier video-capable model
+- NVIDIA `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` Free Endpoint
+- NVIDIA `nvidia/cosmos3-nano-reasoner` Free Endpoint
 
-Do not hard-code a non-Lite Gemini model as the permanent primary.
+Important caveats:
+- Gemini free entitlements are volatile and must be reverified.
+- Nemotron Omni's model card states English-only language support, so Japanese dialogue semantics require separate evidence/provider support.
+- Cosmos is physical-world oriented and must prove transfer quality on VTuber/game footage.
 
-The runtime selector should prefer the strongest currently verified free video-capable model, but must be able to fall back to Flash-Lite without architecture changes.
+No one of these is permanently designated primary before the Holoclip benchmark.
 
-Use:
-- semantic understanding of selected source ranges
-- human-finished-clip analysis
-- visual event/reaction/game/UI understanding
-- text reading on bounded detected text crops
-- semantic render QA where visual understanding is required
+#### Shot-aware multi-image / contact-sheet candidates
 
-Do not send entire long streams unnecessarily. Extract the selected range with FFmpeg and use Gemini Files API/inline media, or use a public YouTube URL only when it is quota-efficient.
+Benchmark at minimum:
+- Groq Free Plan `qwen/qwen3.8-27b`
+- NVIDIA Free Endpoint `z-ai/glm-5.3-flash`
+- NVIDIA Free Endpoint `meta/llama-3.2-90b-vision-instruct`
+- Cloudflare Workers AI Free `@cf/meta/llama-3.2-11b-vision-instruct`
+- Mistral Studio Free-mode vision model, only after a live no-payment probe confirms zero-cost account behavior
 
-#### Free image-VLM fallback
-Primary fallback:
-- NVIDIA API Catalog Free Endpoint
-- `z-ai/glm-5.3-flash` when available for the required image capability
+This path is REQUIRED even when native video works. It prevents native-video API access from becoming a single point of failure.
 
-Secondary fallback:
-- NVIDIA API Catalog Free Endpoint
-- `meta/llama-3.2-90b-vision-instruct`
-- `meta/llama-3.2-11b-vision-instruct` for cheaper/lighter fallback
+#### Japanese text reading candidates
 
-These fallbacks operate on shot-aware representative frames/contact sheets when native video service is quota-blocked or unavailable.
+OpenCV owns region geometry/timing. Cloud models only read/interpret bounded crops.
 
-#### Strong text/editorial reasoning
-Preferred zero-cost providers, in order:
-1. NVIDIA NIM Free Endpoint `z-ai/glm-5.3`
-2. strongest currently verified free Gemini API text model from the provider registry
-3. other explicitly verified Free Endpoint only after benchmark
+Benchmark at minimum:
+- currently free Gemini vision model
+- Groq `qwen/qwen3.8-27b`
+- Mistral Free-mode vision model
+- NVIDIA `z-ai/glm-5.3-flash`
+- NVIDIA Llama 3.2 Vision
+- Cloudflare Llama 3.2 11B Vision
 
-Gemini consumer-plan model availability is never used as evidence of API availability.
+Do not promote one by vendor reputation; use Japanese caption benchmark results.
 
-If the preferred strong endpoint times out, use another **free** verified provider. Never switch to a paid partner/serverless endpoint.
+#### Strong editorial reasoning candidates
 
-#### Fast text/image reasoning
-Preferred:
-- NVIDIA NIM Free Endpoint `z-ai/glm-5.3-flash`
+Benchmark at minimum:
+- Groq Free Plan `openai/gpt-oss-120b`
+- Groq Free Plan `qwen/qwen3.8-27b`
+- NVIDIA Free Endpoint `z-ai/glm-5.3`
+- NVIDIA Free Endpoint `z-ai/glm-5.3-flash`
+- strongest currently verified free Gemini text model
+- Cerebras current Free-tier text model
+- Mistral Free-mode text model
+- qualifying Cloudflare Workers-Free text model
 
-#### Embeddings
-Preferred:
-- NVIDIA NIM Free Endpoint `nvidia/nemotron-3-embed-1b`
+Known Holoclip evidence already shows `z-ai/glm-5.3` can time out on bounded strong-model calls, so it must never be the sole production strong-reasoning route.
 
-#### Speech-to-text / word timing
-Preferred:
+#### ASR / word timing candidates
+
+Current preferred candidate:
 - Groq Free Plan `whisper-large-v3`
-Fallback:
-- `whisper-large-v3-turbo` only when speed is more important and quality benchmark permits
+
+Conditional:
+- `whisper-large-v3-turbo` only for a capability/stage where Japanese quality benchmark clears the same required quality floor
+
+ASR remains capability-routed and resumable. Free quota exhaustion never enables a paid tier.
+
+#### Embedding candidates
+
+Current preferred candidate:
+- NVIDIA Free Endpoint `nvidia/nemotron-3-embed-1b`
+
+Embedding artifacts must record model/version/dimension. Indexes must be rebuildable if a provider disappears. Vectors from different embedding spaces must never be mixed in one index.
+
+#### Specialized zero-cost candidates
+
+Benchmark narrowly where they add measurable value:
+- NVIDIA Active Speaker Detection Free Endpoint for collab/multi-participant visible-speaker evidence
+- NVIDIA Nemotron Omni audio/video observations as an independent multimodal signal
+- NVIDIA grounding-capable vision models for focus-target hints
+
+Specialized providers complement generic VLMs; they do not silently replace them.
+
+#### Tertiary / diagnostic providers
+
+- OpenRouter Free: small-volume cross-check and emergency reasoning only; free pool is too volatile/limited for bulk corpus work.
+- Hugging Face Inference Providers: benchmark/dev only by default because free-user credits are too small for reliable bulk production.
+- SambaNova: reject from automatic ZERO_COST_ONLY routing while its current plan requires payment method/credit purchase to make requests.
+
+See `docs/zero-cost-provider-matrix-2026-10.md` for the dated research snapshot.
+
+**Promotion authority:** issue #99 benchmark artifacts, consumed by #97 capability routing.
+
+**Quality rule:** a fallback is valid only if it clears the SAME production quality floor for that capability. If no zero-cost route clears the floor, the stage BLOCKS/DEFERS. It never lowers quality merely to keep throughput moving.
 
 ### 3.12 Capability-first zero-cost provider mesh
 
@@ -497,103 +525,22 @@ Native video is therefore an optimization and quality opportunity, not a single 
 
 ### 3.13 Candidate provider pool
 
-The provider registry should track a broad zero-cost candidate pool rather than only the current defaults.
+The provider registry tracks a broad zero-cost pool. Current research snapshot and official references live in `docs/zero-cost-provider-matrix-2026-10.md`.
 
-#### Google Gemini Developer API
-Role:
-- native video where Free Tier supports it
-- image/multimodal semantics
-- Japanese visual understanding
-- semantic QA
+Current categories:
 
-Current official API pricing continues to list free text/image/video access for Gemini 2.5 Flash and Flash-Lite as of 2026-10-04.
+- **Gemini Developer API Free Tier** — native video, image/multimodal semantics, Japanese visual understanding; volatile entitlement, verify before use.
+- **NVIDIA API Catalog Free Endpoints** — independent native-video (Nemotron Omni, Cosmos), image-VLM/grounding, strong reasoning, embeddings, and specialized Active Speaker Detection.
+- **Groq Free Plan** — primary ASR candidate plus Qwen 3.8 multimodal image reasoning/OCR and GPT-OSS 120B text reasoning.
+- **Cloudflare Workers AI Free** — independent image-VLM/text route under the Workers Free neuron allocation; reject any model requiring Workers Paid.
+- **Mistral Studio Free mode** — independent vision/text candidate, pending live verification that the actual account/API path remains no-payment.
+- **Cerebras Free** — text-only fast reasoning / independent second opinion candidate.
+- **OpenRouter Free** — tertiary/cross-check only because request allowance and free-model pool are volatile.
+- **Hugging Face Inference Providers** — benchmark-only by default because free credits are too small for bulk production.
+- **SambaNova** — rejected from automatic ZERO_COST_ONLY routing under the current payment/credit requirement.
+- **GitHub/Copilot interactive model surfaces** — not production providers unless a stable automation-suitable zero-cost API contract is separately verified.
 
-Status:
-- PRIMARY_CANDIDATE
-- volatile free entitlement; verify before use
-
-#### NVIDIA API Catalog Free Endpoints
-Role:
-- strong text reasoning
-- image-VLM fallback
-- visual grounding hints
-- embeddings
-
-Verified examples:
-- Meta Llama 3.2 90B Vision Instruct: Free Endpoint, image/text
-- Meta Llama 3.2 11B Vision Instruct: Free Endpoint, image/text
-- other catalog models only after current Free Endpoint verification
-
-Status:
-- PRIMARY_CANDIDATE
-
-#### Groq Free Plan
-Role:
-- ASR
-- word timestamps
-- text reasoning fallback where benchmarked
-
-Current free-plan examples include:
-- whisper-large-v3
-- whisper-large-v3-turbo
-- free text reasoning models exposed under current account limits
-
-Status:
-- PRIMARY_CANDIDATE for ASR
-- SECONDARY_CANDIDATE for text reasoning
-
-#### Cloudflare Workers AI Free allocation
-Current free allocation:
-- 10,000 Neurons/day on Workers Free
-- some high-end models require Workers Paid and must be rejected by ZERO_COST_ONLY
-
-Potential role:
-- text reasoning fallback
-- image/vision capability only if the current model catalog exposes a free-compatible vision model that passes benchmark
-
-Status:
-- SECONDARY_CANDIDATE
-- must reject models requiring Workers Paid even if the account receives a free daily allocation on Paid
-
-#### OpenRouter Free
-Current free plan:
-- multiple free models/providers
-- low daily request allowance
-- free-model availability changes frequently
-
-Potential role:
-- emergency/tertiary text or image reasoning
-- benchmark comparisons
-- cross-check on a small number of high-value ambiguous events
-
-Status:
-- TERTIARY_CANDIDATE
-- never relied upon for bulk corpus processing
-- exact routed model/provider must be persisted for provenance
-
-#### Cerebras Free
-Current provider documents a $0 Free tier with lower rate limits.
-
-Potential role:
-- fast text reasoning
-- independent second-opinion judge
-- structured consolidation if an available free model passes Holoclip benchmarks
-
-Status:
-- SECONDARY_CANDIDATE for text-only capabilities
-
-#### Hugging Face Inference Providers
-Current free user credit is extremely small and subject to change.
-
-Status:
-- BENCHMARK_ONLY by default
-- not considered a production fallback unless a specific capability can complete reliably within zero-cost credits
-
-#### GitHub/Copilot model surfaces
-Do not treat a user's Copilot subscription or interactive model access as a production inference API dependency.
-
-Status:
-- NOT_PRODUCTION_PROVIDER unless GitHub exposes a stable, automation-suitable, separately verified zero-cost API contract.
+Provider status is dynamic. A model may be qualified for one capability and rejected for another.
 
 ### 3.14 Provider selection policy
 
@@ -1341,7 +1288,7 @@ Repairable QA failures trigger plan revision and re-render.
 
 ## 14. Benchmark and promotion policy
 
-No provider becomes production-default because it "looks good" on one clip.
+Issue #99 owns the real-media provider qualification benchmark. No provider becomes production-default because it "looks good" on one clip.
 
 Maintain a benchmark corpus with diverse:
 - editors
@@ -1467,6 +1414,8 @@ Editing Intelligence v1 is complete only when:
 Only then is the publishing layer allowed to become the primary next milestone.
 
 ## 19. External technology references
+
+Current zero-cost provider research snapshot: `docs/zero-cost-provider-matrix-2026-10.md`.
 
 - FFmpeg / ffprobe: authoritative media execution/probing layer.
 - PySceneDetect 0.7.x: scene/cut/fade observation.
