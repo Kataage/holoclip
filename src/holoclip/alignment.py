@@ -9,8 +9,15 @@ from pydantic import BaseModel, Field
 from holoclip.models import TranscriptSegment
 
 
-ALIGNMENT_METHOD = "transcript-anchor-v8"
+ALIGNMENT_METHOD = "transcript-anchor-v9"
 WEAK_SINGLETON_MAX_CONFIDENCE = 0.70
+LOCAL_RECOVERY_MIN_PRIMARY_CONFIDENCE = 0.75
+LOCAL_RECOVERY_MIN_GAP_SECONDS = 4.0
+LOCAL_RECOVERY_MIN_SIMILARITY = 0.42
+LOCAL_RECOVERY_MIN_CONFIDENCE = 0.75
+LOCAL_RECOVERY_SINGLE_ANCHOR_SIMILARITY = 0.90
+LOCAL_RECOVERY_MAX_ANCHORS_PER_GAP = 12
+LOCAL_RECOVERY_MAX_GAPS = 32
 DEFAULT_MAX_ANCHORS = 36
 MAX_ADAPTIVE_ANCHORS = 72
 TARGET_ANCHOR_INTERVAL_SECONDS = 15.0
@@ -551,6 +558,212 @@ def _merge_consistent_segments(
             merged.append(segment)
     return merged
 
+def _alignment_confidence(
+    segments: list[AlignmentSegment],
+    *,
+    total_anchor_candidates: int,
+) -> float:
+    all_anchors = [
+        anchor
+        for segment in segments
+        for anchor in segment.anchors
+    ]
+    if not all_anchors:
+        return 0.0
+    average_similarity = statistics.fmean(
+        anchor.similarity for anchor in all_anchors
+    )
+    coverage = min(
+        1.0,
+        len(all_anchors) / max(3, min(total_anchor_candidates, 10)),
+    )
+    segment_confidence = statistics.fmean(
+        segment.confidence for segment in segments
+    )
+    return max(
+        0.0,
+        min(
+            1.0,
+            (0.50 * average_similarity)
+            + (0.25 * coverage)
+            + (0.25 * segment_confidence),
+        ),
+    )
+
+
+def _has_non_monotonic_segments(
+    segments: list[AlignmentSegment],
+    *,
+    tolerance_seconds: float = 3.0,
+) -> bool:
+    ordered = sorted(segments, key=lambda item: (item.clip_start, item.clip_end))
+    return any(
+        right.source_start + tolerance_seconds < left.source_end
+        for left, right in zip(ordered, ordered[1:], strict=False)
+    )
+
+
+def _is_trustworthy_recovery_neighbor(segment: AlignmentSegment) -> bool:
+    return segment.matched_anchors >= 2 or segment.confidence >= 0.75
+
+
+def _recover_bounded_gaps(
+    primary_segments: list[AlignmentSegment],
+    clip: list[TranscriptSegment],
+    source: list[TranscriptSegment],
+    *,
+    primary_confidence: float,
+    same_offset_tolerance_seconds: float,
+    cut_offset_tolerance_seconds: float,
+) -> tuple[list[AlignmentSegment], list[TranscriptSegment]]:
+    if (
+        primary_confidence < LOCAL_RECOVERY_MIN_PRIMARY_CONFIDENCE
+        or _has_non_monotonic_segments(primary_segments)
+        or len(primary_segments) < 2
+    ):
+        return primary_segments, []
+
+    ordered = sorted(
+        primary_segments,
+        key=lambda item: (item.clip_start, item.clip_end),
+    )
+    recovered: list[AlignmentSegment] = []
+    recovery_candidates: list[TranscriptSegment] = []
+    attempted = 0
+
+    for left, right in zip(ordered, ordered[1:], strict=False):
+        if attempted >= LOCAL_RECOVERY_MAX_GAPS:
+            break
+
+        clip_gap_start = left.clip_end
+        clip_gap_end = right.clip_start
+        source_gap_start = left.source_end
+        source_gap_end = right.source_start
+
+        if clip_gap_end - clip_gap_start < LOCAL_RECOVERY_MIN_GAP_SECONDS:
+            continue
+        if source_gap_end <= source_gap_start:
+            continue
+        if not (
+            _is_trustworthy_recovery_neighbor(left)
+            and _is_trustworthy_recovery_neighbor(right)
+        ):
+            continue
+
+        clip_gap = [
+            item
+            for item in clip
+            if item.end > clip_gap_start
+            and item.start < clip_gap_end
+            and not _is_generic_boilerplate(item.text)
+        ]
+        source_gap = [
+            item
+            for item in source
+            if item.end > source_gap_start
+            and item.start < source_gap_end
+        ]
+        if not clip_gap or not source_gap:
+            continue
+
+        attempted += 1
+        local_anchors = _select_anchor_segments(
+            clip_gap,
+            max_anchors=min(
+                LOCAL_RECOVERY_MAX_ANCHORS_PER_GAP,
+                len(clip_gap),
+            ),
+        )
+        if not local_anchors:
+            continue
+        recovery_candidates.extend(local_anchors)
+
+        matched = _candidate_matches(
+            local_anchors,
+            source_gap,
+            top_matches_per_anchor=5,
+            min_anchor_similarity=LOCAL_RECOVERY_MIN_SIMILARITY,
+        )
+        if not matched:
+            continue
+
+        path = _best_alignment_path(
+            matched,
+            same_offset_tolerance_seconds=same_offset_tolerance_seconds,
+        )
+        if not path:
+            continue
+
+        local_segments = _segment_path(
+            path,
+            clip_gap,
+            source_gap,
+            cut_offset_tolerance_seconds=cut_offset_tolerance_seconds,
+            endpoint_extension_max_seconds=0.0,
+        )
+        local_segments = _filter_spurious_segments(local_segments)
+        if not local_segments:
+            continue
+        local_segments = _merge_consistent_segments(
+            local_segments,
+            source_duration=source_gap[-1].end,
+            cut_offset_tolerance_seconds=cut_offset_tolerance_seconds,
+        )
+        if _has_non_monotonic_segments(local_segments):
+            continue
+
+        accepted: list[AlignmentSegment] = []
+        for segment in local_segments:
+            if (
+                segment.clip_start < clip_gap_start - 0.001
+                or segment.clip_end > clip_gap_end + 0.001
+                or segment.source_start < source_gap_start - 0.001
+                or segment.source_end > source_gap_end + 0.001
+            ):
+                continue
+            if segment.matched_anchors >= 2:
+                if segment.confidence < LOCAL_RECOVERY_MIN_CONFIDENCE:
+                    continue
+            else:
+                only_anchor = segment.anchors[0]
+                if (
+                    segment.confidence < LOCAL_RECOVERY_MIN_CONFIDENCE
+                    or only_anchor.similarity
+                    < LOCAL_RECOVERY_SINGLE_ANCHOR_SIMILARITY
+                ):
+                    continue
+            accepted.append(segment)
+
+        if not accepted:
+            continue
+        if accepted[0].source_start < source_gap_start - 0.001:
+            continue
+        if accepted[-1].source_end > source_gap_end + 0.001:
+            continue
+        recovered.extend(accepted)
+
+    if not recovered:
+        return primary_segments, recovery_candidates
+
+    combined = sorted(
+        [*primary_segments, *recovered],
+        key=lambda item: (item.clip_start, item.clip_end),
+    )
+    combined = _filter_spurious_segments(combined)
+    combined = _merge_consistent_segments(
+        combined,
+        source_duration=source[-1].end,
+        cut_offset_tolerance_seconds=cut_offset_tolerance_seconds,
+    )
+    if _has_non_monotonic_segments(combined):
+        return primary_segments, recovery_candidates
+    return combined, recovery_candidates
+
+
+def _anchor_candidate_key(segment: TranscriptSegment) -> tuple[float, str]:
+    return (segment.start, normalize_match_text(segment.text))
+
+
 def align_clip_to_source(
     clip_segments: list[TranscriptSegment],
     source_segments: list[TranscriptSegment],
@@ -616,19 +829,29 @@ def align_clip_to_source(
         cut_offset_tolerance_seconds=cut_offset_tolerance_seconds,
     )
 
+    primary_confidence = _alignment_confidence(
+        segments,
+        total_anchor_candidates=len(anchors),
+    )
+    segments, recovery_candidates = _recover_bounded_gaps(
+        segments,
+        clip,
+        source,
+        primary_confidence=primary_confidence,
+        same_offset_tolerance_seconds=same_offset_tolerance_seconds,
+        cut_offset_tolerance_seconds=cut_offset_tolerance_seconds,
+    )
+
     all_anchors = [anchor for segment in segments for anchor in segment.anchors]
     all_offsets = [anchor.source_start - anchor.clip_start for anchor in all_anchors]
-    average_similarity = statistics.fmean(anchor.similarity for anchor in all_anchors)
-    coverage = min(1.0, len(all_anchors) / max(3, min(len(anchors), 10)))
-    segment_confidence = statistics.fmean(segment.confidence for segment in segments)
-    confidence = max(
-        0.0,
-        min(
-            1.0,
-            (0.50 * average_similarity)
-            + (0.25 * coverage)
-            + (0.25 * segment_confidence),
-        ),
+    candidate_keys = {
+        _anchor_candidate_key(item)
+        for item in [*anchors, *recovery_candidates]
+    }
+    total_anchor_candidates = max(len(all_anchors), len(candidate_keys))
+    confidence = _alignment_confidence(
+        segments,
+        total_anchor_candidates=total_anchor_candidates,
     )
 
     return ClipSourceAlignment(
@@ -636,7 +859,7 @@ def align_clip_to_source(
         source_end=max(segment.source_end for segment in segments),
         confidence=confidence,
         matched_anchors=len(all_anchors),
-        total_anchors=len(anchors),
+        total_anchors=total_anchor_candidates,
         median_offset=statistics.median(all_offsets),
         anchors=all_anchors,
         segments=segments,

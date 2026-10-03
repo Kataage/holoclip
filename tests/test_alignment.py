@@ -8,6 +8,7 @@ from holoclip.alignment import (
     _best_alignment_path,
     _filter_spurious_segments,
     _merge_consistent_segments,
+    _recover_bounded_gaps,
     _resolve_anchor_budget,
     _select_anchor_segments,
     align_clip_to_source,
@@ -99,6 +100,184 @@ def test_large_unanchored_clip_tail_is_not_auto_covered() -> None:
     assert len(result.segments) == 1
     assert result.segments[0].clip_end < 30
     assert result.segments[0].source_start == pytest.approx(100, abs=1)
+
+
+def test_local_gap_recovery_fills_strong_bounded_match() -> None:
+    clip = [
+        segment(0, "冒頭の確実な一致です", 5),
+        segment(10, "途中の固有な話題アルファです", 5),
+        segment(15, "途中の固有な話題ベータです", 5),
+        segment(30, "最後の確実な一致です", 5),
+    ]
+    source = [
+        segment(100, "冒頭の確実な一致です", 5),
+        segment(125, "途中の固有な話題アルファです", 5),
+        segment(130, "途中の固有な話題ベータです", 5),
+        segment(160, "最後の確実な一致です", 5),
+    ]
+    primary = [
+        AlignmentSegment(
+            clip_start=0,
+            clip_end=5,
+            source_start=100,
+            source_end=105,
+            confidence=0.9,
+            matched_anchors=2,
+            median_offset=100,
+            anchors=[
+                AlignmentAnchor(
+                    clip_start=0,
+                    source_start=100,
+                    similarity=0.95,
+                    clip_text="冒頭の確実な一致です",
+                    source_text="冒頭の確実な一致です",
+                ),
+                AlignmentAnchor(
+                    clip_start=1,
+                    source_start=101,
+                    similarity=0.95,
+                    clip_text="冒頭の確実な一致です",
+                    source_text="冒頭の確実な一致です",
+                ),
+            ],
+        ),
+        AlignmentSegment(
+            clip_start=30,
+            clip_end=35,
+            source_start=160,
+            source_end=165,
+            confidence=0.9,
+            matched_anchors=2,
+            median_offset=130,
+            anchors=[
+                AlignmentAnchor(
+                    clip_start=30,
+                    source_start=160,
+                    similarity=0.95,
+                    clip_text="最後の確実な一致です",
+                    source_text="最後の確実な一致です",
+                ),
+                AlignmentAnchor(
+                    clip_start=31,
+                    source_start=161,
+                    similarity=0.95,
+                    clip_text="最後の確実な一致です",
+                    source_text="最後の確実な一致です",
+                ),
+            ],
+        ),
+    ]
+
+    recovered, candidates = _recover_bounded_gaps(
+        primary,
+        clip,
+        source,
+        primary_confidence=0.9,
+        same_offset_tolerance_seconds=22.0,
+        cut_offset_tolerance_seconds=12.0,
+    )
+
+    assert len(candidates) == 2
+    assert len(recovered) == 3
+    middle = recovered[1]
+    assert middle.clip_start == 10
+    assert middle.clip_end == 20
+    assert middle.source_start == pytest.approx(125, abs=1)
+    assert middle.source_end == pytest.approx(135, abs=1)
+    assert middle.matched_anchors == 2
+
+
+def test_local_gap_recovery_rejects_weak_unrelated_match() -> None:
+    clip = [
+        segment(0, "冒頭の確実な一致です", 5),
+        segment(10, "完全に別の内容を話しています", 5),
+        segment(30, "最後の確実な一致です", 5),
+    ]
+    source = [
+        segment(100, "冒頭の確実な一致です", 5),
+        segment(120, "りんごとみかんを買いました", 5),
+        segment(160, "最後の確実な一致です", 5),
+    ]
+    primary = [
+        AlignmentSegment(
+            clip_start=0,
+            clip_end=5,
+            source_start=100,
+            source_end=105,
+            confidence=0.9,
+            matched_anchors=2,
+            median_offset=100,
+            anchors=[],
+        ),
+        AlignmentSegment(
+            clip_start=30,
+            clip_end=35,
+            source_start=160,
+            source_end=165,
+            confidence=0.9,
+            matched_anchors=2,
+            median_offset=130,
+            anchors=[],
+        ),
+    ]
+
+    recovered, _ = _recover_bounded_gaps(
+        primary,
+        clip,
+        source,
+        primary_confidence=0.9,
+        same_offset_tolerance_seconds=22.0,
+        cut_offset_tolerance_seconds=12.0,
+    )
+
+    assert recovered == primary
+
+
+def test_local_gap_recovery_skips_non_monotonic_primary_path() -> None:
+    clip = [
+        segment(0, "冒頭です", 5),
+        segment(10, "途中です", 5),
+        segment(30, "最後です", 5),
+    ]
+    source = [
+        segment(80, "最後です", 5),
+        segment(100, "冒頭です", 5),
+        segment(120, "途中です", 5),
+    ]
+    primary = [
+        AlignmentSegment(
+            clip_start=0,
+            clip_end=5,
+            source_start=100,
+            source_end=105,
+            confidence=0.9,
+            matched_anchors=2,
+            median_offset=100,
+            anchors=[],
+        ),
+        AlignmentSegment(
+            clip_start=30,
+            clip_end=35,
+            source_start=80,
+            source_end=85,
+            confidence=0.9,
+            matched_anchors=2,
+            median_offset=50,
+            anchors=[],
+        ),
+    ]
+
+    recovered, candidates = _recover_bounded_gaps(
+        primary,
+        clip,
+        source,
+        primary_confidence=0.9,
+        same_offset_tolerance_seconds=22.0,
+        cut_offset_tolerance_seconds=12.0,
+    )
+
+    assert recovered == primary
+    assert candidates == []
 
 
 def test_align_clip_to_source_finds_known_offset() -> None:
