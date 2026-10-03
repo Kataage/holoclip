@@ -1,7 +1,10 @@
+import asyncio
+
 import pytest
 
-from holoclip.analysis.candidate_detector import CandidateDetector
-from holoclip.models import ClipCandidate
+from holoclip.analysis.candidate_detector import CandidateDetector, dedupe_candidates
+from holoclip.evaluation import candidate_pool_fingerprint
+from holoclip.models import ClipCandidate, TranscriptChunk
 
 
 class FakeLLM:
@@ -74,3 +77,106 @@ async def test_final_select_uses_configured_temperature() -> None:
     await detector.final_select([make_candidate(0)], top_k=1)
 
     assert llm.kwargs[-1]["temperature"] == 0.0
+
+
+
+def test_dedupe_equal_confidence_is_input_order_independent() -> None:
+    left = ClipCandidate(
+        start=10,
+        end=50,
+        working_title="A",
+        setup="setup",
+        development="development",
+        payoff="payoff",
+        why_interesting="reason",
+        confidence=0.8,
+        source_chunk_ids=["chunk-0000"],
+    )
+    right = ClipCandidate(
+        start=12,
+        end=48,
+        working_title="B",
+        setup="setup",
+        development="development",
+        payoff="payoff",
+        why_interesting="reason",
+        confidence=0.8,
+        source_chunk_ids=["chunk-0001"],
+    )
+
+    forward = dedupe_candidates([left.model_copy(deep=True), right.model_copy(deep=True)])
+    reverse = dedupe_candidates([right.model_copy(deep=True), left.model_copy(deep=True)])
+
+    assert [item.working_title for item in forward] == ["A"]
+    assert [item.working_title for item in reverse] == ["A"]
+    assert candidate_pool_fingerprint(forward) == candidate_pool_fingerprint(reverse)
+    assert forward[0].source_chunk_ids == ["chunk-0000", "chunk-0001"]
+
+
+@pytest.mark.asyncio
+async def test_discover_broad_ignores_async_completion_order() -> None:
+    chunks = [
+        TranscriptChunk(
+            id="chunk-0000",
+            start=0,
+            end=100,
+            text="first",
+            segment_indices=[0],
+        ),
+        TranscriptChunk(
+            id="chunk-0001",
+            start=80,
+            end=180,
+            text="second",
+            segment_indices=[1],
+        ),
+    ]
+
+    class DelayedDetector(CandidateDetector):
+        def __init__(self, delays: dict[str, float]) -> None:
+            super().__init__(FakeLLM({}), fast_model="fast", strong_model="strong")
+            self.delays = delays
+
+        async def _discover_chunk(
+            self,
+            chunk: TranscriptChunk,
+        ) -> list[ClipCandidate]:
+            await asyncio.sleep(self.delays[chunk.id])
+            if chunk.id == "chunk-0000":
+                return [
+                    ClipCandidate(
+                        start=90,
+                        end=130,
+                        working_title="A",
+                        setup="setup",
+                        development="development",
+                        payoff="payoff",
+                        why_interesting="reason",
+                        confidence=0.8,
+                        source_chunk_ids=[chunk.id],
+                    )
+                ]
+            return [
+                ClipCandidate(
+                    start=92,
+                    end=128,
+                    working_title="B",
+                    setup="setup",
+                    development="development",
+                    payoff="payoff",
+                    why_interesting="reason",
+                    confidence=0.8,
+                    source_chunk_ids=[chunk.id],
+                )
+            ]
+
+    first = await DelayedDetector(
+        {"chunk-0000": 0.02, "chunk-0001": 0.0}
+    ).discover_broad(chunks)
+    second = await DelayedDetector(
+        {"chunk-0000": 0.0, "chunk-0001": 0.02}
+    ).discover_broad(chunks)
+
+    assert [item.working_title for item in first] == ["A"]
+    assert [item.working_title for item in second] == ["A"]
+    assert candidate_pool_fingerprint(first) == candidate_pool_fingerprint(second)
