@@ -33,6 +33,9 @@ class RetrievalABManifest(BaseModel):
     blind_run_path: str | None = None
     candidate_pool_count: int
     candidate_pool_fingerprint: str
+    retrieval_candidate_pool_count: int | None = None
+    retrieval_candidate_pool_fingerprint: str | None = None
+    guided_added_candidates: int = Field(default=0, ge=0)
     retrieval_document_count: int
     retrieval_corpus_fingerprint: str
     retrieval_version: str
