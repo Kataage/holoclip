@@ -2,7 +2,11 @@ import asyncio
 
 import pytest
 
-from holoclip.analysis.candidate_detector import CandidateDetector, dedupe_candidates
+from holoclip.analysis.candidate_detector import (
+    CandidateDetector,
+    dedupe_candidates,
+    merge_guided_candidates,
+)
 from holoclip.evaluation import candidate_pool_fingerprint
 from holoclip.models import ClipCandidate, TranscriptChunk
 
@@ -180,3 +184,63 @@ async def test_discover_broad_ignores_async_completion_order() -> None:
     assert [item.working_title for item in first] == ["A"]
     assert [item.working_title for item in second] == ["A"]
     assert candidate_pool_fingerprint(first) == candidate_pool_fingerprint(second)
+
+
+
+def test_merge_guided_candidates_preserves_baseline_and_adds_new_moment() -> None:
+    baseline = [
+        ClipCandidate(
+            start=100,
+            end=140,
+            working_title="baseline",
+            setup="setup",
+            development="development",
+            payoff="payoff",
+            why_interesting="reason",
+            confidence=0.6,
+            source_chunk_ids=["chunk-0000"],
+        )
+    ]
+    overlapping_guided = ClipCandidate(
+        start=102,
+        end=138,
+        working_title="guided duplicate",
+        setup="setup",
+        development="development",
+        payoff="payoff",
+        why_interesting="reason",
+        confidence=0.99,
+        source_chunk_ids=["chunk-0000"],
+    )
+    new_guided = ClipCandidate(
+        start=200,
+        end=240,
+        working_title="new guided",
+        setup="setup",
+        development="development",
+        payoff="payoff",
+        why_interesting="reason",
+        confidence=0.7,
+        source_chunk_ids=["chunk-0000"],
+    )
+
+    merged = merge_guided_candidates(
+        baseline,
+        [overlapping_guided, new_guided],
+    )
+
+    assert [item.working_title for item in merged] == [
+        "baseline",
+        "new guided",
+    ]
+    assert merged[0].confidence == 0.6
+
+
+def test_merge_guided_candidates_zero_new_keeps_baseline_unchanged() -> None:
+    baseline = [make_candidate(0), make_candidate(1)]
+
+    merged = merge_guided_candidates(baseline, [])
+
+    assert [item.model_dump() for item in merged] == [
+        item.model_dump() for item in baseline
+    ]
