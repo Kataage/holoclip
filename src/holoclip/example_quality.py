@@ -234,6 +234,33 @@ def compute_alignment_quality_metrics(
         timeline_end=clip_timeline_end,
     )
 
+    clip_ordered = sorted(
+        segments,
+        key=lambda item: (item.clip_start, item.clip_end),
+    )
+    bridged_clip_seconds = 0.0
+    explained_bridge_count = 0
+    for left, right in zip(clip_ordered, clip_ordered[1:], strict=False):
+        bridge_seconds = explained_clip_bridge_seconds(left, right)
+        if bridge_seconds <= 0:
+            continue
+        bridged_clip_seconds += bridge_seconds
+        explained_bridge_count += 1
+
+    explained_clip_seconds = min(
+        clip_timeline_seconds,
+        aligned_clip_seconds + bridged_clip_seconds,
+    )
+    explained_clip_coverage_ratio = (
+        min(1.0, explained_clip_seconds / clip_timeline_seconds)
+        if clip_timeline_seconds > 0
+        else 0.0
+    )
+    explained_uncovered_clip_seconds = max(
+        0.0,
+        clip_timeline_seconds - explained_clip_seconds,
+    )
+
     aligned_source_seconds = _union_seconds(source_ranges)
     source_start = (
         example.source_start
@@ -288,6 +315,11 @@ def compute_alignment_quality_metrics(
         clip_coverage_ratio=clip_coverage_ratio,
         uncovered_clip_seconds=uncovered_clip_seconds,
         largest_uncovered_clip_gap=largest_uncovered_clip_gap,
+        bridged_clip_seconds=bridged_clip_seconds,
+        explained_clip_seconds=explained_clip_seconds,
+        explained_clip_coverage_ratio=explained_clip_coverage_ratio,
+        explained_uncovered_clip_seconds=explained_uncovered_clip_seconds,
+        explained_bridge_count=explained_bridge_count,
         aligned_source_seconds=aligned_source_seconds,
         source_bounding_seconds=source_bounding_seconds,
         source_gap_seconds=source_gap_seconds,
@@ -341,7 +373,7 @@ def evaluate_human_example_learning_quality(
         reasons.append(LearningQualityReason.LEGACY_ALIGNMENT_METHOD)
 
     if metrics.clip_timeline_seconds > 0:
-        if metrics.clip_coverage_ratio < TRUSTED_MIN_CLIP_COVERAGE:
+        if metrics.explained_clip_coverage_ratio < TRUSTED_MIN_CLIP_COVERAGE:
             reasons.append(LearningQualityReason.LOW_CLIP_COVERAGE)
         gap_threshold = max(
             MIN_LARGE_CLIP_GAP_SECONDS,
