@@ -1,4 +1,4 @@
-from holoclip.alignment import ALIGNMENT_METHOD
+from holoclip.alignment import ALIGNMENT_METHOD, align_clip_to_source
 from holoclip.example_revalidation import realign_human_clip_example
 from holoclip.examples import (
     WEAK_NEGATIVE_METHOD,
@@ -50,10 +50,56 @@ def test_realign_upgrades_alignment_and_invalidates_old_weak_negative_method() -
 
     assert result.accepted is True
     assert result.alignment_changed is True
+    assert result.alignment_geometry_changed is True
     assert result.example.alignment_method == ALIGNMENT_METHOD
     assert result.example.alignment_total_anchors is not None
     assert result.example.alignment_total_anchors >= result.example.alignment_matched_anchors
     assert result.example.source_start == 600
+    assert result.example.weak_negative_method is None
+
+
+def test_alignment_method_upgrade_does_not_count_as_geometry_change() -> None:
+    clip = [
+        seg(0, "実は昨日すごくびっくりすることがあってさ"),
+        seg(12, "二ヶ月くらい給料が入らなかった時期があったんだよね"),
+        seg(24, "でもその時は貯金があったからなんとか生活できて"),
+    ]
+    source = [
+        seg(600, "実は昨日すごくびっくりすることがあってさ"),
+        seg(612, "二ヶ月くらい給料が入らなかった時期があったんだよね"),
+        seg(624, "でもその時は貯金があったからなんとか生活できて"),
+    ]
+    aligned = align_clip_to_source(clip, source)
+    example = HumanClipExample(
+        id="version-only",
+        clip_url="https://example.invalid/version-only",
+        clip_title="version-only",
+        source_start=aligned.source_start,
+        source_end=aligned.source_end,
+        alignment_confidence=aligned.confidence,
+        alignment_method="transcript-anchor-v5",
+        alignment_matched_anchors=aligned.matched_anchors,
+        alignment_total_anchors=aligned.total_anchors,
+        alignment_segments=[
+            AlignmentSegmentExample(
+                clip_start=item.clip_start,
+                clip_end=item.clip_end,
+                source_start=item.source_start,
+                source_end=item.source_end,
+                confidence=item.confidence,
+                matched_anchors=item.matched_anchors,
+            )
+            for item in aligned.segments
+        ],
+        weak_negative_method=WEAK_NEGATIVE_METHOD,
+    )
+
+    result = realign_human_clip_example(example, clip, source)
+
+    assert result.accepted is True
+    assert result.alignment_changed is True
+    assert result.alignment_geometry_changed is False
+    assert result.example.alignment_method == ALIGNMENT_METHOD
     assert result.example.weak_negative_method is None
 
 

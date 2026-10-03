@@ -11,6 +11,7 @@ class HumanExampleRealignmentResult(BaseModel):
     example: HumanClipExample
     accepted: bool
     alignment_changed: bool
+    alignment_geometry_changed: bool
     alignment_confidence: float = Field(ge=0.0, le=1.0)
     alignment_segments: int = Field(ge=0)
 
@@ -31,6 +32,22 @@ def _alignment_signature(example: HumanClipExample) -> tuple:
                 item.source_end,
                 item.confidence,
                 item.matched_anchors,
+            )
+            for item in example.alignment_segments
+        ),
+    )
+
+
+def _alignment_geometry_signature(example: HumanClipExample) -> tuple:
+    return (
+        example.source_start,
+        example.source_end,
+        tuple(
+            (
+                item.clip_start,
+                item.clip_end,
+                item.source_start,
+                item.source_end,
             )
             for item in example.alignment_segments
         ),
@@ -89,13 +106,19 @@ def realign_human_clip_example(
         }
     )
     updated = HumanClipExample.model_validate(data)
+    alignment_changed = (
+        _alignment_signature(example) != _alignment_signature(updated)
+    )
+    alignment_geometry_changed = (
+        _alignment_geometry_signature(example)
+        != _alignment_geometry_signature(updated)
+    )
 
     return HumanExampleRealignmentResult(
         example=updated,
         accepted=accepted,
-        alignment_changed=(
-            _alignment_signature(example) != _alignment_signature(updated)
-        ),
+        alignment_changed=alignment_changed,
+        alignment_geometry_changed=alignment_geometry_changed,
         alignment_confidence=(
             alignment.confidence if alignment is not None else 0.0
         ),

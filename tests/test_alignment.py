@@ -8,6 +8,7 @@ from holoclip.alignment import (
     _best_alignment_path,
     _filter_spurious_segments,
     _merge_consistent_segments,
+    _select_anchor_segments,
     align_clip_to_source,
     normalize_match_text,
 )
@@ -20,6 +21,55 @@ def segment(start: float, text: str, duration: float = 6.0) -> TranscriptSegment
 
 def test_normalize_match_text_removes_spacing_and_punctuation() -> None:
     assert normalize_match_text(" 今日は、いい天気！ ") == "今日はいい天気"
+
+
+def test_anchor_selection_is_timeline_balanced() -> None:
+    clip = [
+        segment(0, "序盤の非常に長い説明テキストその一その一その一", 5),
+        segment(5, "序盤の非常に長い説明テキストその二その二その二", 5),
+        segment(10, "序盤の非常に長い説明テキストその三その三その三", 5),
+        segment(30, "中盤の短いけれど十分情報量のある発言です", 5),
+        segment(60, "後半の短いけれど十分情報量のある発言です", 5),
+        segment(90, "終盤の短いけれど十分情報量のある発言です", 5),
+    ]
+
+    selected = _select_anchor_segments(clip, max_anchors=4)
+
+    assert len(selected) == 4
+    assert selected[0].start <= 10
+    assert any(item.start == 30 for item in selected)
+    assert any(item.start == 60 for item in selected)
+    assert any(item.start == 90 for item in selected)
+
+
+def test_anchor_selection_ignores_generic_outro() -> None:
+    clip = [
+        segment(0, "レオンとクリスのどちらが好きかという話です"),
+        segment(20, "私はクリスを選ぶと思います"),
+        segment(40, "ご視聴ありがとうございました"),
+    ]
+
+    selected = _select_anchor_segments(clip, max_anchors=8)
+
+    assert [item.start for item in selected] == [0, 20]
+
+
+def test_large_unanchored_clip_tail_is_not_auto_covered() -> None:
+    source = [
+        segment(100, "ここが一致する重要な本文です"),
+        segment(112, "この続きも一致する本文です"),
+    ]
+    clip = [
+        segment(0, "ここが一致する重要な本文です"),
+        segment(12, "この続きも一致する本文です"),
+        segment(60, "ご視聴ありがとうございました"),
+    ]
+
+    result = align_clip_to_source(clip, source)
+
+    assert len(result.segments) == 1
+    assert result.segments[0].clip_end < 30
+    assert result.segments[0].source_start == pytest.approx(100, abs=1)
 
 
 def test_align_clip_to_source_finds_known_offset() -> None:

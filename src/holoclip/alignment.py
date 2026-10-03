@@ -8,8 +8,18 @@ from pydantic import BaseModel, Field
 from holoclip.models import TranscriptSegment
 
 
-ALIGNMENT_METHOD = "transcript-anchor-v5"
+ALIGNMENT_METHOD = "transcript-anchor-v6"
 WEAK_SINGLETON_MAX_CONFIDENCE = 0.70
+DEFAULT_MAX_ANCHORS = 36
+ENDPOINT_EXTENSION_MAX_SECONDS = 5.0
+GENERIC_BOILERPLATE_PHRASES = (
+    "ご視聴ありがとうございました",
+    "チャンネル登録よろしくお願いします",
+    "チャンネル登録と高評価よろしくお願いします",
+    "高評価よろしくお願いします",
+    "thanks for watching",
+    "please subscribe",
+)
 BACKWARD_JUMP_BASE_PENALTY = 0.75
 BACKWARD_JUMP_MAX_EXTRA_PENALTY = 0.75
 
@@ -76,6 +86,87 @@ def _similarity(left: str, right: str) -> float:
     dice = (2.0 * intersection) / (len(left_grams) + len(right_grams))
     containment = intersection / min(len(left_grams), len(right_grams))
     return max(0.0, min(1.0, (0.65 * dice) + (0.35 * containment)))
+
+
+def _is_generic_boilerplate(text: str) -> bool:
+    normalized = normalize_match_text(text)
+    if not normalized:
+        return True
+    for phrase in GENERIC_BOILERPLATE_PHRASES:
+        phrase_norm = normalize_match_text(phrase)
+        if normalized == phrase_norm:
+            return True
+        if phrase_norm in normalized and len(normalized) <= len(phrase_norm) + 6:
+            return True
+    return False
+
+
+def _select_anchor_segments(
+    clip: list[TranscriptSegment],
+    *,
+    max_anchors: int,
+) -> list[TranscriptSegment]:
+    candidates = [
+        segment
+        for segment in clip
+        if len(normalize_match_text(segment.text)) >= 8
+        and not _is_generic_boilerplate(segment.text)
+    ]
+    if not candidates:
+        candidates = [
+            segment
+            for segment in clip
+            if not _is_generic_boilerplate(segment.text)
+        ]
+    if not candidates:
+        return []
+
+    ordered = sorted(candidates, key=lambda item: (item.start, item.end))
+    if len(ordered) <= max_anchors:
+        return ordered
+
+    timeline_start = ordered[0].start
+    timeline_end = max(item.end for item in ordered)
+    duration = max(0.001, timeline_end - timeline_start)
+    bucket_count = min(max_anchors, len(ordered))
+    buckets: list[list[TranscriptSegment]] = [
+        [] for _ in range(bucket_count)
+    ]
+
+    for segment in ordered:
+        midpoint = (segment.start + segment.end) / 2.0
+        relative = max(0.0, min(1.0, (midpoint - timeline_start) / duration))
+        bucket_index = min(
+            bucket_count - 1,
+            int(relative * bucket_count),
+        )
+        buckets[bucket_index].append(segment)
+
+    selected: list[TranscriptSegment] = []
+    selected_ids: set[int] = set()
+
+    def ranking(segment: TranscriptSegment) -> tuple[int, float, float]:
+        return (
+            len(normalize_match_text(segment.text)),
+            segment.end - segment.start,
+            -segment.start,
+        )
+
+    for bucket in buckets:
+        if not bucket:
+            continue
+        best = max(bucket, key=ranking)
+        selected.append(best)
+        selected_ids.add(id(best))
+
+    if len(selected) < max_anchors:
+        remaining = [
+            segment for segment in ordered if id(segment) not in selected_ids
+        ]
+        remaining.sort(key=ranking, reverse=True)
+        selected.extend(remaining[: max_anchors - len(selected)])
+
+    return sorted(selected, key=lambda item: (item.start, item.end))
 
 
 def _source_variants(
@@ -206,6 +297,7 @@ def _segment_path(
     source: list[TranscriptSegment],
     *,
     cut_offset_tolerance_seconds: float,
+    endpoint_extension_max_seconds: float,
 ) -> list[AlignmentSegment]:
     if not path:
         return []
@@ -228,9 +320,17 @@ def _segment_path(
 
         clip_start = group[0][0].start
         clip_end = group[-1][0].end
-        if index == 0:
+        if (
+            index == 0
+            and group[0][0].start - clip[0].start
+            <= endpoint_extension_max_seconds
+        ):
             clip_start = clip[0].start
-        if index == len(groups) - 1:
+        if (
+            index == len(groups) - 1
+            and clip[-1].end - group[-1][0].end
+            <= endpoint_extension_max_seconds
+        ):
             clip_end = clip[-1].end
 
         source_start = max(0.0, min(source_duration - 0.001, clip_start + median_offset))
@@ -402,7 +502,7 @@ def align_clip_to_source(
     clip_segments: list[TranscriptSegment],
     source_segments: list[TranscriptSegment],
     *,
-    max_anchors: int = 24,
+    max_anchors: int = DEFAULT_MAX_ANCHORS,
     top_matches_per_anchor: int = 8,
     min_anchor_similarity: float = 0.28,
     same_offset_tolerance_seconds: float = 22.0,
@@ -416,18 +516,12 @@ def align_clip_to_source(
     clip = sorted(clip_segments, key=lambda item: (item.start, item.end))
     source = sorted(source_segments, key=lambda item: (item.start, item.end))
 
-    candidates = [
-        segment for segment in clip if len(normalize_match_text(segment.text)) >= 8
-    ]
-    if not candidates:
-        candidates = clip
-
-    anchors = sorted(
-        candidates,
-        key=lambda item: len(normalize_match_text(item.text)),
-        reverse=True,
-    )[:max_anchors]
-    anchors = sorted(anchors, key=lambda item: item.start)
+    anchors = _select_anchor_segments(
+        clip,
+        max_anchors=max_anchors,
+    )
+    if not anchors:
+        raise ValueError("clip transcript has no informative anchor candidates")
 
     matched = _candidate_matches(
         anchors,
@@ -450,6 +544,7 @@ def align_clip_to_source(
         clip,
         source,
         cut_offset_tolerance_seconds=cut_offset_tolerance_seconds,
+        endpoint_extension_max_seconds=ENDPOINT_EXTENSION_MAX_SECONDS,
     )
     if not segments:
         raise ValueError("no coherent transcript alignment segments found")
