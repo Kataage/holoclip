@@ -32,6 +32,7 @@ def test_load_batch_manifest_and_reject_duplicates(tmp_path: Path) -> None:
 
     assert len(items) == 2
     assert items[1].source_url == "https://youtu.be/source"
+    assert items[1].source_start_hint_seconds is None
 
     manifest.write_text(
         "\n".join(
@@ -71,6 +72,14 @@ def test_batch_state_skips_only_same_successful_fingerprint(tmp_path: Path) -> N
     assert changed.id == item.id
     assert changed.fingerprint != item.fingerprint
     assert should_skip_succeeded(changed, state) is False
+
+    changed_hint = ExampleBatchItem(
+        clip_url=item.clip_url,
+        source_start_hint_seconds=123.0,
+    )
+    assert changed_hint.id == item.id
+    assert changed_hint.fingerprint != item.fingerprint
+    assert should_skip_succeeded(changed_hint, state) is False
 
 
 def test_batch_state_round_trip_and_attempt_count(tmp_path: Path) -> None:
