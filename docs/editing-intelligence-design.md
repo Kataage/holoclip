@@ -271,7 +271,79 @@ The renderer generates ASS from SubtitlePlan; libass/FFmpeg executes it.
 
 Do not bind learned editing patterns to a specific font identity.
 
-### 3.9 Heavy ML providers remain optional
+### 3.9 Advanced 2D motion graphics: Motion Canvas as an optional secondary renderer
+
+FFmpeg remains the authoritative media/timeline/audio/final-encode engine, but it is not required to author every visual effect directly in a filter graph.
+
+Use a second deterministic graphics backend for edits that are awkward or brittle in FFmpeg:
+- animated emphasis text
+- kinetic typography
+- multi-element reaction layouts
+- animated context cards
+- arrows/callouts/highlights
+- complex picture-in-picture compositions
+- reusable branded motion components
+- short vector/shape animations
+
+Initial preferred backend: **Motion Canvas**.
+
+Reasons:
+- local execution
+- TypeScript/code-defined deterministic animation
+- real-time preview/editor for development
+- image-sequence output
+- official FFmpeg exporter
+- MIT-licensed project
+- suitable as a graphics layer rather than a traditional editor replacement
+
+Motion Canvas is NOT the authoritative timeline/media engine and is NOT allowed to make editorial decisions.
+
+Preferred composition flow:
+
+```text
+RenderPlan
+   ├─ base media/audio/timeline actions -> FFmpeg
+   ├─ ordinary dialogue subtitles      -> ASS/libass
+   └─ advanced graphics events         -> Motion Canvas
+                                              ↓
+                                  transparent graphics artifact
+                                              ↓
+                         FFmpeg final composite / mux / encode
+```
+
+The advanced graphics backend must emit deterministic artifacts from RenderPlan data.
+It must not receive free-form prompts at render time.
+
+Internal alpha transport format (PNG sequence vs alpha-capable intermediate codec) is selected by benchmark for:
+- determinism
+- Windows reliability
+- render speed
+- storage cost
+- alpha fidelity
+
+Do not make Motion Canvas a core Python dependency. Run it as an isolated Node/TypeScript worker with a versioned JSON contract.
+
+### 3.10 Renderer alternatives and promotion policy
+
+Do not hard-code the architecture to one external graphics implementation.
+
+Define:
+- BaseMediaRenderer
+- SubtitleRenderer
+- MotionGraphicsRenderer
+- FinalCompositor
+
+Production default v1:
+- BaseMediaRenderer = FFmpeg
+- SubtitleRenderer = ASS/libass
+- MotionGraphicsRenderer = Motion Canvas for advanced events only
+- FinalCompositor = FFmpeg
+
+Remotion is functionally capable of programmatic video/motion composition, but it is source-available under a proprietary license rather than OSI open source. It must not become a mandatory dependency for Holoclip. It may be benchmarked later as an optional provider only if its current license remains acceptable for the deployment.
+
+VapourSynth may be benchmarked later for specialized frame-processing/filter pipelines, but it is not required for the first production renderer.
+
+### 3.11 Heavy ML providers remain optional
 
 Do not make the first Editing Intelligence implementation depend on:
 - a community anime-face detector
@@ -642,16 +714,58 @@ Learned mechanisms may select semantic style roles; branding resolves roles to a
 
 ## 12. Renderer
 
-The renderer is deterministic.
+Rendering is deterministic and split into composable backends.
 
-Initial engine:
-- FFmpeg filter_complex
-- generated ASS/libass subtitles
-- explicit crop/scale/overlay/audio filters
-- explicit transitions
-- deterministic encoding profile
+### 12.1 Base media renderer — FFmpeg
 
-The renderer never decides what is interesting.
+FFmpeg remains authoritative for:
+- trim/extract
+- concat
+- multi-source assembly
+- speed/freeze
+- ordinary crop/scale/pan
+- audio mix
+- transitions that are naturally expressed as media filters
+- final encode
+
+### 12.2 Subtitle renderer — ASS/libass
+
+ASS/libass handles the normal high-volume dialogue-caption path:
+- text
+- outline/shadow
+- placement
+- semantic style roles
+- emphasis spans
+- timing
+
+Do not send every caption through a browser graphics renderer.
+
+### 12.3 Motion graphics renderer — Motion Canvas
+
+Motion Canvas handles RenderPlan events that need a true 2D animation/composition layer:
+- kinetic typography
+- animated punchline/reaction treatments
+- callouts/arrows/boxes
+- context cards
+- multi-element layouts
+- animated PIP frames
+- branded motion components
+
+The worker receives only validated JSON/asset references and emits a deterministic transparent graphics artifact.
+
+### 12.4 Final compositor — FFmpeg
+
+FFmpeg composites:
+- base rendered media
+- ASS captions
+- motion-graphics layers
+- final audio
+
+and performs the final encode.
+
+The renderer stack never decides what is interesting or which effect should be used. Those decisions are complete in RenderPlan before any renderer starts.
+
+A simple clip should be able to bypass Motion Canvas entirely. Complexity is paid only when the plan needs it.
 
 ## 13. Render QA
 
@@ -739,6 +853,11 @@ holoclip core
         |
         +-- optional OCR provider environment
               PaddleOCR/PaddlePaddle
+        |
+        +-- isolated motion-graphics worker
+              Node.js
+              TypeScript
+              Motion Canvas
 ```
 
 Heavy OCR/CV dependencies must not make ordinary transcript candidate discovery fail to install.
@@ -780,7 +899,10 @@ Corpus induction, support validation, maturity, style families, readiness.
 Learned editing mechanisms compile into a validated deterministic plan.
 
 ### Gate G — Renderer
-Plan executes reproducibly.
+Plan executes reproducibly through the hybrid renderer stack:
+- FFmpeg base media/final compositor
+- ASS/libass normal subtitles
+- Motion Canvas advanced 2D graphics when requested by the plan
 
 ### Gate H — QA/repair
 Common edit/render failures are detected and repaired.
@@ -819,3 +941,4 @@ Only then is the publishing layer allowed to become the primary next milestone.
 - librosa: bounded audio feature extraction and DTW refinement.
 - pyloudnorm: BS.1770-style loudness measurement.
 - ASS/SSA + libass: rich deterministic subtitle render representation.
+- Motion Canvas: optional deterministic advanced 2D motion-graphics backend; FFmpeg remains authoritative for final media composition/encode.
