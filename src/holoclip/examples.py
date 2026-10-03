@@ -113,6 +113,9 @@ class HumanClipExampleStats(BaseModel):
     trusted_for_learning: int
     needs_review: int
     rejected_for_learning: int
+    eligible_positive_documents: int
+    eligible_weak_negative_documents: int
+    suppressed_legacy_weak_negative_documents: int
     unique_streams: int
     unique_members: int
 
@@ -214,19 +217,38 @@ def compute_human_clip_stats(
     streams = {example.stream_id for example in examples if example.stream_id}
     members = {member for example in examples for member in example.members}
 
+    trusted_for_learning = sum(
+        1 for decision in quality if decision is LearningQuality.TRUSTED
+    )
+    eligible_weak_negative_documents = sum(
+        len(example.weak_negatives)
+        for example, decision in zip(examples, quality, strict=True)
+        if decision is LearningQuality.TRUSTED
+        and example.weak_negative_method == WEAK_NEGATIVE_METHOD
+    )
+    suppressed_legacy_weak_negative_documents = sum(
+        len(example.weak_negatives)
+        for example, decision in zip(examples, quality, strict=True)
+        if decision is LearningQuality.TRUSTED
+        and example.weak_negative_method != WEAK_NEGATIVE_METHOD
+    )
+
     return HumanClipExampleStats(
         total=len(examples),
         aligned=aligned,
         unaligned=len(examples) - aligned,
         with_story_structure=with_story_structure,
-        trusted_for_learning=sum(
-            1 for decision in quality if decision is LearningQuality.TRUSTED
-        ),
+        trusted_for_learning=trusted_for_learning,
         needs_review=sum(
             1 for decision in quality if decision is LearningQuality.REVIEW
         ),
         rejected_for_learning=sum(
             1 for decision in quality if decision is LearningQuality.REJECTED
+        ),
+        eligible_positive_documents=trusted_for_learning,
+        eligible_weak_negative_documents=eligible_weak_negative_documents,
+        suppressed_legacy_weak_negative_documents=(
+            suppressed_legacy_weak_negative_documents
         ),
         unique_streams=len(streams),
         unique_members=len(members),
