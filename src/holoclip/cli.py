@@ -58,6 +58,7 @@ from holoclip.evaluation import (
     RetrievalABManifest,
     append_feedback,
     build_blind_ab_run,
+    build_retrieval_ab_diff,
     build_run,
     candidate_pool_fingerprint,
     compare_evaluation_metrics,
@@ -2182,6 +2183,42 @@ def review(
 
     if pending == 0:
         typer.echo("未評価の候補はありません。")
+
+
+@app.command()
+def retrieval_ab_diff(
+    stream_id: str = typer.Option(..., "--stream-id"),
+    output_root: Path = typer.Option(
+        Path("data/evaluation/ab"),
+        "--output-root",
+    ),
+    feedback_file: Path = typer.Option(
+        Path("data/evaluation/feedback.jsonl"),
+        "--feedback-file",
+    ),
+) -> None:
+    """Inspect post-label qualitative differences between paired A/B runs."""
+    baseline_path = output_root / "baseline" / f"{stream_id}.json"
+    retrieval_path = output_root / "retrieval" / f"{stream_id}.json"
+    if not baseline_path.exists() or not retrieval_path.exists():
+        typer.echo(
+            "paired run files are missing for the requested stream id",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    diff = build_retrieval_ab_diff(
+        load_run(baseline_path),
+        load_run(retrieval_path),
+        load_feedback(feedback_file),
+    )
+    typer.echo(
+        json.dumps(
+            diff.model_dump(mode="json"),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 @app.command()
