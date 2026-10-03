@@ -135,6 +135,9 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
     assert report.alignment_quality.clip_timeline_seconds == 30
     assert report.alignment_quality.aligned_clip_seconds == 30
     assert report.alignment_quality.clip_coverage_ratio == 1.0
+    assert report.alignment_quality.explained_clip_coverage_ratio == 1.0
+    assert report.uncovered_clip_ranges == []
+    assert report.source_hint_authoritative is False
     assert report.learning_quality.value == "trusted"
     assert report.learning_quality_reasons == []
     assert report.positive_retrieval_eligible is True
@@ -149,12 +152,87 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
     assert "Alignment #1" in rendered
     assert "removed/gap inside bounding range: 60.0s" in rendered
     assert "clip coverage: 100.0%" in rendered
+    assert "explained clip coverage: 100.0%" in rendered
+    assert "timestamp authoritative: False" in rendered
     assert "decision: trusted" in rendered
     assert "positive retrieval eligible: True" in rendered
     assert "weak negatives eligible: 1" in rendered
     assert "first alignment - declared hint: +0.0s" in rendered
     assert "元配信の最初" in rendered
     assert f"Retrieval documents ({len(documents)})" in rendered
+
+
+def test_audit_exposes_uncovered_clip_ranges_and_bridge_evidence(
+    tmp_path: Path,
+) -> None:
+    clip_path = tmp_path / "clip-gap.json"
+    source_path = tmp_path / "source-gap.json"
+    save_transcript(
+        [
+            TranscriptSegment(start=0, end=20, text="aligned one"),
+            TranscriptSegment(start=20, end=60, text="uncovered middle"),
+            TranscriptSegment(start=60, end=80, text="aligned two"),
+        ],
+        clip_path,
+    )
+    save_transcript(
+        [
+            TranscriptSegment(start=100, end=120, text="source one"),
+            TranscriptSegment(start=150, end=170, text="source two"),
+        ],
+        source_path,
+    )
+    example = HumanClipExample(
+        id="gap-audit",
+        clip_url="https://youtu.be/gap",
+        clip_title="gap",
+        source_start=100,
+        source_end=170,
+        alignment_confidence=0.9,
+        alignment_method=ALIGNMENT_METHOD,
+        alignment_matched_anchors=4,
+        alignment_total_anchors=4,
+        alignment_segments=[
+            AlignmentSegmentExample(
+                clip_start=0,
+                clip_end=20,
+                source_start=100,
+                source_end=120,
+                confidence=0.9,
+                matched_anchors=2,
+            ),
+            AlignmentSegmentExample(
+                clip_start=60,
+                clip_end=80,
+                source_start=150,
+                source_end=170,
+                confidence=0.9,
+                matched_anchors=2,
+            ),
+        ],
+        clip_transcript_path=str(clip_path),
+        source_transcript_path=str(source_path),
+        setup="setup",
+        development="development",
+        payoff="payoff",
+        why_selected="why",
+    )
+
+    report = build_human_example_audit(example)
+
+    assert len(report.uncovered_clip_ranges) == 1
+    gap = report.uncovered_clip_ranges[0]
+    assert gap.start == 20
+    assert gap.end == 60
+    assert gap.seconds == 40
+    assert gap.source_gap_seconds == 30
+    assert gap.source_cut_seconds == -10
+    assert gap.explained_bridge is False
+    assert gap.transcript_excerpt == "uncovered middle"
+
+    rendered = format_human_example_audit(report)
+    assert "=== Uncovered clip ranges (1) ===" in rendered
+    assert "clip text: uncovered middle" in rendered
 
 
 def test_repository_lists_retrieval_documents_for_example(tmp_path: Path) -> None:
