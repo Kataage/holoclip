@@ -3,7 +3,13 @@ import json
 import pytest
 from typer.testing import CliRunner
 
-from holoclip.cli import app, _load_ready_editorial_profile, _refresh_editorial_profile
+import holoclip.cli as cli
+from holoclip.cli import (
+    app,
+    _detect_candidates,
+    _load_ready_editorial_profile,
+    _refresh_editorial_profile,
+)
 from holoclip.config import NimSettings
 from holoclip.analysis.candidate_detector import CandidateDetector
 from holoclip.domain_adapters import candidate_to_clip_timeline
@@ -373,3 +379,62 @@ async def test_measured_multi_cut_planning_and_timeline_adapter(learned_ready_pr
     assert await plan_candidate_boundaries(
         None, [candidate], [], profile=unready, model="strong"
     ) == [candidate]
+
+
+
+@pytest.mark.asyncio
+async def test_auto_refresh_skips_llm_before_count_floors(tmp_path):
+    store = tmp_path / "human_clips.jsonl"
+    upsert_human_clip_examples(
+        store,
+        [trusted_example(str(i), stream_id=f"s{i}") for i in range(9)],
+    )
+
+    class NoCallLLM:
+        async def chat_json(self, *args, **kwargs):
+            pytest.fail("automatic learning must not call the LLM before count floors")
+
+    result = await _refresh_editorial_profile(
+        NoCallLLM(),
+        settings=NimSettings(api_key="test", model="strong", fast_model="fast"),
+        stage_cache=None,
+        path=tmp_path / "editorial_profile.json",
+        store=store,
+    )
+
+    assert result is None
+    assert not (tmp_path / "editorial_profile.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_candidate_analysis_falls_back_when_auto_refresh_fails(tmp_path, monkeypatch):
+    async def fail_refresh(*args, **kwargs):
+        raise ValueError("strong editorial induction unavailable")
+
+    class LLM:
+        async def chat_json(self, *args, **kwargs):
+            return {"candidates": []}
+
+    class Context:
+        def __init__(self, *args, **kwargs):
+            self.client = LLM()
+
+        async def __aenter__(self):
+            return self.client
+
+        async def __aexit__(self, *args):
+            return None
+
+    monkeypatch.setattr(cli, "_refresh_editorial_profile", fail_refresh)
+    monkeypatch.setattr(cli, "NvidiaNimClient", Context)
+
+    result = await _detect_candidates(
+        [TranscriptSegment(start=0, end=60, text="unseen transcript")],
+        settings=NimSettings(api_key="test", model="strong", fast_model="fast"),
+        top_k=5,
+        window_minutes=10,
+        overlap_minutes=2,
+        editorial_profile_path=tmp_path / "editorial_profile.json",
+    )
+
+    assert result == []
