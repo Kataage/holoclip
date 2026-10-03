@@ -4,6 +4,8 @@ from holoclip.evaluation import (
     FeedbackRecord,
     KnownClip,
     build_run,
+    candidate_pool_fingerprint,
+    compare_evaluation_metrics,
     compute_metrics,
     known_clip_hit,
 )
@@ -123,3 +125,90 @@ def test_evaluation_run_is_backward_compatible_without_media_path() -> None:
     )
 
     assert run.media_path is None
+
+
+
+def test_candidate_pool_fingerprint_is_stable_and_order_sensitive() -> None:
+    left = candidate(10, 20, "a")
+    right = candidate(30, 40, "b")
+
+    first = candidate_pool_fingerprint([left, right])
+    second = candidate_pool_fingerprint([left.model_copy(), right.model_copy()])
+    reversed_order = candidate_pool_fingerprint([right, left])
+
+    assert first == second
+    assert first != reversed_order
+
+
+def test_build_run_stores_backward_compatible_metadata() -> None:
+    run = build_run(
+        stream_id="stream",
+        transcript_path="stream.json",
+        candidates=[candidate(10, 20, "candidate")],
+        metadata={"variant": "baseline", "retrieval_enabled": False},
+    )
+
+    assert run.metadata["variant"] == "baseline"
+    assert run.metadata["retrieval_enabled"] is False
+
+    legacy = EvaluationRun.model_validate(
+        {
+            "stream_id": "legacy-metadata",
+            "transcript_path": "legacy.json",
+            "candidates": [],
+        }
+    )
+    assert legacy.metadata == {}
+
+
+def test_compare_evaluation_metrics_returns_retrieval_minus_baseline() -> None:
+    baseline = compute_metrics(
+        [
+            EvaluationRun(
+                stream_id="s",
+                transcript_path="s.json",
+                candidates=[
+                    EvaluationCandidate(
+                        id="a",
+                        rank=1,
+                        candidate=candidate(0, 10, "a"),
+                    )
+                ],
+            )
+        ],
+        [
+            FeedbackRecord(
+                stream_id="s",
+                candidate_id="a",
+                decision=ReviewDecision.REJECT,
+            )
+        ],
+    )
+    retrieval = compute_metrics(
+        [
+            EvaluationRun(
+                stream_id="s",
+                transcript_path="s.json",
+                candidates=[
+                    EvaluationCandidate(
+                        id="b",
+                        rank=1,
+                        candidate=candidate(20, 30, "b"),
+                    )
+                ],
+            )
+        ],
+        [
+            FeedbackRecord(
+                stream_id="s",
+                candidate_id="b",
+                decision=ReviewDecision.ACCEPT,
+            )
+        ],
+    )
+
+    delta = compare_evaluation_metrics(baseline, retrieval)
+
+    assert delta["accept_at_3_mean"] == 1.0
+    assert delta["accept_at_5_mean"] == 1.0
+    assert delta["usable_at_5_mean"] == 1.0

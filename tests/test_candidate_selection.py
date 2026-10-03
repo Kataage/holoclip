@@ -8,9 +8,11 @@ class FakeLLM:
     def __init__(self, response: dict[str, object]) -> None:
         self.response = response
         self.calls = 0
+        self.kwargs: list[dict[str, object]] = []
 
     async def chat_json(self, *args: object, **kwargs: object) -> dict[str, object]:
         self.calls += 1
+        self.kwargs.append(dict(kwargs))
         return self.response
 
 
@@ -56,3 +58,19 @@ async def test_final_select_uses_strong_model_even_below_top_k() -> None:
     assert [item.working_title for item in result] == ["candidate-1", "candidate-0"]
     assert result[0].confidence == 0.91
     assert llm.calls == 1
+
+
+
+@pytest.mark.asyncio
+async def test_final_select_uses_configured_temperature() -> None:
+    llm = FakeLLM({"ranked": [{"index": 0}]})
+    detector = CandidateDetector(
+        llm,
+        fast_model="fast",
+        strong_model="strong",
+        final_temperature=0.0,
+    )
+
+    await detector.final_select([make_candidate(0)], top_k=1)
+
+    assert llm.kwargs[-1]["temperature"] == 0.0

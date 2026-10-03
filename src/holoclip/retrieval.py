@@ -76,6 +76,23 @@ class IndexBuildStats(BaseModel):
     suppressed_legacy_weak_negative_documents: int = 0
 
 
+def retrieval_corpus_fingerprint(
+    documents: list[RetrievalDocument],
+) -> str:
+    payload = [
+        {
+            "id": document.id,
+            "kind": document.kind.value,
+            "example_id": document.example_id,
+            "text_fingerprint": document.text_fingerprint,
+            "embedding_model": document.embedding_model,
+            "embedding_version": document.embedding_version,
+        }
+        for document in sorted(documents, key=lambda item: item.id)
+    ]
+    return make_input_fingerprint(payload)
+
+
 def _clean_list(values: list[str]) -> str:
     return ", ".join(sorted({value.strip() for value in values if value.strip()}))
 

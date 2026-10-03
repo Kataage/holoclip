@@ -100,6 +100,8 @@ class CandidateDetector:
         retrieval_repository: Any | None = None,
         retrieval_positive_k: int = 3,
         retrieval_negative_k: int = 3,
+        final_temperature: float = 0.1,
+        strict_retrieval: bool = False,
     ) -> None:
         self.llm = llm
         self.fast_model = fast_model
@@ -113,6 +115,8 @@ class CandidateDetector:
         self.retrieval_repository = retrieval_repository
         self.retrieval_positive_k = retrieval_positive_k
         self.retrieval_negative_k = retrieval_negative_k
+        self.final_temperature = final_temperature
+        self.strict_retrieval = strict_retrieval
 
     def _emit(self, message: str) -> None:
         if self.progress is not None:
@@ -239,6 +243,8 @@ class CandidateDetector:
                 negative_k=self.retrieval_negative_k,
             )
         except EmbeddingProviderError as exc:
+            if self.strict_retrieval:
+                raise
             self._emit(f"Retrieval unavailable: {exc}; continuing without examples")
             return working, None
 
@@ -326,7 +332,7 @@ class CandidateDetector:
                 retrieval_evidence=retrieval_evidence,
             ),
             model=self.strong_model,
-            temperature=0.1,
+            temperature=self.final_temperature,
             max_tokens=3072,
             reasoning_effort=self.strong_reasoning_effort,
         )

@@ -205,3 +205,33 @@ async def test_empty_retrieval_index_keeps_candidate_trace_empty(
 
     assert selected[0].retrieval_trace is None
     assert any("index is empty" in line for line in progress)
+
+
+
+@pytest.mark.asyncio
+async def test_strict_retrieval_propagates_embedding_failure(
+    tmp_path: Path,
+) -> None:
+    llm = RecordingLLM()
+
+    with SQLiteCanonicalRepository(tmp_path / "holoclip.db") as repository:
+        repository.upsert_retrieval_document(
+            retrieval_document(
+                document_id="positive-doc",
+                kind="positive",
+                example_id="positive-example",
+                text="setup: test\npayoff: test",
+                vector=[1.0, 0.0],
+            )
+        )
+        detector = CandidateDetector(
+            llm,
+            fast_model="fast",
+            strong_model="strong",
+            embedding_provider=FailingEmbeddingProvider(),
+            retrieval_repository=repository,
+            strict_retrieval=True,
+        )
+
+        with pytest.raises(EmbeddingProviderError):
+            await detector.final_select([candidate()], top_k=1)

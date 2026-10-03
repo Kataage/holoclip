@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -19,7 +20,30 @@ class EvaluationRun(BaseModel):
     stream_id: str
     transcript_path: str
     media_path: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     candidates: list[EvaluationCandidate]
+
+
+class RetrievalABManifest(BaseModel):
+    experiment_version: str = "retrieval-ab-v1"
+    stream_id: str
+    transcript_path: str
+    baseline_run_path: str
+    retrieval_run_path: str
+    candidate_pool_count: int
+    candidate_pool_fingerprint: str
+    retrieval_document_count: int
+    retrieval_corpus_fingerprint: str
+    retrieval_version: str
+    embedding_model: str
+    positive_k: int = Field(ge=0)
+    negative_k: int = Field(ge=0)
+    top_k: int = Field(ge=1)
+    window_minutes: float = Field(gt=0)
+    overlap_minutes: float = Field(ge=0)
+    fast_model: str
+    strong_model: str
+    final_temperature: float = Field(ge=0)
 
 
 class FeedbackRecord(BaseModel):
@@ -65,11 +89,13 @@ def build_run(
     transcript_path: str,
     candidates: list[ClipCandidate],
     media_path: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> EvaluationRun:
     return EvaluationRun(
         stream_id=stream_id,
         transcript_path=transcript_path,
         media_path=media_path,
+        metadata=metadata or {},
         candidates=[
             EvaluationCandidate(
                 id=make_candidate_id(stream_id, candidate),
@@ -78,6 +104,44 @@ def build_run(
             )
             for index, candidate in enumerate(candidates)
         ],
+    )
+
+
+def candidate_pool_fingerprint(candidates: list[ClipCandidate]) -> str:
+    payload = [
+        {
+            "start": round(candidate.start, 3),
+            "end": round(candidate.end, 3),
+            "working_title": candidate.working_title,
+            "setup": candidate.setup,
+            "development": candidate.development,
+            "payoff": candidate.payoff,
+            "why_interesting": candidate.why_interesting,
+            "traits": candidate.traits,
+            "context_requirement": candidate.context_requirement,
+            "confidence": candidate.confidence,
+            "source_chunk_ids": candidate.source_chunk_ids,
+            "warnings": [warning.value for warning in candidate.warnings],
+        }
+        for candidate in candidates
+    ]
+    raw = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def save_retrieval_ab_manifest(
+    manifest: RetrievalABManifest,
+    path: Path,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(manifest.model_dump(mode="json"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
 
 
@@ -239,6 +303,30 @@ def compute_metrics(
         known_clips=known_total,
         known_clip_recall=(known_hits / known_total) if known_total else None,
     )
+
+
+def compare_evaluation_metrics(
+    baseline: EvaluationMetrics,
+    retrieval: EvaluationMetrics,
+) -> dict[str, float | None]:
+    def delta(left: float | None, right: float | None) -> float | None:
+        if left is None or right is None:
+            return None
+        return right - left
+
+    return {
+        "accept_at_3_mean": retrieval.accept_at_3_mean - baseline.accept_at_3_mean,
+        "accept_at_5_mean": retrieval.accept_at_5_mean - baseline.accept_at_5_mean,
+        "usable_at_5_mean": retrieval.usable_at_5_mean - baseline.usable_at_5_mean,
+        "candidates_per_accept": delta(
+            baseline.candidates_per_accept,
+            retrieval.candidates_per_accept,
+        ),
+        "known_clip_recall": delta(
+            baseline.known_clip_recall,
+            retrieval.known_clip_recall,
+        ),
+    }
 
 
 def load_runs(directory: Path) -> list[EvaluationRun]:
