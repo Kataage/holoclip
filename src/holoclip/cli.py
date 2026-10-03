@@ -78,6 +78,7 @@ from holoclip.evaluation import (
 )
 from holoclip.editorial_profile import (
     EditorialProfile,
+    ReadinessThresholds,
     induce_editorial_profile,
     load_editorial_profile,
     save_editorial_profile,
@@ -155,10 +156,17 @@ async def _detect_candidates(
     )
     async with NvidiaNimClient(settings, event_callback=typer.echo) as client:
         if editorial_profile_path is not None:
-            editorial_profile = await _refresh_editorial_profile(
-                client, settings=settings, stage_cache=stage_cache,
-                path=editorial_profile_path,
-            )
+            try:
+                editorial_profile = await _refresh_editorial_profile(
+                    client, settings=settings, stage_cache=stage_cache,
+                    path=editorial_profile_path,
+                )
+            except (NvidiaNimTimeoutError, NvidiaNimAuthorizationError, ValueError) as exc:
+                typer.echo(
+                    "Automatic editorial profile refresh deferred; continuing "
+                    f"without learned profile: {exc}"
+                )
+                editorial_profile = None
         if editorial_profile and editorial_profile.readiness.ready and evaluation_transcript is not None:
             try:
                 report = await run_editorial_ab(client, transcript=evaluation_transcript,
@@ -240,6 +248,18 @@ async def _refresh_editorial_profile(client, *, settings, stage_cache, path: Pat
     examples = load_human_clip_store(store)
     cards = build_editorial_learning_cards(examples)
     if not cards:
+        return None
+    thresholds = existing.thresholds if existing is not None else ReadinessThresholds()
+    trusted_streams = len({card.stream_id for card in cards if card.stream_id})
+    if (
+        len(cards) < thresholds.trusted_examples
+        or trusted_streams < thresholds.unique_streams
+    ):
+        typer.echo(
+            "Editorial profile auto-refresh deferred: corpus count floors are not met "
+            f"({len(cards)}/{thresholds.trusted_examples} trusted, "
+            f"{trusted_streams}/{thresholds.unique_streams} streams)."
+        )
         return None
     if (existing is None or existing.corpus_fingerprint != card_fingerprint(cards)
             or existing.model != settings.model or existing.observation_model != settings.fast_model
