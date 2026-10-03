@@ -70,6 +70,7 @@ from holoclip.evaluation import (
     save_retrieval_ab_manifest,
     save_run,
 )
+from holoclip.evaluation_leak import build_evaluation_leak_report
 from holoclip.learning import (
     enrich_human_clip_example,
     refresh_human_clip_weak_negatives,
@@ -348,6 +349,28 @@ def discover(
 
     typer.echo(f"saved evaluation run: {run_path}")
     typer.echo(json.dumps({"candidates": result}, ensure_ascii=False, indent=2))
+
+
+@app.command()
+def evaluation_leak_check(
+    transcript: Path = typer.Argument(..., exists=True, readable=True),
+    store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--store",
+    ),
+) -> None:
+    """Check an evaluation transcript for overlap with human-example sources."""
+    examples = load_human_clip_store(store)
+    report = build_evaluation_leak_report(transcript, examples)
+    typer.echo(
+        json.dumps(
+            report.model_dump(mode="json"),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    if report.suspected_overlap:
+        raise typer.Exit(5)
 
 
 @app.command()
