@@ -73,6 +73,9 @@ def test_store_upserts_and_reports_stats(tmp_path: Path) -> None:
     assert stats.aligned == 1
     assert stats.unaligned == 0
     assert stats.with_story_structure == 1
+    assert stats.trusted_for_learning == 0
+    assert stats.needs_review == 1
+    assert stats.rejected_for_learning == 0
     assert stats.unique_streams == 1
     assert stats.unique_members == 1
 
