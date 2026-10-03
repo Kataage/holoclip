@@ -610,6 +610,7 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
             f"{report.alignment_quality.largest_backward_jump_seconds:.1f}s"
         ),
         f"weak singleton segments: {report.alignment_quality.weak_singleton_count}",
+        f"weak singleton ratio: {report.alignment_quality.weak_singleton_ratio:.1%}",
         "",
         "=== Learning quality ===",
         f"decision: {report.learning_quality.value}",
