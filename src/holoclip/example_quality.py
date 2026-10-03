@@ -364,19 +364,31 @@ def _source_hint_url(example: HumanClipExample) -> str | None:
     return example.source_url
 
 
+def source_hint_seconds(example: HumanClipExample) -> float | None:
+    provenance = example.acquisition_provenance
+    dedicated = provenance.get("source_start_hint_seconds")
+    if dedicated is not None:
+        try:
+            value = float(dedicated)
+        except (TypeError, ValueError):
+            value = -1.0
+        if value >= 0:
+            return value
+
+    raw_url = _source_hint_url(example)
+    return parse_youtube_time_hint(raw_url)
+
+
 def source_hint_is_authoritative(example: HumanClipExample) -> bool:
     provenance = example.acquisition_provenance
-    requested = provenance.get("requested_source_url")
-    if requested and parse_youtube_time_hint(str(requested)) is not None:
-        return True
-    if provenance.get("source_auto_detected") is True:
-        return False
-    return True
+    return (
+        provenance.get("source_start_hint_authoritative") is True
+        and provenance.get("source_start_hint_seconds") is not None
+    )
 
 
 def _source_hint_delta(example: HumanClipExample) -> float | None:
-    raw_url = _source_hint_url(example)
-    hint = parse_youtube_time_hint(raw_url)
+    hint = source_hint_seconds(example)
     if hint is None or not example.alignment_segments:
         return None
     return example.alignment_segments[0].source_start - hint
