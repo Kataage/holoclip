@@ -76,6 +76,9 @@ def test_store_upserts_and_reports_stats(tmp_path: Path) -> None:
     assert stats.trusted_for_learning == 0
     assert stats.needs_review == 1
     assert stats.rejected_for_learning == 0
+    assert stats.eligible_positive_documents == 0
+    assert stats.eligible_weak_negative_documents == 0
+    assert stats.suppressed_legacy_weak_negative_documents == 0
     assert stats.unique_streams == 1
     assert stats.unique_members == 1
 
