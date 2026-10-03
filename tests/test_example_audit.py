@@ -162,6 +162,61 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
     assert f"Retrieval documents ({len(documents)})" in rendered
 
 
+def test_audit_prefers_dedicated_authoritative_start_hint(
+    tmp_path: Path,
+) -> None:
+    clip_path = tmp_path / "clip-hint.json"
+    source_path = tmp_path / "source-hint.json"
+    save_transcript(
+        [TranscriptSegment(start=0, end=10, text="clip")],
+        clip_path,
+    )
+    save_transcript(
+        [TranscriptSegment(start=300, end=310, text="source")],
+        source_path,
+    )
+    example = HumanClipExample(
+        id="dedicated-hint",
+        clip_url="https://youtu.be/clip",
+        clip_title="hint",
+        source_url="https://youtu.be/source",
+        source_start=300,
+        source_end=310,
+        alignment_confidence=0.9,
+        alignment_method=ALIGNMENT_METHOD,
+        alignment_matched_anchors=3,
+        alignment_total_anchors=3,
+        alignment_segments=[
+            AlignmentSegmentExample(
+                clip_start=0,
+                clip_end=10,
+                source_start=300,
+                source_end=310,
+                confidence=0.9,
+                matched_anchors=3,
+            )
+        ],
+        clip_transcript_path=str(clip_path),
+        source_transcript_path=str(source_path),
+        setup="setup",
+        development="development",
+        payoff="payoff",
+        why_selected="why",
+        acquisition_provenance={
+            "requested_source_url": "https://youtu.be/source?t=120",
+            "resolved_source_url": "https://youtu.be/source?t=120",
+            "source_start_hint_seconds": 300,
+            "source_start_hint_authoritative": True,
+        },
+    )
+
+    report = build_human_example_audit(example)
+
+    assert report.declared_source_start_hint == 300
+    assert report.first_alignment_delta_from_hint == 0
+    assert report.source_hint_authoritative is True
+
+
 def test_audit_exposes_uncovered_clip_ranges_and_bridge_evidence(
     tmp_path: Path,
 ) -> None:
