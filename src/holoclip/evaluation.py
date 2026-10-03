@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import Any
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -19,7 +20,30 @@ class EvaluationRun(BaseModel):
     stream_id: str
     transcript_path: str
     media_path: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     candidates: list[EvaluationCandidate]
+
+
+class RetrievalABManifest(BaseModel):
+    experiment_version: str = "retrieval-ab-v1"
+    stream_id: str
+    transcript_path: str
+    baseline_run_path: str
+    retrieval_run_path: str
+    candidate_pool_count: int
+    candidate_pool_fingerprint: str
+    retrieval_document_count: int
+    retrieval_corpus_fingerprint: str
+    retrieval_version: str
+    embedding_model: str
+    positive_k: int = Field(ge=0)
+    negative_k: int = Field(ge=0)
+    top_k: int = Field(ge=1)
+    window_minutes: float = Field(gt=0)
+    overlap_minutes: float = Field(ge=0)
+    fast_model: str
+    strong_model: str
+    final_temperature: float = Field(ge=0)
 
 
 class FeedbackRecord(BaseModel):
@@ -65,11 +89,13 @@ def build_run(
     transcript_path: str,
     candidates: list[ClipCandidate],
     media_path: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> EvaluationRun:
     return EvaluationRun(
         stream_id=stream_id,
         transcript_path=transcript_path,
         media_path=media_path,
+        metadata=metadata or {},
         candidates=[
             EvaluationCandidate(
                 id=make_candidate_id(stream_id, candidate),
@@ -78,6 +104,44 @@ def build_run(
             )
             for index, candidate in enumerate(candidates)
         ],
+    )
+
+
+def candidate_pool_fingerprint(candidates: list[ClipCandidate]) -> str:
+    payload = [
+        {
+            "start": round(candidate.start, 3),
+            "end": round(candidate.end, 3),
+            "working_title": candidate.working_title,
+            "setup": candidate.setup,
+            "development": candidate.development,
+            "payoff": candidate.payoff,
+            "why_interesting": candidate.why_interesting,
+            "traits": candidate.traits,
+            "context_requirement": candidate.context_requirement,
+            "confidence": candidate.confidence,
+            "source_chunk_ids": candidate.source_chunk_ids,
+            "warnings": [warning.value for warning in candidate.warnings],
+        }
+        for candidate in candidates
+    ]
+    raw = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def save_retrieval_ab_manifest(
+    manifest: RetrievalABManifest,
+    path: Path,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(manifest.model_dump(mode="json"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
 
 
