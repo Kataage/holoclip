@@ -84,6 +84,18 @@ def test_continuous_current_alignment_is_trusted() -> None:
     assert quality.metrics.clip_coverage_ratio == 1.0
 
 
+def test_marginal_confidence_routes_to_review() -> None:
+    item = example_with_segments(
+        [aligned_segment(0, 60, 100, 160, anchors=6)],
+        confidence=0.70,
+    )
+
+    quality = evaluate_human_example_learning_quality(item)
+
+    assert quality.decision is LearningQuality.REVIEW
+    assert LearningQualityReason.MARGINAL_ALIGNMENT_CONFIDENCE in quality.reasons
+
+
 def test_sparse_multicut_is_preserved_for_review_not_rejected() -> None:
     item = example_with_segments(
         [
