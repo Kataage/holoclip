@@ -201,6 +201,13 @@ def analyze(
         "--save-run",
         help="Save an evaluation run JSON in addition to printing candidates.",
     ),
+    editorial_profile: Path | None = typer.Option(
+        Path("data/examples/editorial_profile.json"),
+        "--editorial-profile",
+        help=(
+            "Use the learned editorial profile only after its readiness gate passes."
+        ),
+    ),
 ) -> None:
     """Analyze a timed transcript JSON file and print clip candidates."""
     _load_env_file()
@@ -219,6 +226,7 @@ def analyze(
             overlap_minutes=overlap_minutes,
             stage_cache=stage_cache,
             retrieval_repository=repository,
+            editorial_profile=_load_ready_editorial_profile(editorial_profile),
         )
 
         if save_run_path is not None:
@@ -297,6 +305,13 @@ def discover(
         "--force-transcribe",
         help="Ignore an existing transcript and transcribe the media again.",
     ),
+    editorial_profile: Path | None = typer.Option(
+        Path("data/examples/editorial_profile.json"),
+        "--editorial-profile",
+        help=(
+            "Use the learned editorial profile only after its readiness gate passes."
+        ),
+    ),
 ) -> None:
     """Transcribe local media, discover clip candidates, and save an evaluation run."""
     _load_env_file()
@@ -338,6 +353,7 @@ def discover(
             overlap_minutes=overlap_minutes,
             stage_cache=stage_cache,
             retrieval_repository=repository,
+            editorial_profile=_load_ready_editorial_profile(editorial_profile),
         )
         save_run(
             build_run(
