@@ -11,7 +11,7 @@ from holoclip.example_quality import (
     LearningQuality,
     evaluate_human_example_learning_quality,
 )
-from holoclip.examples import HumanClipExample
+from holoclip.examples import WEAK_NEGATIVE_METHOD, HumanClipExample
 from holoclip.execution import make_input_fingerprint
 from holoclip.models import ClipCandidate
 from holoclip.providers.embedding.base import EmbeddingProvider
@@ -73,6 +73,7 @@ class IndexBuildStats(BaseModel):
     skipped_unenriched_examples: int = 0
     skipped_quality_review: int = 0
     skipped_quality_rejected: int = 0
+    suppressed_legacy_weak_negative_documents: int = 0
 
 
 def _clean_list(values: list[str]) -> str:
@@ -154,33 +155,34 @@ def build_retrieval_document_drafts(
                 )
             )
 
-        for index, negative in enumerate(example.weak_negatives):
-            text = weak_negative_structural_text(example, index)
-            drafts.append(
-                RetrievalDocumentDraft(
-                    id=stable_id(
-                        "retr",
-                        RETRIEVAL_VERSION,
-                        "weak_negative",
-                        example.id,
-                        index,
-                        negative.reason,
-                        round(negative.start, 3),
-                        round(negative.end, 3),
-                    ),
-                    kind=RetrievalDocumentKind.WEAK_NEGATIVE,
-                    example_id=example.id,
-                    text=text,
-                    text_fingerprint=make_input_fingerprint(text),
-                    metadata={
-                        "reason": negative.reason,
-                        "start": negative.start,
-                        "end": negative.end,
-                        "members": example.members,
-                        "topics": example.topics,
-                    },
+        if example.weak_negative_method == WEAK_NEGATIVE_METHOD:
+            for index, negative in enumerate(example.weak_negatives):
+                text = weak_negative_structural_text(example, index)
+                drafts.append(
+                    RetrievalDocumentDraft(
+                        id=stable_id(
+                            "retr",
+                            RETRIEVAL_VERSION,
+                            "weak_negative",
+                            example.id,
+                            index,
+                            negative.reason,
+                            round(negative.start, 3),
+                            round(negative.end, 3),
+                        ),
+                        kind=RetrievalDocumentKind.WEAK_NEGATIVE,
+                        example_id=example.id,
+                        text=text,
+                        text_fingerprint=make_input_fingerprint(text),
+                        metadata={
+                            "reason": negative.reason,
+                            "start": negative.start,
+                            "end": negative.end,
+                            "members": example.members,
+                            "topics": example.topics,
+                        },
+                    )
                 )
-            )
 
     return drafts, skipped
 
@@ -239,6 +241,12 @@ async def index_human_examples(
         ),
         skipped_quality_rejected=sum(
             1 for decision in quality if decision is LearningQuality.REJECTED
+        ),
+        suppressed_legacy_weak_negative_documents=sum(
+            len(example.weak_negatives)
+            for example, decision in zip(examples, quality, strict=True)
+            if decision is LearningQuality.TRUSTED
+            and example.weak_negative_method != WEAK_NEGATIVE_METHOD
         ),
         positive_documents=sum(
             1 for draft in drafts if draft.kind is RetrievalDocumentKind.POSITIVE
