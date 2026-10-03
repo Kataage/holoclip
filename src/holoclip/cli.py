@@ -711,7 +711,24 @@ def examples_grow_corpus(
                     report = await grow_corpus(provider, store=store, state_path=state, ingest=ingest,
                         policy_rules=rules, scan_limit=scan_limit, max_new_examples=max_new_examples,
                         target_trusted=effective_target, target_streams=target_streams, progress=typer.echo)
-                    ready_profile = await _refresh_editorial_profile(llm, settings=settings, stage_cache=cache, path=profile, store=store)
+                    try:
+                        ready_profile = await _refresh_editorial_profile(
+                            llm,
+                            settings=settings,
+                            stage_cache=cache,
+                            path=profile,
+                            store=store,
+                        )
+                    except (
+                        NvidiaNimTimeoutError,
+                        NvidiaNimAuthorizationError,
+                        ValueError,
+                    ) as exc:
+                        typer.echo(
+                            "Editorial profile refresh deferred during corpus growth; "
+                            f"continuing acquisition within the configured cycle budget: {exc}"
+                        )
+                        ready_profile = None
                     if (report["trusted_examples"] >= target_trusted and report["trusted_streams"] >= target_streams
                             and ready_profile is not None):
                         break
