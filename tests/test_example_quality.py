@@ -47,6 +47,10 @@ def example_with_segments(
         alignment_total_anchors=sum(item.matched_anchors for item in segments),
         alignment_segments=segments,
         acquisition_provenance={"resolved_source_url": source_url},
+        setup="setup",
+        development="development",
+        payoff="payoff",
+        why_selected="why selected",
     )
 
 
