@@ -16,6 +16,10 @@ from holoclip.example_quality import (
 from holoclip.examples import HumanClipExample, WeakNegativeExample, load_human_clip_store
 from holoclip.models import TranscriptSegment
 from holoclip.retrieval import RetrievalDocument, build_retrieval_document_drafts
+from holoclip.structure_validation import (
+    StructureWarning,
+    validate_editorial_structure,
+)
 from holoclip.transcript import load_transcript
 
 
@@ -81,6 +85,7 @@ class HumanExampleAuditReport(BaseModel):
     traits: list[str] = Field(default_factory=list)
     relationship_context: str | None = None
     context_requirement: str = "medium"
+    structure_warnings: list[StructureWarning] = Field(default_factory=list)
 
     weak_negatives: list[WeakNegativeExample] = Field(default_factory=list)
     retrieval_documents: list[RetrievalAuditDocument] = Field(default_factory=list)
@@ -253,6 +258,7 @@ def build_human_example_audit(
         )
 
     learning_quality = evaluate_human_example_learning_quality(example)
+    structure_validation = validate_editorial_structure(example)
     alignment_quality = learning_quality.metrics
     clip_selected_seconds = alignment_quality.aligned_clip_seconds
     source_selected_seconds = alignment_quality.aligned_source_seconds
@@ -328,6 +334,7 @@ def build_human_example_audit(
         traits=example.traits,
         relationship_context=example.relationship_context,
         context_requirement=example.context_requirement,
+        structure_warnings=structure_validation.warnings,
         weak_negatives=example.weak_negatives,
         retrieval_documents=retrieval,
         acquisition_provenance=provenance,
@@ -475,6 +482,10 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
     )
     if report.relationship_context:
         lines.append(f"relationship context: {report.relationship_context}")
+    if report.structure_warnings:
+        lines.append("structure warnings:")
+        for warning in report.structure_warnings:
+            lines.append(f"  - {warning.code.value}: {warning.message}")
 
     lines.extend(["", f"=== Weak negatives ({len(report.weak_negatives)}) ==="])
     for index, negative in enumerate(report.weak_negatives, start=1):
