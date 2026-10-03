@@ -126,6 +126,13 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
     assert report.source_selected_seconds == 30
     assert report.source_bounding_seconds == 90
     assert report.source_gap_seconds == 60
+    assert report.alignment_quality.clip_timeline_seconds == 30
+    assert report.alignment_quality.aligned_clip_seconds == 30
+    assert report.alignment_quality.clip_coverage_ratio == 1.0
+    assert report.learning_quality.value == "review"
+    assert "legacy_alignment_method" in {
+        reason.value for reason in report.learning_quality_reasons
+    }
     assert report.declared_source_start_hint == 120
     assert report.first_alignment_delta_from_hint == 0
     assert report.retrieval_documents[0].kind == "positive"
@@ -134,6 +141,8 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
     rendered = format_human_example_audit(report)
     assert "Alignment #1" in rendered
     assert "removed/gap inside bounding range: 60.0s" in rendered
+    assert "clip coverage: 100.0%" in rendered
+    assert "decision: review" in rendered
     assert "first alignment - declared hint: +0.0s" in rendered
     assert "元配信の最初" in rendered
     assert f"Retrieval documents ({len(documents)})" in rendered
