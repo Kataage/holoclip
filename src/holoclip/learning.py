@@ -16,6 +16,10 @@ from holoclip.models import TranscriptSegment
 from holoclip.providers.llm.base import LLMProvider
 
 
+STRUCTURE_PROMPT_VERSION = "human-structure-v2"
+STRUCTURE_METHOD = "glm-structure-v2"
+
+
 def _excerpt(
     segments: list[TranscriptSegment],
     *,
@@ -194,11 +198,31 @@ def _structure_messages(
                 '}\n'
                 "Traits should describe mechanisms such as unexpected_confession, "
                 "character_gap, contradiction, escalation, callback, relationship_dynamics, "
-                "setup_payoff, failure_after_confidence, or reveal. "
+                "setup_payoff, failure_after_confidence, reveal, or unresolved_hook. "
+                "Use setup_payoff only when the clip actually resolves the setup in its own "
+                "selected material. If the clip deliberately withholds the answer, teases a "
+                "future explanation, or ends without resolving the premise, do not use "
+                "setup_payoff; use unresolved_hook when appropriate. "
                 "Prefer abstract reusable mechanisms over phrases copied from the clip."
             ),
         },
     ]
+
+
+def refresh_human_clip_weak_negatives(
+    example: HumanClipExample,
+    source_segments: list[TranscriptSegment],
+    *,
+    weak_negative_window_seconds: float = 90.0,
+) -> HumanClipExample:
+    updated = example.model_copy(deep=True)
+    updated.weak_negatives = build_adjacent_weak_negatives(
+        updated,
+        source_segments,
+        window_seconds=weak_negative_window_seconds,
+    )
+    updated.weak_negative_method = WEAK_NEGATIVE_METHOD
+    return updated
 
 
 async def enrich_human_clip_example(
@@ -242,7 +266,7 @@ async def enrich_human_clip_example(
             stage_version="1",
             provider=cache_provider,
             model=model,
-            prompt_version="human-structure-v1",
+            prompt_version=STRUCTURE_PROMPT_VERSION,
         )
 
     if payload is None:
@@ -256,7 +280,7 @@ async def enrich_human_clip_example(
                 stage_version="1",
                 provider=cache_provider,
                 model=model,
-                prompt_version="human-structure-v1",
+                prompt_version=STRUCTURE_PROMPT_VERSION,
             )
         try:
             payload = await llm.chat_json(
@@ -303,12 +327,11 @@ async def enrich_human_clip_example(
     relationship_context = str(payload.get("relationship_context", "")).strip()
     updated.relationship_context = relationship_context or None
     updated.context_requirement = context_requirement
-    updated.weak_negatives = build_adjacent_weak_negatives(
+    updated = refresh_human_clip_weak_negatives(
         updated,
         source_segments,
-        window_seconds=weak_negative_window_seconds,
+        weak_negative_window_seconds=weak_negative_window_seconds,
     )
-    updated.weak_negative_method = WEAK_NEGATIVE_METHOD
-    updated.structure_method = "glm-structure-v1"
+    updated.structure_method = STRUCTURE_METHOD
     updated.structure_model = model
     return updated
