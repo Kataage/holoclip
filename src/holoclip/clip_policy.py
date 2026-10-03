@@ -41,8 +41,6 @@ class ClipPolicyRule(BaseModel):
     end: float | None = Field(default=None, gt=0)
     evidence_url: str | None = None
     evidence_text: str | None = None
-    scope_query: str | None = None
-    defer_until_ranges: bool = False
     valid_from: str | None = None
     valid_until: str | None = None
 
@@ -79,6 +77,8 @@ class PolicyFinding(BaseModel):
     end: float | None = None
     evidence_url: str | None = None
     evidence_text: str | None = None
+    scope_query: str | None = None
+    defer_until_ranges: bool = False
 
 
 class ClipPolicyEvaluation(BaseModel):
