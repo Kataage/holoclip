@@ -235,6 +235,81 @@ def _load_optional_transcript(
         return []
 
 
+def _build_clip_gap_audits(
+    example: HumanClipExample,
+    clip_transcript: list[TranscriptSegment],
+) -> list[ClipGapAudit]:
+    ordered = sorted(
+        example.alignment_segments,
+        key=lambda item: (item.clip_start, item.clip_end),
+    )
+    if not ordered:
+        return []
+
+    timeline_end = (
+        max((item.end for item in clip_transcript), default=ordered[-1].clip_end)
+        if clip_transcript
+        else ordered[-1].clip_end
+    )
+    gaps: list[ClipGapAudit] = []
+
+    if ordered[0].clip_start > 0:
+        gaps.append(
+            ClipGapAudit(
+                start=0.0,
+                end=ordered[0].clip_start,
+                seconds=ordered[0].clip_start,
+                transcript_excerpt=_excerpt(
+                    clip_transcript,
+                    0.0,
+                    ordered[0].clip_start,
+                ),
+            )
+        )
+
+    for left, right in zip(ordered, ordered[1:], strict=False):
+        gap_start = left.clip_end
+        gap_end = right.clip_start
+        if gap_end <= gap_start:
+            continue
+        clip_gap = gap_end - gap_start
+        source_gap = right.source_start - left.source_end
+        source_cut = source_gap - clip_gap
+        gaps.append(
+            ClipGapAudit(
+                start=gap_start,
+                end=gap_end,
+                seconds=clip_gap,
+                transcript_excerpt=_excerpt(
+                    clip_transcript,
+                    gap_start,
+                    gap_end,
+                ),
+                source_gap_seconds=source_gap,
+                source_cut_seconds=source_cut,
+                explained_bridge=(
+                    explained_clip_bridge_seconds(left, right) > 0
+                ),
+            )
+        )
+
+    if timeline_end > ordered[-1].clip_end:
+        gaps.append(
+            ClipGapAudit(
+                start=ordered[-1].clip_end,
+                end=timeline_end,
+                seconds=timeline_end - ordered[-1].clip_end,
+                transcript_excerpt=_excerpt(
+                    clip_transcript,
+                    ordered[-1].clip_end,
+                    timeline_end,
+                ),
+            )
+        )
+
+    return gaps
+
+
 def parse_youtube_time_hint(url: str | None) -> float | None:
     if not url:
         return None
@@ -354,6 +429,10 @@ def build_human_example_audit(
             audit_segments[0].source_start - declared_source_start_hint
         )
 
+    uncovered_clip_ranges = _build_clip_gap_audits(
+        example,
+        clip_transcript,
+    )
     learning_quality = evaluate_human_example_learning_quality(example)
     structure_validation = validate_editorial_structure(example)
     alignment_quality = learning_quality.metrics
@@ -409,6 +488,7 @@ def build_human_example_audit(
         source_start=example.source_start,
         source_end=example.source_end,
         alignment_segments=audit_segments,
+        uncovered_clip_ranges=uncovered_clip_ranges,
         clip_selected_seconds=clip_selected_seconds,
         source_selected_seconds=source_selected_seconds,
         source_bounding_seconds=source_bounding_seconds,
@@ -437,6 +517,11 @@ def build_human_example_audit(
         source_resolution_reason=provenance.get("source_resolution_reason"),
         source_resolution_score=source_resolution_score,
         source_auto_detected=source_auto_detected,
+        source_hint_authoritative=(
+            source_hint_is_authoritative(example)
+            if declared_source_start_hint is not None
+            else None
+        ),
         setup=example.setup,
         development=example.development,
         payoff=example.payoff,
