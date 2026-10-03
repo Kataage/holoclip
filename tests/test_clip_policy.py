@@ -143,3 +143,65 @@ def test_policy_registry_round_trip(tmp_path: Path) -> None:
     loaded = load_policy_rules(path)
 
     assert loaded == [rule]
+
+
+
+def test_scoped_description_no_clip_is_deferred_not_source_block() -> None:
+    result = evaluate_source_metadata(
+        metadata(
+            description=(
+                "一応8周年のトピックで触れた部分だけ切り抜き禁止で"
+                "お願いいたします！"
+            )
+        )
+    )
+
+    assert result.decision is PolicyDecision.REVIEW
+    assert len(result.findings) == 1
+    assert result.findings[0].defer_until_ranges is True
+    assert "8周年" in (result.findings[0].scope_query or "")
+
+
+def test_scoped_description_blocks_only_matching_aligned_topic() -> None:
+    source = metadata(
+        description=(
+            "一応8周年のトピックで触れた部分だけ切り抜き禁止で"
+            "お願いいたします！"
+        )
+    )
+    metadata_policy = evaluate_source_metadata(source)
+    transcript = [
+        TranscriptSegment(start=100, end=120, text="最近あった料理の話をします"),
+        TranscriptSegment(start=500, end=530, text="8周年について振り返るよ"),
+    ]
+
+    safe = evaluate_source_ranges(
+        source,
+        ranges=[(100, 120)],
+        transcript=transcript,
+        deferred_findings=metadata_policy.findings,
+    )
+    blocked = evaluate_source_ranges(
+        source,
+        ranges=[(500, 530)],
+        transcript=transcript,
+        deferred_findings=metadata_policy.findings,
+    )
+
+    assert safe.decision is PolicyDecision.ALLOW
+    assert blocked.decision is PolicyDecision.BLOCK
+    assert "8周年" in blocked.findings[0].reason
+
+
+def test_ambiguous_scoped_description_without_extractable_topic_stays_review() -> None:
+    source = metadata(description="この部分だけ切り抜き禁止でお願いします")
+    metadata_policy = evaluate_source_metadata(source)
+
+    result = evaluate_source_ranges(
+        source,
+        ranges=[(100, 130)],
+        transcript=[TranscriptSegment(start=100, end=130, text="雑談")],
+        deferred_findings=metadata_policy.findings,
+    )
+
+    assert result.decision is PolicyDecision.REVIEW
