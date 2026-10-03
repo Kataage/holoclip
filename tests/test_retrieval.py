@@ -85,6 +85,7 @@ def enriched_example(
         traits=["unexpected_confession", "reveal", "setup_payoff"],
         topics=["新人時代"],
         members=["member-a"],
+        relationship_context="member-a と member-b の先輩後輩関係",
         context_requirement="low",
         weak_negative_method=WEAK_NEGATIVE_METHOD,
         weak_negatives=[
@@ -115,7 +116,27 @@ def test_build_retrieval_drafts_uses_abstract_positive_structure() -> None:
     assert len(negatives) == 2
     assert "setup:" in positives[0].text
     assert "why_selected:" in positives[0].text
+    assert "traits:" in positives[0].text
+    assert "topics:" not in positives[0].text
+    assert "members:" not in positives[0].text
+    assert "relationship:" not in positives[0].text
+    assert "parent_topics:" not in negatives[0].text
+    assert "parent_members:" not in negatives[0].text
+    assert "parent_positive_traits:" not in negatives[0].text
     assert example.clip_title not in positives[0].text
+
+    assert positives[0].metadata["members"] == ["member-a"]
+    assert positives[0].metadata["topics"] == ["新人時代"]
+    assert positives[0].metadata["relationship_context"] == (
+        "member-a と member-b の先輩後輩関係"
+    )
+    assert negatives[0].metadata["members"] == ["member-a"]
+    assert negatives[0].metadata["topics"] == ["新人時代"]
+    assert negatives[0].metadata["traits"] == [
+        "unexpected_confession",
+        "reveal",
+        "setup_payoff",
+    ]
 
 
 @pytest.mark.asyncio
