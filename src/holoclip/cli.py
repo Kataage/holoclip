@@ -73,6 +73,12 @@ from holoclip.evaluation import (
     save_retrieval_ab_manifest,
     save_run,
 )
+from holoclip.editorial_profile import (
+    EditorialProfile,
+    induce_editorial_profile,
+    load_editorial_profile,
+    save_editorial_profile,
+)
 from holoclip.evaluation_leak import build_evaluation_leak_report
 from holoclip.learning import (
     enrich_human_clip_example,
@@ -128,6 +134,7 @@ async def _detect_candidates(
     overlap_minutes: float,
     stage_cache: StageArtifactCache | None = None,
     retrieval_repository: SQLiteCanonicalRepository | None = None,
+    editorial_profile: EditorialProfile | None = None,
 ):
     chunks = chunk_segments(
         segments,
