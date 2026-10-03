@@ -20,6 +20,9 @@ TRUSTED_MIN_CLIP_COVERAGE = 0.70
 MIN_LARGE_CLIP_GAP_SECONDS = 30.0
 LARGE_CLIP_GAP_RATIO = 0.20
 SOURCE_HINT_REVIEW_DELTA_SECONDS = 600.0
+EXPLAINED_BRIDGE_MAX_CLIP_GAP_SECONDS = 90.0
+EXPLAINED_BRIDGE_MAX_SOURCE_CUT_SECONDS = 45.0
+EXPLAINED_BRIDGE_CLOCK_TOLERANCE_SECONDS = 3.0
 
 
 class LearningQuality(StrEnum):
@@ -52,6 +55,11 @@ class AlignmentQualityMetrics(BaseModel):
     clip_coverage_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
     uncovered_clip_seconds: float = 0.0
     largest_uncovered_clip_gap: float = 0.0
+    bridged_clip_seconds: float = 0.0
+    explained_clip_seconds: float = 0.0
+    explained_clip_coverage_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    explained_uncovered_clip_seconds: float = 0.0
+    explained_bridge_count: int = 0
 
     aligned_source_seconds: float = 0.0
     source_bounding_seconds: float = 0.0
