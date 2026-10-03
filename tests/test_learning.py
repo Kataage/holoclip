@@ -171,6 +171,55 @@ def test_multicut_gap_becomes_weak_negative() -> None:
 
 
 
+def test_unmapped_clip_gap_does_not_become_removed_weak_negative() -> None:
+    source = [
+        seg(80, 90, "切り抜き前の話"),
+        seg(100, 120, "採用区間その1"),
+        seg(140, 160, "alignerが見失った可能性のある区間"),
+        seg(180, 200, "採用区間その2"),
+        seg(220, 240, "切り抜き後の話"),
+    ]
+    item = HumanClipExample(
+        id="sparse-multicut",
+        clip_url="https://example.invalid/sparse-multicut",
+        clip_title="疎な複数カット",
+        source_start=100,
+        source_end=200,
+        alignment_confidence=0.9,
+        alignment_method="transcript-anchor-v5",
+        alignment_segments=[
+            AlignmentSegmentExample(
+                clip_start=0,
+                clip_end=20,
+                source_start=100,
+                source_end=120,
+                confidence=0.95,
+                matched_anchors=3,
+            ),
+            AlignmentSegmentExample(
+                clip_start=80,
+                clip_end=100,
+                source_start=180,
+                source_end=200,
+                confidence=0.95,
+                matched_anchors=3,
+            ),
+        ],
+    )
+
+    negatives = build_adjacent_weak_negatives(
+        item,
+        source,
+        window_seconds=60,
+        gap_seconds=10,
+    )
+
+    assert all(
+        negative.reason != "removed_between_selected_segments"
+        for negative in negatives
+    )
+
+
 class CountingLLM(FakeLLM):
     def __init__(self) -> None:
         self.calls = 0
