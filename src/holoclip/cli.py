@@ -391,6 +391,138 @@ def discover(
 
 
 @app.command()
+def examples_learn_profile(
+    store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--store",
+    ),
+    output: Path = typer.Option(
+        Path("data/examples/editorial_profile.json"),
+        "--output",
+    ),
+    database: Path = typer.Option(
+        Path("data/holoclip.db"),
+        "--database",
+    ),
+    batch_size: int = typer.Option(
+        12,
+        "--batch-size",
+        min=2,
+        max=50,
+    ),
+) -> None:
+    """Learn a corpus-level editorial model from trusted human-made clips."""
+    _load_env_file()
+    settings = NimSettings.from_env()
+    examples = load_human_clip_store(store)
+
+    async def _run(stage_cache: StageArtifactCache) -> EditorialProfile:
+        async with NvidiaNimClient(
+            settings,
+            event_callback=typer.echo,
+        ) as llm:
+            return await induce_editorial_profile(
+                llm,
+                examples,
+                model=settings.model,
+                reasoning_effort=settings.strong_reasoning_effort,
+                batch_size=batch_size,
+                stage_cache=stage_cache,
+                cache_provider="nvidia_nim",
+            )
+
+    try:
+        with SQLiteCanonicalRepository(database) as repository:
+            stage_cache = StageArtifactCache(
+                repository,
+                Path("data/artifacts/stages"),
+            )
+            profile = asyncio.run(_run(stage_cache))
+    except NvidiaNimAuthorizationError as exc:
+        typer.echo(f"NVIDIA NIM error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except NvidiaNimTimeoutError as exc:
+        typer.echo(f"NVIDIA NIM timeout: {exc}", err=True)
+        raise typer.Exit(3) from exc
+    except ValueError as exc:
+        typer.echo(f"editorial learning error: {exc}", err=True)
+        raise typer.Exit(4) from exc
+
+    save_editorial_profile(profile, output)
+    typer.echo(
+        json.dumps(
+            {
+                "output": str(output),
+                "version": profile.version,
+                "corpus_fingerprint": profile.corpus_fingerprint,
+                "trusted_examples": profile.trusted_examples,
+                "unique_streams": profile.unique_streams,
+                "patterns": len(profile.patterns),
+                "core_patterns": profile.readiness.core_patterns,
+                "core_coverage_ratio": profile.readiness.core_coverage_ratio,
+                "ready": profile.readiness.ready,
+                "readiness_reasons": profile.readiness.reasons,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@app.command()
+def examples_learning_status(
+    profile_path: Path = typer.Option(
+        Path("data/examples/editorial_profile.json"),
+        "--profile",
+    ),
+) -> None:
+    """Show whether corpus-level editorial learning is ready for validation."""
+    if not profile_path.exists():
+        typer.echo(
+            json.dumps(
+                {
+                    "ready": False,
+                    "profile": str(profile_path),
+                    "reasons": ["editorial profile has not been learned yet"],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    profile = load_editorial_profile(profile_path)
+    typer.echo(
+        json.dumps(
+            {
+                "ready": profile.readiness.ready,
+                "profile": str(profile_path),
+                "version": profile.version,
+                "model": profile.model,
+                "trusted_examples": profile.trusted_examples,
+                "unique_streams": profile.unique_streams,
+                "core_patterns": profile.readiness.core_patterns,
+                "core_coverage_ratio": profile.readiness.core_coverage_ratio,
+                "reasons": profile.readiness.reasons,
+                "patterns": [
+                    {
+                        "id": pattern.id,
+                        "name": pattern.name,
+                        "maturity": pattern.maturity.value,
+                        "support_examples": len(pattern.support_example_ids),
+                        "support_streams": len(pattern.support_stream_ids),
+                        "confidence": pattern.confidence,
+                    }
+                    for pattern in profile.patterns
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@app.command()
 def evaluation_leak_check(
     transcript: Path = typer.Argument(..., exists=True, readable=True),
     store: Path = typer.Option(
