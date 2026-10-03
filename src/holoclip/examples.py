@@ -8,6 +8,9 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 
+WEAK_NEGATIVE_METHOD = "coverage-aware-v2"
+
+
 class ClipPerformance(BaseModel):
     views: int | None = Field(default=None, ge=0)
     likes: int | None = Field(default=None, ge=0)
@@ -61,6 +64,7 @@ class HumanClipExample(BaseModel):
     alignment_confidence: float | None = Field(default=None, ge=0, le=1)
     alignment_method: str | None = None
     alignment_matched_anchors: int | None = Field(default=None, ge=0)
+    alignment_total_anchors: int | None = Field(default=None, ge=0)
     alignment_segments: list[AlignmentSegmentExample] = Field(default_factory=list)
 
     clip_transcript_path: str | None = None
@@ -78,6 +82,7 @@ class HumanClipExample(BaseModel):
     payoff: str = ""
     why_selected: str = ""
     weak_negatives: list[WeakNegativeExample] = Field(default_factory=list)
+    weak_negative_method: str | None = None
     structure_method: str | None = None
     structure_model: str | None = None
 
@@ -105,6 +110,12 @@ class HumanClipExampleStats(BaseModel):
     aligned: int
     unaligned: int
     with_story_structure: int
+    trusted_for_learning: int
+    needs_review: int
+    rejected_for_learning: int
+    eligible_positive_documents: int
+    eligible_weak_negative_documents: int
+    suppressed_legacy_weak_negative_documents: int
     unique_streams: int
     unique_members: int
 
@@ -194,14 +205,51 @@ def compute_human_clip_stats(
         for example in examples
         if bool(example.setup and example.development and example.payoff)
     )
+    from holoclip.example_quality import (
+        LearningQuality,
+        evaluate_human_example_learning_quality,
+    )
+
+    quality = [
+        evaluate_human_example_learning_quality(example).decision
+        for example in examples
+    ]
     streams = {example.stream_id for example in examples if example.stream_id}
     members = {member for example in examples for member in example.members}
+
+    trusted_for_learning = sum(
+        1 for decision in quality if decision is LearningQuality.TRUSTED
+    )
+    eligible_weak_negative_documents = sum(
+        len(example.weak_negatives)
+        for example, decision in zip(examples, quality, strict=True)
+        if decision is LearningQuality.TRUSTED
+        and example.weak_negative_method == WEAK_NEGATIVE_METHOD
+    )
+    suppressed_legacy_weak_negative_documents = sum(
+        len(example.weak_negatives)
+        for example, decision in zip(examples, quality, strict=True)
+        if decision is LearningQuality.TRUSTED
+        and example.weak_negative_method != WEAK_NEGATIVE_METHOD
+    )
 
     return HumanClipExampleStats(
         total=len(examples),
         aligned=aligned,
         unaligned=len(examples) - aligned,
         with_story_structure=with_story_structure,
+        trusted_for_learning=trusted_for_learning,
+        needs_review=sum(
+            1 for decision in quality if decision is LearningQuality.REVIEW
+        ),
+        rejected_for_learning=sum(
+            1 for decision in quality if decision is LearningQuality.REJECTED
+        ),
+        eligible_positive_documents=trusted_for_learning,
+        eligible_weak_negative_documents=eligible_weak_negative_documents,
+        suppressed_legacy_weak_negative_documents=(
+            suppressed_legacy_weak_negative_documents
+        ),
         unique_streams=len(streams),
         unique_members=len(members),
     )

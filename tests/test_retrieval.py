@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from holoclip.examples import HumanClipExample, WeakNegativeExample
+from holoclip.alignment import ALIGNMENT_METHOD
+from holoclip.examples import (
+    WEAK_NEGATIVE_METHOD,
+    AlignmentSegmentExample,
+    HumanClipExample,
+    WeakNegativeExample,
+)
 from holoclip.repository import SQLiteCanonicalRepository
 from holoclip.retrieval import (
     RETRIEVAL_VERSION,
@@ -54,6 +60,22 @@ def enriched_example(
         id=example_id,
         clip_url=f"https://example.invalid/{example_id}",
         clip_title="title",
+        source_start=100,
+        source_end=160,
+        alignment_confidence=0.9,
+        alignment_method=ALIGNMENT_METHOD,
+        alignment_matched_anchors=3,
+        alignment_total_anchors=3,
+        alignment_segments=[
+            AlignmentSegmentExample(
+                clip_start=0,
+                clip_end=60,
+                source_start=100,
+                source_end=160,
+                confidence=0.9,
+                matched_anchors=3,
+            )
+        ],
         setup="普通の雑談から始まる",
         development="本人が意外な告白をする",
         payoff="最後に笑えるオチへつながる",
@@ -62,6 +84,7 @@ def enriched_example(
         topics=["新人時代"],
         members=["member-a"],
         context_requirement="low",
+        weak_negative_method=WEAK_NEGATIVE_METHOD,
         weak_negatives=[
             WeakNegativeExample(
                 start=10,
@@ -151,11 +174,28 @@ async def test_retrieval_returns_positive_and_negative_separately(
         id="failure",
         clip_url="https://example.invalid/failure",
         clip_title="failure",
+        source_start=200,
+        source_end=260,
+        alignment_confidence=0.9,
+        alignment_method=ALIGNMENT_METHOD,
+        alignment_matched_anchors=3,
+        alignment_total_anchors=3,
+        alignment_segments=[
+            AlignmentSegmentExample(
+                clip_start=0,
+                clip_end=60,
+                source_start=200,
+                source_end=260,
+                confidence=0.9,
+                matched_anchors=3,
+            )
+        ],
         setup="自信満々で挑戦する",
         development="すぐに失敗する",
         payoff="強がりとの落差で笑いになる",
         why_selected="confidenceからfailureへの反転が明確",
         traits=["failure_after_confidence"],
+        weak_negative_method=WEAK_NEGATIVE_METHOD,
         weak_negatives=[
             WeakNegativeExample(
                 start=1,
@@ -184,3 +224,30 @@ async def test_retrieval_returns_positive_and_negative_separately(
     assert provider.query_calls == [
         "本人が突然の告白をしてrevealし最後にオチがある"
     ]
+
+
+
+@pytest.mark.asyncio
+async def test_quality_downgrade_removes_previously_indexed_documents(
+    tmp_path: Path,
+) -> None:
+    provider = FakeEmbeddingProvider()
+    database = tmp_path / "holoclip.db"
+    example = enriched_example(example_id="quality-gated")
+
+    with SQLiteCanonicalRepository(database) as repository:
+        first = await index_human_examples(provider, repository, [example])
+        review = example.model_copy(
+            update={"alignment_method": "transcript-anchor-v2"}
+        )
+        second = await index_human_examples(provider, repository, [review])
+        remaining = repository.list_retrieval_documents(
+            embedding_model=provider.model,
+            embedding_version=RETRIEVAL_VERSION,
+        )
+
+    assert first.embedded_documents == 3
+    assert second.skipped_quality_review == 1
+    assert second.skipped_quality_rejected == 0
+    assert second.removed_documents == 3
+    assert remaining == []

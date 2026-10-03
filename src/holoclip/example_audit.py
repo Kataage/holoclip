@@ -7,9 +7,24 @@ from urllib.parse import parse_qs, urlparse
 from pydantic import BaseModel, Field
 
 from holoclip.alignment import WEAK_SINGLETON_MAX_CONFIDENCE
-from holoclip.examples import HumanClipExample, WeakNegativeExample, load_human_clip_store
+from holoclip.example_quality import (
+    AlignmentQualityMetrics,
+    LearningQuality,
+    LearningQualityReason,
+    evaluate_human_example_learning_quality,
+)
+from holoclip.examples import (
+    WEAK_NEGATIVE_METHOD,
+    HumanClipExample,
+    WeakNegativeExample,
+    load_human_clip_store,
+)
 from holoclip.models import TranscriptSegment
 from holoclip.retrieval import RetrievalDocument, build_retrieval_document_drafts
+from holoclip.structure_validation import (
+    StructureWarning,
+    validate_editorial_structure,
+)
 from holoclip.transcript import load_transcript
 
 
@@ -53,6 +68,14 @@ class HumanExampleAuditReport(BaseModel):
     source_selected_seconds: float = 0.0
     source_bounding_seconds: float = 0.0
     source_gap_seconds: float = 0.0
+    alignment_quality: AlignmentQualityMetrics = Field(
+        default_factory=AlignmentQualityMetrics
+    )
+    learning_quality: LearningQuality = LearningQuality.REVIEW
+    learning_quality_reasons: list[LearningQualityReason] = Field(default_factory=list)
+    positive_retrieval_eligible: bool = False
+    weak_negatives_eligible: int = 0
+    weak_negatives_suppressed: int = 0
 
     declared_source_url: str | None = None
     declared_source_start_hint: float | None = None
@@ -70,6 +93,7 @@ class HumanExampleAuditReport(BaseModel):
     traits: list[str] = Field(default_factory=list)
     relationship_context: str | None = None
     context_requirement: str = "medium"
+    structure_warnings: list[StructureWarning] = Field(default_factory=list)
 
     weak_negatives: list[WeakNegativeExample] = Field(default_factory=list)
     retrieval_documents: list[RetrievalAuditDocument] = Field(default_factory=list)
@@ -241,18 +265,13 @@ def build_human_example_audit(
             audit_segments[0].source_start - declared_source_start_hint
         )
 
-    clip_selected_seconds = sum(
-        item.clip_end - item.clip_start for item in example.alignment_segments
-    )
-    source_selected_seconds = sum(
-        item.source_end - item.source_start for item in example.alignment_segments
-    )
-    source_bounding_seconds = (
-        example.source_end - example.source_start
-        if example.source_start is not None and example.source_end is not None
-        else 0.0
-    )
-    source_gap_seconds = max(0.0, source_bounding_seconds - source_selected_seconds)
+    learning_quality = evaluate_human_example_learning_quality(example)
+    structure_validation = validate_editorial_structure(example)
+    alignment_quality = learning_quality.metrics
+    clip_selected_seconds = alignment_quality.aligned_clip_seconds
+    source_selected_seconds = alignment_quality.aligned_source_seconds
+    source_bounding_seconds = alignment_quality.source_bounding_seconds
+    source_gap_seconds = alignment_quality.source_gap_seconds
 
     retrieval_source = retrieval_documents or []
     expected_drafts, _ = build_retrieval_document_drafts([example])
@@ -305,6 +324,24 @@ def build_human_example_audit(
         source_selected_seconds=source_selected_seconds,
         source_bounding_seconds=source_bounding_seconds,
         source_gap_seconds=source_gap_seconds,
+        alignment_quality=alignment_quality,
+        learning_quality=learning_quality.decision,
+        learning_quality_reasons=learning_quality.reasons,
+        positive_retrieval_eligible=(
+            learning_quality.decision is LearningQuality.TRUSTED
+        ),
+        weak_negatives_eligible=(
+            len(example.weak_negatives)
+            if learning_quality.decision is LearningQuality.TRUSTED
+            and example.weak_negative_method == WEAK_NEGATIVE_METHOD
+            else 0
+        ),
+        weak_negatives_suppressed=(
+            len(example.weak_negatives)
+            if learning_quality.decision is not LearningQuality.TRUSTED
+            or example.weak_negative_method != WEAK_NEGATIVE_METHOD
+            else 0
+        ),
         declared_source_url=str(declared_source_url) if declared_source_url else None,
         declared_source_start_hint=declared_source_start_hint,
         first_alignment_delta_from_hint=first_alignment_delta,
@@ -320,6 +357,7 @@ def build_human_example_audit(
         traits=example.traits,
         relationship_context=example.relationship_context,
         context_requirement=example.context_requirement,
+        structure_warnings=structure_validation.warnings,
         weak_negatives=example.weak_negatives,
         retrieval_documents=retrieval,
         acquisition_provenance=provenance,
@@ -357,9 +395,50 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
         f"method: {report.alignment_method or '-'}",
         f"segments: {len(report.alignment_segments)}",
         f"source bounding range: {_clock(report.source_start)} - {_clock(report.source_end)}",
+        f"clip timeline: {report.alignment_quality.clip_timeline_seconds:.1f}s",
         f"clip selected: {report.clip_selected_seconds:.1f}s",
+        f"clip coverage: {report.alignment_quality.clip_coverage_ratio:.1%}",
+        f"clip uncovered: {report.alignment_quality.uncovered_clip_seconds:.1f}s",
+        (
+            "largest uncovered clip gap: "
+            f"{report.alignment_quality.largest_uncovered_clip_gap:.1f}s"
+        ),
         f"source selected: {report.source_selected_seconds:.1f}s",
         f"removed/gap inside bounding range: {report.source_gap_seconds:.1f}s",
+        (
+            "anchors: "
+            f"{report.alignment_quality.matched_anchors}/"
+            f"{report.alignment_quality.total_anchors if report.alignment_quality.total_anchors is not None else '?'}"
+        ),
+        (
+            "anchor coverage: "
+            f"{report.alignment_quality.anchor_coverage_ratio:.1%}"
+            if report.alignment_quality.anchor_coverage_ratio is not None
+            else "anchor coverage: -"
+        ),
+        (
+            "non-monotonic transitions: "
+            f"{report.alignment_quality.non_monotonic_transition_count}"
+        ),
+        (
+            "largest backward jump: "
+            f"{report.alignment_quality.largest_backward_jump_seconds:.1f}s"
+        ),
+        f"weak singleton segments: {report.alignment_quality.weak_singleton_count}",
+        "",
+        "=== Learning quality ===",
+        f"decision: {report.learning_quality.value}",
+        (
+            "reasons: "
+            + (
+                ", ".join(reason.value for reason in report.learning_quality_reasons)
+                if report.learning_quality_reasons
+                else "-"
+            )
+        ),
+        f"positive retrieval eligible: {report.positive_retrieval_eligible}",
+        f"weak negatives eligible: {report.weak_negatives_eligible}",
+        f"weak negatives suppressed: {report.weak_negatives_suppressed}",
     ]
 
     if report.declared_source_url:
@@ -429,6 +508,10 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
     )
     if report.relationship_context:
         lines.append(f"relationship context: {report.relationship_context}")
+    if report.structure_warnings:
+        lines.append("structure warnings:")
+        for warning in report.structure_warnings:
+            lines.append(f"  - {warning.code.value}: {warning.message}")
 
     lines.extend(["", f"=== Weak negatives ({len(report.weak_negatives)}) ==="])
     for index, negative in enumerate(report.weak_negatives, start=1):
