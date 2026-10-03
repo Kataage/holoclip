@@ -42,38 +42,72 @@ def build_adjacent_weak_negatives(
     source_end = max(segment.end for segment in source_segments)
     windows: list[tuple[float, float, str]] = []
 
-    selected_ranges = (
-        sorted(
-            [
-                (segment.source_start, segment.source_end)
-                for segment in example.alignment_segments
-            ],
-            key=lambda item: item[0],
+    def trustworthy_boundary(segment) -> bool:
+        return segment.matched_anchors >= 2 or segment.confidence >= 0.75
+
+    if example.alignment_segments:
+        clip_ordered = sorted(
+            example.alignment_segments,
+            key=lambda item: (item.clip_start, item.clip_end),
         )
-        if example.alignment_segments
-        else [(example.source_start, example.source_end)]
-    )
+        first = clip_ordered[0]
+        last = clip_ordered[-1]
 
-    first_start = selected_ranges[0][0]
-    last_end = selected_ranges[-1][1]
+        if trustworthy_boundary(first):
+            before_end = max(0.0, first.source_start - gap_seconds)
+            before_start = max(0.0, before_end - window_seconds)
+            if before_end > before_start:
+                windows.append(
+                    (before_start, before_end, "adjacent_unselected_before")
+                )
 
-    before_end = max(0.0, first_start - gap_seconds)
-    before_start = max(0.0, before_end - window_seconds)
-    if before_end > before_start:
-        windows.append((before_start, before_end, "adjacent_unselected_before"))
+        for left, right in zip(clip_ordered, clip_ordered[1:], strict=False):
+            # A source gap is evidence of an editorial cut only when the human
+            # clip itself is continuous across this boundary. If clip time is
+            # also missing, the aligner may simply have failed to account for
+            # that part of the human-made clip.
+            clip_gap = max(0.0, right.clip_start - left.clip_end)
+            if clip_gap > 2.0:
+                continue
+            if not (
+                trustworthy_boundary(left)
+                and trustworthy_boundary(right)
+            ):
+                continue
+            gap_start = left.source_end + gap_seconds
+            gap_end = right.source_start - gap_seconds
+            if gap_end <= gap_start:
+                continue
+            window_end = min(gap_end, gap_start + window_seconds)
+            windows.append(
+                (
+                    gap_start,
+                    window_end,
+                    "removed_between_selected_segments",
+                )
+            )
 
-    for left, right in zip(selected_ranges, selected_ranges[1:], strict=False):
-        gap_start = left[1] + gap_seconds
-        gap_end = right[0] - gap_seconds
-        if gap_end <= gap_start:
-            continue
-        window_end = min(gap_end, gap_start + window_seconds)
-        windows.append((gap_start, window_end, "removed_between_selected_segments"))
+        if trustworthy_boundary(last):
+            after_start = min(source_end, last.source_end + gap_seconds)
+            after_end = min(source_end, after_start + window_seconds)
+            if after_end > after_start:
+                windows.append(
+                    (after_start, after_end, "adjacent_unselected_after")
+                )
+    else:
+        before_end = max(0.0, example.source_start - gap_seconds)
+        before_start = max(0.0, before_end - window_seconds)
+        if before_end > before_start:
+            windows.append(
+                (before_start, before_end, "adjacent_unselected_before")
+            )
 
-    after_start = min(source_end, last_end + gap_seconds)
-    after_end = min(source_end, after_start + window_seconds)
-    if after_end > after_start:
-        windows.append((after_start, after_end, "adjacent_unselected_after"))
+        after_start = min(source_end, example.source_end + gap_seconds)
+        after_end = min(source_end, after_start + window_seconds)
+        if after_end > after_start:
+            windows.append(
+                (after_start, after_end, "adjacent_unselected_after")
+            )
 
     negatives: list[WeakNegativeExample] = []
     for start, end, reason in windows:
