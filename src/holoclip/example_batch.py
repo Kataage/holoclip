@@ -27,6 +27,7 @@ class BatchStatus(StrEnum):
 class ExampleBatchItem(BaseModel):
     clip_url: str
     source_url: str | None = None
+    source_start_hint_seconds: float | None = Field(default=None, ge=0)
     note: str | None = None
     enabled: bool = True
 
@@ -41,6 +42,7 @@ class ExampleBatchItem(BaseModel):
                 "batch_version": BATCH_VERSION,
                 "clip_url": self.clip_url,
                 "source_url": self.source_url,
+                "source_start_hint_seconds": self.source_start_hint_seconds,
                 "enabled": self.enabled,
             }
         )

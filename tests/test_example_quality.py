@@ -218,7 +218,7 @@ def test_nonmonotonic_alignment_routes_to_review() -> None:
     assert quality.metrics.largest_backward_jump_seconds == 610
 
 
-def test_large_source_hint_disagreement_routes_to_review() -> None:
+def test_url_timestamp_disagreement_is_diagnostic_only() -> None:
     item = example_with_segments(
         [aligned_segment(0, 60, 300, 360)],
         source_url="https://youtu.be/source?t=1800",
@@ -226,8 +226,8 @@ def test_large_source_hint_disagreement_routes_to_review() -> None:
 
     quality = evaluate_human_example_learning_quality(item)
 
-    assert quality.decision is LearningQuality.REVIEW
-    assert LearningQualityReason.SOURCE_HINT_DISAGREEMENT in quality.reasons
+    assert quality.decision is LearningQuality.TRUSTED
+    assert LearningQualityReason.SOURCE_HINT_DISAGREEMENT not in quality.reasons
     assert quality.source_hint_delta_seconds == -1500
 
 
@@ -249,7 +249,7 @@ def test_auto_detected_source_hint_disagreement_is_diagnostic_only() -> None:
     assert LearningQualityReason.SOURCE_HINT_DISAGREEMENT not in quality.reasons
 
 
-def test_explicit_requested_source_hint_disagreement_still_routes_to_review() -> None:
+def test_explicit_requested_url_timestamp_is_still_diagnostic_only() -> None:
     item = example_with_segments(
         [aligned_segment(0, 60, 300, 360)],
         source_url="https://youtu.be/source",
@@ -262,6 +262,27 @@ def test_explicit_requested_source_hint_disagreement_still_routes_to_review() ->
 
     quality = evaluate_human_example_learning_quality(item)
 
+    assert quality.decision is LearningQuality.TRUSTED
+    assert LearningQualityReason.SOURCE_HINT_DISAGREEMENT not in quality.reasons
+    assert quality.source_hint_delta_seconds == -1500
+
+
+def test_dedicated_source_start_hint_disagreement_routes_to_review() -> None:
+    item = example_with_segments(
+        [aligned_segment(0, 60, 300, 360)],
+        source_url="https://youtu.be/source?t=999",
+    )
+    item.acquisition_provenance = {
+        "requested_source_url": "https://youtu.be/source?t=999",
+        "resolved_source_url": "https://youtu.be/source?t=999",
+        "source_auto_detected": False,
+        "source_start_hint_seconds": 1800,
+        "source_start_hint_authoritative": True,
+    }
+
+    quality = evaluate_human_example_learning_quality(item)
+
+    assert quality.source_hint_delta_seconds == -1500
     assert quality.decision is LearningQuality.REVIEW
     assert LearningQualityReason.SOURCE_HINT_DISAGREEMENT in quality.reasons
 

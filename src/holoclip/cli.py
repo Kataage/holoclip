@@ -558,6 +558,15 @@ def examples_ingest_url(
             "one unambiguous source link from the clip description."
         ),
     ),
+    source_start_hint: float | None = typer.Option(
+        None,
+        "--source-start-hint",
+        min=0.0,
+        help=(
+            "Authoritative expected source start in seconds. A t= query inside "
+            "--source-url is diagnostic only unless this option is supplied."
+        ),
+    ),
     store: Path = typer.Option(
         Path("data/examples/human_clips.jsonl"),
         "--store",
@@ -636,6 +645,7 @@ def examples_ingest_url(
                     source_provider,
                     clip_url=clip_url,
                     source_url=source_url,
+                    source_start_hint_seconds=source_start_hint,
                     download_root=download_root,
                     transcript_root=transcript_root,
                     examples_store=store,
@@ -880,6 +890,7 @@ def examples_ingest_batch(
                             source_provider,
                             clip_url=item.clip_url,
                             source_url=item.source_url,
+                            source_start_hint_seconds=item.source_start_hint_seconds,
                             download_root=download_root,
                             transcript_root=transcript_root,
                             examples_store=store,

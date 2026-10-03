@@ -190,6 +190,7 @@ async def test_url_ingestion_runs_alignment_enrichment_and_index(
             FakeSourceProvider(tmp_path),
             clip_url="https://www.youtube.com/watch?v=clip",
             source_url=None,
+            source_start_hint_seconds=120.0,
             download_root=tmp_path / "sources",
             transcript_root=tmp_path / "transcripts",
             examples_store=store,
@@ -227,6 +228,11 @@ async def test_url_ingestion_runs_alignment_enrichment_and_index(
         "https://www.youtube.com/watch?v=source"
     )
     assert examples[0].acquisition_provenance["source_auto_detected"] is True
+    assert examples[0].acquisition_provenance["source_start_hint_seconds"] == 120.0
+    assert (
+        examples[0].acquisition_provenance["source_start_hint_authoritative"]
+        is True
+    )
     assert examples[0].acquisition_provenance["source_resolution_reason"] == (
         "description_explicit_source_label"
     )

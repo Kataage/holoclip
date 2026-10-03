@@ -14,6 +14,7 @@ from holoclip.example_quality import (
     evaluate_human_example_learning_quality,
     explained_clip_bridge_seconds,
     source_hint_is_authoritative,
+    source_hint_seconds,
 )
 from holoclip.examples import (
     WEAK_NEGATIVE_METHOD,
@@ -420,9 +421,7 @@ def build_human_example_audit(
         or provenance.get("requested_source_url")
         or None
     )
-    declared_source_start_hint = parse_youtube_time_hint(
-        str(declared_source_url) if declared_source_url else None
-    )
+    declared_source_start_hint = source_hint_seconds(example)
     first_alignment_delta = None
     if declared_source_start_hint is not None and audit_segments:
         first_alignment_delta = (
