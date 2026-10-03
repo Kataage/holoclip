@@ -343,7 +343,7 @@ def _source_hint_url(example: HumanClipExample) -> str | None:
     return example.source_url
 
 
-def _source_hint_is_authoritative(example: HumanClipExample) -> bool:
+def source_hint_is_authoritative(example: HumanClipExample) -> bool:
     provenance = example.acquisition_provenance
     requested = provenance.get("requested_source_url")
     if requested and parse_youtube_time_hint(str(requested)) is not None:
@@ -406,7 +406,7 @@ def evaluate_human_example_learning_quality(
     source_hint_delta = _source_hint_delta(example)
     if (
         source_hint_delta is not None
-        and _source_hint_is_authoritative(example)
+        and source_hint_is_authoritative(example)
         and abs(source_hint_delta) > SOURCE_HINT_REVIEW_DELTA_SECONDS
     ):
         reasons.append(LearningQualityReason.SOURCE_HINT_DISAGREEMENT)
