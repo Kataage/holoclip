@@ -422,6 +422,258 @@ Preferred:
 Fallback:
 - `whisper-large-v3-turbo` only when speed is more important and quality benchmark permits
 
+### 3.12 Capability-first zero-cost provider mesh
+
+Do not architect Holoclip around a vendor or a model family.
+
+Architect around **capabilities**.
+
+Required AI capability classes:
+
+- `video_semantics_native`
+- `video_semantics_multiframe`
+- `image_semantics`
+- `visual_grounding_hint`
+- `japanese_text_reading`
+- `asr_segment_timestamps`
+- `asr_word_timestamps`
+- `text_reasoning_strong`
+- `text_reasoning_fast`
+- `structured_json`
+- `embedding`
+- `semantic_render_qa`
+
+Each production stage declares:
+- required capabilities
+- optional capabilities
+- minimum benchmark score
+- acceptable latency class
+- maximum quota cost
+- privacy/data-use class
+- whether multi-provider confirmation is required
+
+The router selects from all currently verified zero-cost providers.
+
+A single stage may be fulfilled through different execution modes:
+
+#### Mode A — native video
+A provider accepts bounded video directly.
+
+Use when:
+- free
+- benchmarked
+- quota available
+- native video improves quality enough to justify quota usage
+
+#### Mode B — multi-image / shot sequence
+Use deterministic PySceneDetect shot segmentation and frame sampling, then submit:
+- representative frames
+- denser reaction/payoff frames
+- transcript context
+- measured event IDs
+
+This is the primary architecture-level fallback and must work even if no free native-video API exists.
+
+#### Mode C — contact-sheet semantic inspection
+For providers with limited image count:
+- compose measured frames into deterministic contact sheets
+- annotate each tile with frame/shot ID outside the semantic image area
+- provide transcript/event index separately
+
+This is lower fidelity but highly portable across free image-VLM APIs.
+
+#### Mode D — evidence fusion without VLM video support
+For nonvisual or quota-constrained stages combine:
+- transcript
+- audio events
+- OCR/text observations
+- OpenCV geometry
+- scene boundaries
+- individual image-VLM observations
+
+This mode cannot claim visually unsupported facts, but the pipeline can continue for nonvisual decisions.
+
+Native video is therefore an optimization and quality opportunity, not a single point of failure.
+
+### 3.13 Candidate provider pool
+
+The provider registry should track a broad zero-cost candidate pool rather than only the current defaults.
+
+#### Google Gemini Developer API
+Role:
+- native video where Free Tier supports it
+- image/multimodal semantics
+- Japanese visual understanding
+- semantic QA
+
+Current official API pricing continues to list free text/image/video access for Gemini 2.5 Flash and Flash-Lite as of 2026-10-04.
+
+Status:
+- PRIMARY_CANDIDATE
+- volatile free entitlement; verify before use
+
+#### NVIDIA API Catalog Free Endpoints
+Role:
+- strong text reasoning
+- image-VLM fallback
+- visual grounding hints
+- embeddings
+
+Verified examples:
+- Meta Llama 3.2 90B Vision Instruct: Free Endpoint, image/text
+- Meta Llama 3.2 11B Vision Instruct: Free Endpoint, image/text
+- other catalog models only after current Free Endpoint verification
+
+Status:
+- PRIMARY_CANDIDATE
+
+#### Groq Free Plan
+Role:
+- ASR
+- word timestamps
+- text reasoning fallback where benchmarked
+
+Current free-plan examples include:
+- whisper-large-v3
+- whisper-large-v3-turbo
+- free text reasoning models exposed under current account limits
+
+Status:
+- PRIMARY_CANDIDATE for ASR
+- SECONDARY_CANDIDATE for text reasoning
+
+#### Cloudflare Workers AI Free allocation
+Current free allocation:
+- 10,000 Neurons/day on Workers Free
+- some high-end models require Workers Paid and must be rejected by ZERO_COST_ONLY
+
+Potential role:
+- text reasoning fallback
+- image/vision capability only if the current model catalog exposes a free-compatible vision model that passes benchmark
+
+Status:
+- SECONDARY_CANDIDATE
+- must reject models requiring Workers Paid even if the account receives a free daily allocation on Paid
+
+#### OpenRouter Free
+Current free plan:
+- multiple free models/providers
+- low daily request allowance
+- free-model availability changes frequently
+
+Potential role:
+- emergency/tertiary text or image reasoning
+- benchmark comparisons
+- cross-check on a small number of high-value ambiguous events
+
+Status:
+- TERTIARY_CANDIDATE
+- never relied upon for bulk corpus processing
+- exact routed model/provider must be persisted for provenance
+
+#### Cerebras Free
+Current provider documents a $0 Free tier with lower rate limits.
+
+Potential role:
+- fast text reasoning
+- independent second-opinion judge
+- structured consolidation if an available free model passes Holoclip benchmarks
+
+Status:
+- SECONDARY_CANDIDATE for text-only capabilities
+
+#### Hugging Face Inference Providers
+Current free user credit is extremely small and subject to change.
+
+Status:
+- BENCHMARK_ONLY by default
+- not considered a production fallback unless a specific capability can complete reliably within zero-cost credits
+
+#### GitHub/Copilot model surfaces
+Do not treat a user's Copilot subscription or interactive model access as a production inference API dependency.
+
+Status:
+- NOT_PRODUCTION_PROVIDER unless GitHub exposes a stable, automation-suitable, separately verified zero-cost API contract.
+
+### 3.14 Provider selection policy
+
+For each stage:
+
+1. Filter providers by required capability.
+2. Reject anything not currently verified zero-cost.
+3. Reject provider/data-policy combinations incompatible with the media.
+4. Reject providers below the benchmark quality floor.
+5. Reject providers whose quota ledger cannot safely complete the requested unit.
+6. Rank remaining providers by:
+   - benchmark quality
+   - reliability/success rate
+   - hallucination/error rate
+   - quota efficiency
+   - latency
+7. Execute the best eligible provider/mode.
+8. Persist exact provider/model/mode/version in artifact provenance.
+
+Never encode "Gemini first" or "NVIDIA second" directly into business logic. Those are registry scores/policies, not architecture.
+
+### 3.15 Confidence, disagreement, and ensemble policy
+
+For ordinary low-risk semantic observations:
+- one benchmarked provider may be sufficient.
+
+For high-impact ambiguous decisions:
+- use a second independent free provider when quota permits.
+
+Examples:
+- visual target determines a strong crop/zoom
+- interpretation changes whether a payoff is retained
+- semantic QA claims subtitle meaning is wrong
+- a context card asserts a factual relationship/event
+
+Persist:
+- provider A result/confidence
+- provider B result/confidence
+- agreement/disagreement
+- reconciliation decision
+
+If providers disagree materially:
+- prefer measured deterministic evidence
+- reduce confidence
+- suppress aggressive editing action
+- optionally defer until free quota allows another check
+
+Do not ensemble every event; reserve it for high-impact ambiguity.
+
+### 3.16 Provider qualification benchmark
+
+Provider qualification is separate from model marketing benchmarks.
+
+Maintain a Holoclip-specific held-out benchmark covering:
+- Japanese VTuber conversation
+- game UI
+- Live2D/avatar reactions
+- multiple speakers/avatars
+- fast scene changes
+- visually small UI events
+- Japanese stylized subtitles
+- source-vs-finished edit comparison
+- comedy timing
+- serious/emotional clips
+
+Score by capability:
+- semantic event accuracy
+- Japanese comprehension
+- reaction classification
+- UI/object recognition
+- text reading accuracy
+- hallucination rate
+- structured-output validity
+- consistency
+- quota consumption
+- latency
+- provider failure rate
+
+A provider can be qualified for one capability and rejected for another.
+
 ### 3.12 Zero-cost enforcement
 
 "Free tier" is not merely documentation; it is a runtime policy.
@@ -456,7 +708,7 @@ Gemini free-tier requests are currently eligible for product-improvement use by 
 - use `store=false` where supported
 - delete temporary uploaded files after successful processing when the API permits it
 
-### 3.13 Zero-cost quota strategy
+### 3.17 Zero-cost quota strategy
 
 Gemini free-tier video:
 - prefer short selected clips instead of full multi-hour archives
@@ -479,7 +731,7 @@ NVIDIA free endpoints:
 
 The scheduler optimizes for **eventual completion at zero monetary cost**, not fastest wall-clock completion.
 
-### 3.14 Semantic video understanding: VLM-backed VideoUnderstandingProvider
+### 3.18 Semantic video understanding: VLM-backed VideoUnderstandingProvider
 
 A perfect editing system must understand not only how pixels changed, but what is happening in the video.
 
@@ -529,7 +781,7 @@ Suggested semantic observation schema:
 - evidence frame/shot IDs
 - uncertainty/unknown
 
-### 3.15 VLM sampling policy
+### 3.19 VLM sampling policy
 
 Do not send entire long-form streams frame-by-frame to a VLM.
 
@@ -547,7 +799,7 @@ Use coarse-to-fine, event-driven visual understanding:
 
 This keeps visual semantics affordable and resumable.
 
-### 3.16 Runtime VLM role
+### 3.20 Runtime VLM role
 
 VLM understanding is used both during training and production.
 
@@ -567,7 +819,7 @@ If VLM evidence is unavailable or low confidence:
 - fall back to safe source framing or deterministic measured layout rules
 - mark advanced visual actions unavailable
 
-### 3.17 VisualTargetProvider
+### 3.21 VisualTargetProvider
 
 Keep **VisualTargetProvider** distinct from general VLM understanding.
 
@@ -586,7 +838,7 @@ VisualTargetProvider may use:
 
 The VLM must not be treated as a pixel-accurate tracker unless benchmark evidence supports it.
 
-### 3.18 Heavy ML provider policy
+### 3.22 Heavy ML provider policy
 
 Local AI inference is not part of the initial candidate set. Benchmark only external zero-cost providers unless this product constraint is explicitly changed later.
 
