@@ -10,7 +10,7 @@ production qualification bundle has been established yet.
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
 The credential-bound free account evidence file described in
-[the cost policy](zero-cost-provider-policy.md) is required.
+[the cost policy](zero-cost-runtime.md) is required.
 
 ```powershell
 uv run --extra media --extra dev holoclip providers corpus-run D:\AI\holoclip `
