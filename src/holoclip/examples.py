@@ -61,6 +61,7 @@ class HumanClipExample(BaseModel):
     alignment_confidence: float | None = Field(default=None, ge=0, le=1)
     alignment_method: str | None = None
     alignment_matched_anchors: int | None = Field(default=None, ge=0)
+    alignment_total_anchors: int | None = Field(default=None, ge=0)
     alignment_segments: list[AlignmentSegmentExample] = Field(default_factory=list)
 
     clip_transcript_path: str | None = None
@@ -105,6 +106,9 @@ class HumanClipExampleStats(BaseModel):
     aligned: int
     unaligned: int
     with_story_structure: int
+    trusted_for_learning: int
+    needs_review: int
+    rejected_for_learning: int
     unique_streams: int
     unique_members: int
 
@@ -194,6 +198,15 @@ def compute_human_clip_stats(
         for example in examples
         if bool(example.setup and example.development and example.payoff)
     )
+    from holoclip.example_quality import (
+        LearningQuality,
+        evaluate_human_example_learning_quality,
+    )
+
+    quality = [
+        evaluate_human_example_learning_quality(example).decision
+        for example in examples
+    ]
     streams = {example.stream_id for example in examples if example.stream_id}
     members = {member for example in examples for member in example.members}
 
@@ -202,6 +215,15 @@ def compute_human_clip_stats(
         aligned=aligned,
         unaligned=len(examples) - aligned,
         with_story_structure=with_story_structure,
+        trusted_for_learning=sum(
+            1 for decision in quality if decision is LearningQuality.TRUSTED
+        ),
+        needs_review=sum(
+            1 for decision in quality if decision is LearningQuality.REVIEW
+        ),
+        rejected_for_learning=sum(
+            1 for decision in quality if decision is LearningQuality.REJECTED
+        ),
         unique_streams=len(streams),
         unique_members=len(members),
     )
