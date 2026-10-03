@@ -4,6 +4,7 @@ from holoclip.evaluation import (
     FeedbackRecord,
     KnownClip,
     build_blind_ab_run,
+    build_retrieval_ab_diff,
     build_run,
     candidate_pool_fingerprint,
     compare_evaluation_metrics,
@@ -297,4 +298,79 @@ def test_blind_ab_order_is_independent_of_variant_rank() -> None:
 
     assert [item.id for item in first.candidates] == [
         item.id for item in second.candidates
+    ]
+
+
+
+def test_retrieval_ab_diff_reports_rank_and_retrieval_evidence() -> None:
+    shared = candidate(10, 20, "shared")
+    baseline_only = candidate(30, 40, "baseline-only")
+    retrieval_only = candidate(50, 60, "retrieval-only")
+    retrieval_only.retrieval_trace = CandidateRetrievalTrace(
+        embedding_model="embed",
+        embedding_version="v1",
+        positives=[
+            CandidateRetrievalHit(
+                document_id="pos-doc",
+                example_id="positive-example",
+                score=0.91,
+            )
+        ],
+        weak_negatives=[
+            CandidateRetrievalHit(
+                document_id="neg-doc",
+                example_id="negative-example",
+                score=0.72,
+            )
+        ],
+        selector_reason="retrieval changed the ranking",
+    )
+
+    baseline = build_run(
+        stream_id="stream",
+        transcript_path="stream.json",
+        candidates=[shared, baseline_only],
+    )
+    retrieval = build_run(
+        stream_id="stream",
+        transcript_path="stream.json",
+        candidates=[retrieval_only, shared],
+    )
+    feedback = [
+        FeedbackRecord(
+            stream_id="stream",
+            candidate_id=baseline.candidates[0].id,
+            decision=ReviewDecision.ACCEPT,
+        )
+    ]
+
+    diff = build_retrieval_ab_diff(baseline, retrieval, feedback)
+
+    assert diff.baseline_count == 2
+    assert diff.retrieval_count == 2
+    assert diff.shared_count == 1
+    assert diff.set_jaccard == (1 / 3)
+    assert diff.exact_order_match is False
+    assert baseline.candidates[1].id in diff.baseline_only_ids
+    assert retrieval.candidates[0].id in diff.retrieval_only_ids
+
+    shared_row = next(
+        row for row in diff.candidates
+        if row.candidate_id == baseline.candidates[0].id
+    )
+    assert shared_row.decision is ReviewDecision.ACCEPT
+    assert shared_row.baseline_rank == 1
+    assert shared_row.retrieval_rank == 2
+    assert shared_row.rank_delta == 1
+
+    retrieval_row = next(
+        row for row in diff.candidates
+        if row.candidate_id == retrieval.candidates[0].id
+    )
+    assert retrieval_row.retrieval_selector_reason == "retrieval changed the ranking"
+    assert retrieval_row.positive_examples == [
+        {"example_id": "positive-example", "score": 0.91}
+    ]
+    assert retrieval_row.weak_negative_examples == [
+        {"example_id": "negative-example", "score": 0.72}
     ]
