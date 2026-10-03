@@ -76,6 +76,35 @@ class EvaluationMetrics(BaseModel):
     known_clip_recall: float | None
 
 
+class RetrievalABDiffCandidate(BaseModel):
+    candidate_id: str
+    working_title: str
+    start: float
+    end: float
+    decision: ReviewDecision | None = None
+    baseline_rank: int | None = None
+    retrieval_rank: int | None = None
+    rank_delta: int | None = None
+    baseline_confidence: float | None = None
+    retrieval_confidence: float | None = None
+    confidence_delta: float | None = None
+    retrieval_selector_reason: str | None = None
+    positive_examples: list[dict[str, float | str]] = Field(default_factory=list)
+    weak_negative_examples: list[dict[str, float | str]] = Field(default_factory=list)
+
+
+class RetrievalABDiff(BaseModel):
+    stream_id: str
+    baseline_count: int
+    retrieval_count: int
+    shared_count: int
+    baseline_only_ids: list[str] = Field(default_factory=list)
+    retrieval_only_ids: list[str] = Field(default_factory=list)
+    set_jaccard: float
+    exact_order_match: bool
+    candidates: list[RetrievalABDiffCandidate]
+
+
 def make_candidate_id(stream_id: str, candidate: ClipCandidate) -> str:
     raw = (
         f"{stream_id}|{candidate.start:.3f}|{candidate.end:.3f}|"
@@ -349,6 +378,129 @@ def compute_metrics(
         candidates_per_accept=(labeled / accepted) if accepted else None,
         known_clips=known_total,
         known_clip_recall=(known_hits / known_total) if known_total else None,
+    )
+
+
+def build_retrieval_ab_diff(
+    baseline: EvaluationRun,
+    retrieval: EvaluationRun,
+    feedback: list[FeedbackRecord] | None = None,
+) -> RetrievalABDiff:
+    if baseline.stream_id != retrieval.stream_id:
+        raise ValueError("paired runs must have the same stream_id")
+
+    feedback_index = latest_feedback_index(feedback or [])
+    baseline_by_id = {item.id: item for item in baseline.candidates}
+    retrieval_by_id = {item.id: item for item in retrieval.candidates}
+    baseline_ids = list(baseline_by_id)
+    retrieval_ids = list(retrieval_by_id)
+    baseline_set = set(baseline_ids)
+    retrieval_set = set(retrieval_ids)
+    union = baseline_set | retrieval_set
+
+    ordered_ids = sorted(
+        union,
+        key=lambda candidate_id: (
+            min(
+                baseline_by_id.get(candidate_id).rank
+                if candidate_id in baseline_by_id
+                else 10**9,
+                retrieval_by_id.get(candidate_id).rank
+                if candidate_id in retrieval_by_id
+                else 10**9,
+            ),
+            candidate_id,
+        ),
+    )
+
+    rows: list[RetrievalABDiffCandidate] = []
+    for candidate_id in ordered_ids:
+        baseline_item = baseline_by_id.get(candidate_id)
+        retrieval_item = retrieval_by_id.get(candidate_id)
+        source_item = retrieval_item or baseline_item
+        assert source_item is not None
+
+        baseline_rank = baseline_item.rank if baseline_item is not None else None
+        retrieval_rank = retrieval_item.rank if retrieval_item is not None else None
+        baseline_confidence = (
+            baseline_item.candidate.confidence
+            if baseline_item is not None
+            else None
+        )
+        retrieval_confidence = (
+            retrieval_item.candidate.confidence
+            if retrieval_item is not None
+            else None
+        )
+
+        trace = (
+            retrieval_item.candidate.retrieval_trace
+            if retrieval_item is not None
+            else None
+        )
+        positives = []
+        weak_negatives = []
+        selector_reason = None
+        if trace is not None:
+            selector_reason = trace.selector_reason
+            positives = [
+                {
+                    "example_id": hit.example_id,
+                    "score": hit.score,
+                }
+                for hit in trace.positives
+            ]
+            weak_negatives = [
+                {
+                    "example_id": hit.example_id,
+                    "score": hit.score,
+                }
+                for hit in trace.weak_negatives
+            ]
+
+        record = feedback_index.get((baseline.stream_id, candidate_id))
+        rows.append(
+            RetrievalABDiffCandidate(
+                candidate_id=candidate_id,
+                working_title=source_item.candidate.working_title,
+                start=source_item.candidate.start,
+                end=source_item.candidate.end,
+                decision=record.decision if record is not None else None,
+                baseline_rank=baseline_rank,
+                retrieval_rank=retrieval_rank,
+                rank_delta=(
+                    retrieval_rank - baseline_rank
+                    if baseline_rank is not None and retrieval_rank is not None
+                    else None
+                ),
+                baseline_confidence=baseline_confidence,
+                retrieval_confidence=retrieval_confidence,
+                confidence_delta=(
+                    retrieval_confidence - baseline_confidence
+                    if baseline_confidence is not None
+                    and retrieval_confidence is not None
+                    else None
+                ),
+                retrieval_selector_reason=selector_reason,
+                positive_examples=positives,
+                weak_negative_examples=weak_negatives,
+            )
+        )
+
+    return RetrievalABDiff(
+        stream_id=baseline.stream_id,
+        baseline_count=len(baseline.candidates),
+        retrieval_count=len(retrieval.candidates),
+        shared_count=len(baseline_set & retrieval_set),
+        baseline_only_ids=sorted(baseline_set - retrieval_set),
+        retrieval_only_ids=sorted(retrieval_set - baseline_set),
+        set_jaccard=(
+            len(baseline_set & retrieval_set) / len(union)
+            if union
+            else 1.0
+        ),
+        exact_order_match=baseline_ids == retrieval_ids,
+        candidates=rows,
     )
 
 
