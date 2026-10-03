@@ -44,18 +44,29 @@ def realign_human_clip_example(
     *,
     min_confidence: float = 0.55,
 ) -> HumanExampleRealignmentResult:
-    alignment = align_clip_to_source(clip_segments, source_segments)
-    accepted = alignment.confidence >= min_confidence
+    try:
+        alignment = align_clip_to_source(clip_segments, source_segments)
+    except ValueError:
+        alignment = None
+
+    accepted = (
+        alignment is not None
+        and alignment.confidence >= min_confidence
+    )
 
     data = example.model_dump(mode="python")
     data.update(
         {
             "source_start": alignment.source_start if accepted else None,
             "source_end": alignment.source_end if accepted else None,
-            "alignment_confidence": alignment.confidence,
+            "alignment_confidence": alignment.confidence if alignment is not None else 0.0,
             "alignment_method": ALIGNMENT_METHOD,
-            "alignment_matched_anchors": alignment.matched_anchors,
-            "alignment_total_anchors": alignment.total_anchors,
+            "alignment_matched_anchors": (
+                alignment.matched_anchors if alignment is not None else 0
+            ),
+            "alignment_total_anchors": (
+                alignment.total_anchors if alignment is not None else 0
+            ),
             "alignment_segments": (
                 [
                     {
@@ -68,7 +79,7 @@ def realign_human_clip_example(
                     }
                     for segment in alignment.segments
                 ]
-                if accepted
+                if accepted and alignment is not None
                 else []
             ),
             # Existing weak negatives were derived from the old alignment.
@@ -85,6 +96,12 @@ def realign_human_clip_example(
         alignment_changed=(
             _alignment_signature(example) != _alignment_signature(updated)
         ),
-        alignment_confidence=alignment.confidence,
-        alignment_segments=len(alignment.segments) if accepted else 0,
+        alignment_confidence=(
+            alignment.confidence if alignment is not None else 0.0
+        ),
+        alignment_segments=(
+            len(alignment.segments)
+            if accepted and alignment is not None
+            else 0
+        ),
     )
