@@ -101,6 +101,81 @@ class HumanExampleAuditReport(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class HumanExampleAuditBatch(BaseModel):
+    quality_filter: str = "all"
+    total_examples: int
+    matched_examples: int
+    quality_counts: dict[str, int] = Field(default_factory=dict)
+    example_ids: list[str] = Field(default_factory=list)
+    reports: list[HumanExampleAuditReport] = Field(default_factory=list)
+
+
+def build_human_example_audit_batch(
+    examples: list[HumanClipExample],
+    *,
+    retrieval_documents_by_example: dict[str, list[RetrievalDocument]] | None = None,
+    quality_filter: LearningQuality | None = None,
+) -> HumanExampleAuditBatch:
+    documents = retrieval_documents_by_example or {}
+    quality_counts = {
+        LearningQuality.TRUSTED.value: 0,
+        LearningQuality.REVIEW.value: 0,
+        LearningQuality.REJECTED.value: 0,
+    }
+    selected: list[HumanClipExample] = []
+
+    for example in examples:
+        quality = evaluate_human_example_learning_quality(example).decision
+        quality_counts[quality.value] += 1
+        if quality_filter is None or quality is quality_filter:
+            selected.append(example)
+
+    reports = [
+        build_human_example_audit(
+            example,
+            retrieval_documents=documents.get(example.id, []),
+        )
+        for example in selected
+    ]
+    return HumanExampleAuditBatch(
+        quality_filter=quality_filter.value if quality_filter is not None else "all",
+        total_examples=len(examples),
+        matched_examples=len(reports),
+        quality_counts=quality_counts,
+        example_ids=[report.example_id for report in reports],
+        reports=reports,
+    )
+
+
+def format_human_example_audit_batch(
+    batch: HumanExampleAuditBatch,
+) -> str:
+    counts = batch.quality_counts
+    header = [
+        "=== Human Clip Example Audit Batch ===",
+        f"quality filter: {batch.quality_filter}",
+        f"total examples: {batch.total_examples}",
+        f"matched examples: {batch.matched_examples}",
+        (
+            "quality counts: "
+            f"trusted={counts.get('trusted', 0)} "
+            f"review={counts.get('review', 0)} "
+            f"rejected={counts.get('rejected', 0)}"
+        ),
+        (
+            "example ids: "
+            + (", ".join(batch.example_ids) if batch.example_ids else "-")
+        ),
+    ]
+    if not batch.reports:
+        return "\n".join(header)
+    rendered = [
+        format_human_example_audit(report)
+        for report in batch.reports
+    ]
+    return "\n".join(header) + "\n\n\n" + "\n\n\n".join(rendered)
+
+
 def find_human_example(store: Path, example_id: str) -> HumanClipExample:
     for example in load_human_clip_store(store):
         if example.id == example_id:
