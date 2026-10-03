@@ -32,6 +32,8 @@ from holoclip.example_audit import (
     find_human_example,
     format_human_example_audit,
 )
+from holoclip.example_quality import evaluate_human_example_learning_quality
+from holoclip.example_revalidation import realign_human_clip_example
 from holoclip.examples import (
     HumanClipExample,
     compute_human_clip_stats,
@@ -58,7 +60,10 @@ from holoclip.evaluation import (
     load_runs,
     save_run,
 )
-from holoclip.learning import enrich_human_clip_example
+from holoclip.learning import (
+    enrich_human_clip_example,
+    refresh_human_clip_weak_negatives,
+)
 from holoclip.media import play_media_segment
 from holoclip.migration import migrate_legacy_data, report_as_json
 from holoclip.models import ReviewDecision
@@ -76,6 +81,7 @@ from holoclip.providers.llm.nvidia_nim import (
 from holoclip.repository import SQLiteCanonicalRepository
 from holoclip.retrieval import index_human_examples, retrieve_structural_examples
 from holoclip.transcript import chunk_segments, load_transcript, save_transcript
+from holoclip.structure_validation import validate_editorial_structure
 from holoclip.transcription import transcribe_media
 
 
@@ -1250,6 +1256,198 @@ def examples_enrich(
     typer.echo(f"why_selected: {enriched.why_selected}")
     typer.echo(f"traits: {', '.join(enriched.traits) if enriched.traits else '(none)'}")
     typer.echo(f"weak_negatives: {len(enriched.weak_negatives)}")
+
+
+@app.command()
+def examples_revalidate(
+    store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--store",
+    ),
+    database: Path = typer.Option(
+        Path("data/holoclip.db"),
+        "--database",
+    ),
+    min_confidence: float = typer.Option(
+        0.55,
+        "--min-confidence",
+        min=0.0,
+        max=1.0,
+    ),
+    weak_negative_window: float = typer.Option(
+        90.0,
+        "--weak-negative-window",
+        min=30.0,
+        max=300.0,
+    ),
+) -> None:
+    """Re-align, repair and re-index the human-example corpus from cached transcripts."""
+    _load_env_file()
+    examples = load_human_clip_store(store)
+    if not examples:
+        typer.echo(f"no human clip examples found: {store}")
+        return
+
+    nim_settings = NimSettings.from_env()
+    embedding_settings = NimEmbeddingSettings.from_env()
+
+    async def _run() -> dict[str, object]:
+        updated = 0
+        alignment_changed = 0
+        alignment_rejected = 0
+        llm_reenriched = 0
+        weak_negative_refreshed = 0
+        retryable_failures = 0
+        missing_transcripts = 0
+
+        with SQLiteCanonicalRepository(database) as repository:
+            stage_cache = StageArtifactCache(
+                repository,
+                Path("data/artifacts/stages"),
+            )
+            async with NvidiaNimClient(
+                nim_settings,
+                event_callback=typer.echo,
+            ) as llm:
+                for index, example in enumerate(examples, start=1):
+                    prefix = f"[{index}/{len(examples)}]"
+                    typer.echo("")
+                    typer.echo(f"{prefix} revalidating {example.id}")
+
+                    if not example.clip_transcript_path or not example.source_transcript_path:
+                        missing_transcripts += 1
+                        typer.echo(f"{prefix} skipped: transcript path missing")
+                        continue
+
+                    clip_path = Path(example.clip_transcript_path)
+                    source_path = Path(example.source_transcript_path)
+                    if not clip_path.exists() or not source_path.exists():
+                        missing_transcripts += 1
+                        typer.echo(
+                            f"{prefix} skipped: cached transcript file missing"
+                        )
+                        continue
+
+                    try:
+                        clip_segments = load_transcript(clip_path)
+                        source_segments = load_transcript(source_path)
+                        realigned = realign_human_clip_example(
+                            example,
+                            clip_segments,
+                            source_segments,
+                            min_confidence=min_confidence,
+                        )
+                    except (OSError, TypeError, ValueError) as exc:
+                        retryable_failures += 1
+                        typer.echo(
+                            f"{prefix} failed to load/re-align cached transcripts: {exc}"
+                        )
+                        continue
+
+                    candidate = realigned.example
+                    if realigned.alignment_changed:
+                        alignment_changed += 1
+
+                    if not realigned.accepted:
+                        alignment_rejected += 1
+                        upsert_human_clip_examples(store, [candidate])
+                        updated += 1
+                        typer.echo(
+                            f"{prefix} rejected: "
+                            f"confidence={realigned.alignment_confidence:.3f}"
+                        )
+                        continue
+
+                    structure_warnings = validate_editorial_structure(
+                        candidate
+                    ).warnings
+                    needs_llm = (
+                        realigned.alignment_changed
+                        or bool(structure_warnings)
+                        or not candidate.structure_method
+                    )
+
+                    if needs_llm:
+                        try:
+                            candidate = await enrich_human_clip_example(
+                                llm,
+                                candidate,
+                                source_segments,
+                                model=nim_settings.model,
+                                reasoning_effort=nim_settings.strong_reasoning_effort,
+                                weak_negative_window_seconds=weak_negative_window,
+                                stage_cache=stage_cache,
+                                cache_provider="nvidia_nim",
+                            )
+                        except NvidiaNimTimeoutError as exc:
+                            retryable_failures += 1
+                            typer.echo(
+                                f"{prefix} retryable NIM timeout; "
+                                f"last good example preserved: {exc}"
+                            )
+                            continue
+                        llm_reenriched += 1
+                    else:
+                        candidate = refresh_human_clip_weak_negatives(
+                            candidate,
+                            source_segments,
+                            weak_negative_window_seconds=weak_negative_window,
+                        )
+                        weak_negative_refreshed += 1
+
+                    upsert_human_clip_examples(store, [candidate])
+                    updated += 1
+                    quality = evaluate_human_example_learning_quality(candidate)
+                    reason_text = (
+                        ",".join(reason.value for reason in quality.reasons)
+                        if quality.reasons
+                        else "-"
+                    )
+                    typer.echo(
+                        f"{prefix} {quality.decision.value}: "
+                        f"confidence={realigned.alignment_confidence:.3f} "
+                        f"segments={realigned.alignment_segments} "
+                        f"reasons={reason_text}"
+                    )
+
+            final_examples = load_human_clip_store(store)
+            async with NvidiaNimEmbeddingClient(
+                embedding_settings
+            ) as embedding:
+                index_stats = await index_human_examples(
+                    embedding,
+                    repository,
+                    final_examples,
+                )
+
+        final_stats = compute_human_clip_stats(load_human_clip_store(store))
+        return {
+            "total": len(examples),
+            "updated": updated,
+            "alignment_changed": alignment_changed,
+            "alignment_rejected": alignment_rejected,
+            "llm_reenriched": llm_reenriched,
+            "weak_negative_refreshed": weak_negative_refreshed,
+            "retryable_failures": retryable_failures,
+            "missing_transcripts": missing_transcripts,
+            "stats": final_stats.model_dump(mode="json"),
+            "retrieval_index": index_stats.model_dump(mode="json"),
+        }
+
+    try:
+        summary = asyncio.run(_run())
+    except NvidiaNimAuthorizationError as exc:
+        typer.echo(f"NVIDIA NIM error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except NvidiaEmbeddingAuthorizationError as exc:
+        typer.echo(f"NVIDIA embedding authorization error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except NvidiaEmbeddingRateLimitDeferred as exc:
+        typer.echo(f"NVIDIA embedding quota/rate limit: {exc}", err=True)
+        raise typer.Exit(3) from exc
+
+    typer.echo("")
+    typer.echo(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
 @app.command()
