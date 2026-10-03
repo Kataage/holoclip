@@ -305,6 +305,30 @@ def compute_metrics(
     )
 
 
+def compare_evaluation_metrics(
+    baseline: EvaluationMetrics,
+    retrieval: EvaluationMetrics,
+) -> dict[str, float | None]:
+    def delta(left: float | None, right: float | None) -> float | None:
+        if left is None or right is None:
+            return None
+        return right - left
+
+    return {
+        "accept_at_3_mean": retrieval.accept_at_3_mean - baseline.accept_at_3_mean,
+        "accept_at_5_mean": retrieval.accept_at_5_mean - baseline.accept_at_5_mean,
+        "usable_at_5_mean": retrieval.usable_at_5_mean - baseline.usable_at_5_mean,
+        "candidates_per_accept": delta(
+            baseline.candidates_per_accept,
+            retrieval.candidates_per_accept,
+        ),
+        "known_clip_recall": delta(
+            baseline.known_clip_recall,
+            retrieval.known_clip_recall,
+        ),
+    }
+
+
 def load_runs(directory: Path) -> list[EvaluationRun]:
     if not directory.exists():
         return []
