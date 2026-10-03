@@ -13,10 +13,10 @@ from holoclip.execution import (
     make_input_fingerprint,
 )
 from holoclip.media import split_media_audio
+from holoclip.providers.runtime import MeshTranscriber
 from holoclip.models import TranscriptSegment
 from holoclip.providers.transcription.groq import (
     GroqRateLimitDeferred,
-    GroqWhisperTranscriber,
 )
 
 
@@ -37,7 +37,7 @@ async def transcribe_media(
         segments: list[TranscriptSegment] = []
         media_identity = file_input_identity(media_path)
 
-        async with GroqWhisperTranscriber(settings) as transcriber:
+        async with MeshTranscriber(settings) as transcriber:
             for index, chunk in enumerate(chunks):
                 input_fingerprint = make_input_fingerprint(
                     {
@@ -57,9 +57,9 @@ async def transcribe_media(
                         subject_type="local_media_chunk",
                         subject_id=subject_id,
                         input_fingerprint=input_fingerprint,
-                        stage_version="1",
-                        provider="groq",
-                        model=settings.model,
+                        stage_version="mesh-1",
+                        provider="capability_mesh",
+                        model="asr_segment_timestamps",
                     )
 
                 if cached is not None:
@@ -81,9 +81,9 @@ async def transcribe_media(
                         subject_type="local_media_chunk",
                         subject_id=subject_id,
                         input_fingerprint=input_fingerprint,
-                        stage_version="1",
-                        provider="groq",
-                        model=settings.model,
+                        stage_version="mesh-1",
+                        provider="capability_mesh",
+                        model="asr_segment_timestamps",
                     )
 
                 try:

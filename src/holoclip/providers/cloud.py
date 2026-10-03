@@ -131,13 +131,16 @@ class CloudAdapters:
                 raise QuotaBlocked(delay)
             response.raise_for_status()
             raw = response.json()
-            if entry.provider == "gemini":
-                value = "".join(p.get("text", "") for p in raw["candidates"][0]["content"]["parts"]
-                                if not p.get("thought"))
-            elif entry.provider == "cloudflare":
-                value = raw["result"]["response"]
-            else:
-                value = raw["choices"][0]["message"]["content"]
+            try:
+                if entry.provider == "gemini":
+                    value = "".join(p.get("text", "") for p in raw["candidates"][0]["content"]["parts"]
+                                    if not p.get("thought"))
+                elif entry.provider == "cloudflare":
+                    value = raw["result"]["response"]
+                else:
+                    value = raw["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise ValueError("Provider response envelope is invalid") from exc
             output = parse_object(value)
         except BaseException as exc:
             if run:
@@ -162,3 +165,76 @@ class CloudAdapters:
             return set(), False
         ids = {str(r.get("id", r.get("name", ""))).removeprefix("models/") for r in rows}
         return ids, not bool(raw.get("nextPageToken") or raw.get("has_more"))
+
+    async def discovery_snapshot(self, *, timeout=30, providers=None):
+        import asyncio
+        from holoclip.providers.mesh import MeshState, ProviderState
+        found = {}
+        state = MeshState(self.guard)
+        for provider in sorted(providers or {e.provider for e in self.guard.registry.values()}):
+            entries = [e for e in self.guard.registry.values() if e.provider == provider and e.available]
+            if not self.keys.get(provider) or not entries:
+                found[provider] = {"state": "MISSING_CREDENTIALS_OR_FREE_CONTRACT"}
+                continue
+            try:
+                self.guard.authorize(provider, entries[0].model, entries[0].base_url,
+                                     self.keys[provider], public=True)
+                async with asyncio.timeout(timeout):
+                    ids, complete = await self.discover_models(entries[0])
+                state.reconcile_models(provider, ids, complete=complete)
+                for entry in entries:
+                    if entry.model in ids and state.state(entry.identity) == ProviderState.MODEL_DEPRECATED:
+                        state.record(entry.identity, ProviderState.VERIFIED_FREE)
+                found[provider] = {"state": "DISCOVERED", "complete": complete, "ids": sorted(ids)}
+            except (CostPolicyError, httpx.HTTPError, TimeoutError, ValueError) as exc:
+                found[provider] = {"state": "DISCOVERY_FAILED", "error_class": type(exc).__name__}
+        return found
+
+    async def embeddings(self, route: Route, texts: list[str], *, input_type: str, public=False):
+        entry = route.entry
+        response = await self.guard.post(self.client, provider=entry.provider, model=entry.model,
+            base_url=entry.base_url, key=self.keys.get(entry.provider, ""), operation="embeddings",
+            public=public, estimate={"requests": 1, "tokens": sum(len(t.encode("utf-8")) for t in texts)},
+            headers={"Authorization": f"Bearer {self.keys.get(entry.provider, '')}"},
+            json={"model": entry.model, "input": texts, "input_type": input_type,
+                  "encoding_format": "float", "truncate": "END"})
+        if response.status_code == 429:
+            raise QuotaBlocked()
+        response.raise_for_status()
+        rows = sorted(response.json()["data"], key=lambda r: r["index"])
+        if [r["index"] for r in rows] != list(range(len(texts))):
+            raise ValueError("Embedding output count/index mismatch")
+        import math
+        vectors = [r["embedding"] for r in rows]
+        if not vectors or any(not v or not all(isinstance(x, (int, float)) and math.isfinite(x) for x in v)
+                              for v in vectors) or len({len(v) for v in vectors}) != 1:
+            raise ValueError("Invalid embedding vectors")
+        return {"vectors": vectors}
+
+    async def transcribe(self, route: Route, path: Path, *, seconds: float, words=False, public=False):
+        entry = route.entry
+        if entry.provider != "groq" or not 0 < seconds <= 1200 or path.stat().st_size > entry.max_bytes:
+            raise CostPolicyError("No verified bounded ASR transport")
+        fields = [("timestamp_granularities[]", (None, "segment"))]
+        if words:
+            fields.append(("timestamp_granularities[]", (None, "word")))
+        with path.open("rb") as handle:
+            response = await self.guard.post(self.client, provider=entry.provider, model=entry.model,
+                base_url=entry.base_url, key=self.keys.get(entry.provider, ""), operation="audio/transcriptions",
+                public=public, estimate={"requests": 1, "audio_seconds": seconds,
+                                        "uploaded_bytes": path.stat().st_size},
+                headers={"Authorization": f"Bearer {self.keys.get(entry.provider, '')}"},
+                data={"model": entry.model, "language": "ja", "response_format": "verbose_json",
+                      "temperature": "0"},
+                files=[("file", (path.name, handle, "audio/mpeg")), *fields])
+        if response.status_code == 429:
+            raise QuotaBlocked()
+        response.raise_for_status()
+        payload = response.json()
+        for field in (["segments", "words"] if words else ["segments"]):
+            rows = payload.get(field)
+            if not isinstance(rows, list):
+                raise ValueError("ASR lacks requested timestamp granularity")
+            if any(not 0 <= row["start"] <= row["end"] <= seconds + .5 for row in rows):
+                raise ValueError("ASR timestamps exceed measured media duration")
+        return payload

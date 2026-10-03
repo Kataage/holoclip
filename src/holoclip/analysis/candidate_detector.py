@@ -292,6 +292,8 @@ class CandidateDetector:
                 )
         raw = payload.get("candidates", [])
         if not isinstance(raw, list):
+            if getattr(self.llm, "strict_output", False):
+                raise ValueError("Candidate response needs a candidates array")
             return []
 
         found = []
@@ -609,6 +611,8 @@ class CandidateDetector:
                 self.stage_cache.succeed_json(run, payload, kind="final_candidate_selection")
         ranked = payload.get("ranked")
         if not isinstance(ranked, list):
+            if getattr(self.llm, "strict_output", False):
+                raise ValueError("Qualified final selection returned invalid ranked schema")
             return sorted(
                 review_candidates,
                 key=lambda item: item.confidence,

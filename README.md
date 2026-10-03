@@ -4,7 +4,9 @@ Zero-cost provider comparisons and evidence-bound qualification are documented i
 [the real-media benchmark workflow](docs/provider-benchmark.md). A free API smoke
 response does not grant production quality qualification.
 
-AI-assisted hololive clip discovery pipeline.
+Holoclip aims to learn selection and editing from human-made hololive clips, understand
+unseen streams through audio and video, and drive deterministic rendering with automatic
+QA and repair. Its cloud AI requests must stay within verified zero-cost routes.
 
 The first milestone is deliberately narrow:
 
@@ -24,7 +26,9 @@ Video editing, thumbnails and publishing are intentionally deferred until this r
         -> measured boundary / multi-cut plan when learning is ready
         -> saved candidates and automatic evaluation artifacts
 
-NVIDIA NIM access is wrapped by a conservative process-local concurrency and RPM limiter. Groq transcription similarly uses a conservative request rate and stops instead of falling through to a paid provider.
+Production AI access uses capability-based, quality-qualified routing with a persistent
+quota ledger and bounded stage timeouts. Missing qualified/free routes stop processing
+with preserved artifacts. See [production provider setup](docs/production-provider-runtime.md).
 
 ## Corpus editorial learning
 

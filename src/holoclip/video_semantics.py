@@ -89,7 +89,7 @@ class VideoUnderstandingProvider:
         self.adapters = adapters
 
     async def understand(self, window: MeasuredVideoWindow, *, diagnostic_identity=None,
-                         diagnostic_mode=None, benchmark_run_id=None,
+                         diagnostic_mode=None, benchmark_run_id=None, public_data=False,
                          dimensions=frozenset({"japanese", "avatar", "game_ui", "reaction", "ocr"})):
         alternatives = tuple(ModeRequirement(mode=m, required={cap, Capability.JSON}) for m, cap in [
             (ExecutionMode.NATIVE, Capability.VIDEO_NATIVE),
@@ -98,7 +98,7 @@ class VideoUnderstandingProvider:
             (ExecutionMode.FUSION, Capability.VIDEO_MULTIFRAME),
         ])
         contract = StageContract(stage="provider_benchmark_video" if diagnostic_identity else "video_semantics",
-            alternatives=alternatives, dimensions=dimensions, public_data=True,
+            alternatives=alternatives, dimensions=dimensions, public_data=public_data,
             quota_estimate={"requests": 1}, timeout_seconds=120)
         payload = {"measurement": window.model_dump(mode="json"), "prompt_version": "grounded-video-v1",
                    "benchmark_run_id": benchmark_run_id}
@@ -140,7 +140,7 @@ class VideoUnderstandingProvider:
                     "Contact-sheet tile labels are measurement IDs, not scene text.\n" +
                     json.dumps(context, ensure_ascii=False))
                 output = await self.adapters.call_json(route, prompt, images=images, video=video,
-                    public=True, cache_identity={"window": window.media_sha256,
+                    public=contract.public_data, cache_identity={"window": window.media_sha256,
                         "benchmark_run_id": benchmark_run_id,
                         "duration_seconds": window.source_end - window.source_start,
                         "frame_ids": [f.id for f in selected]})
@@ -156,7 +156,7 @@ class VideoUnderstandingProvider:
         return await self.router.run(contract, payload, invoke,
             validate=lambda raw: validate_observation(raw, window), diagnostic=bool(diagnostic_identity))
 
-    async def observe_timeline(self, timeline, windows: list[MeasuredVideoWindow]) -> dict:
+    async def observe_timeline(self, timeline, windows: list[MeasuredVideoWindow], *, public_data=False) -> dict:
         """Runtime bridge for prepared, bounded TimelinePlan/ClipTimeline ranges."""
         results = {}
         for window in windows:
@@ -164,20 +164,20 @@ class VideoUnderstandingProvider:
                        s.source_start <= window.source_start < window.source_end <= s.source_end
                        for s in timeline.segments):
                 raise ValueError("Measured video window is outside selected timeline")
-            result = await self.understand(window)
+            result = await self.understand(window, public_data=public_data)
             results[window.id] = {"observation": result, "evidence": [
                 e.model_dump(mode="json") for e in semantic_evidence(window, result)]}
         return {"timeline_id": timeline.id, "windows": results}
 
     async def observe_training_pair(self, *, example_id: str, finished: MeasuredVideoWindow,
-                                    aligned_sources: list[MeasuredVideoWindow]) -> dict:
+                                    aligned_sources: list[MeasuredVideoWindow], public_data=False) -> dict:
         """Editing Learning bridge: preserve source and finished interpretations separately."""
         if not aligned_sources:
             raise ValueError("Editing supervision requires aligned source windows")
-        finished_result = await self.understand(finished)
+        finished_result = await self.understand(finished, public_data=public_data)
         sources = {}
         for source in aligned_sources:
-            result = await self.understand(source)
+            result = await self.understand(source, public_data=public_data)
             sources[source.id] = {"observation": result, "evidence": [
                 e.model_dump(mode="json") for e in semantic_evidence(source, result)]}
         return {"example_id": example_id, "finished": finished_result, "aligned_sources": sources,

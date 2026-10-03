@@ -18,7 +18,7 @@ from holoclip.clip_policy import (
     evaluate_source_metadata,
     load_policy_rules,
 )
-from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings, NimSettings
+from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings
 from holoclip.corpus_growth import grow_corpus
 from holoclip.editorial_planning import plan_candidate_boundaries
 from holoclip.editorial_evaluation import run_editorial_ab
@@ -98,14 +98,15 @@ from holoclip.providers.embedding.base import EmbeddingProviderError
 from holoclip.providers.embedding.nvidia_nim import (
     NvidiaEmbeddingAuthorizationError,
     NvidiaEmbeddingRateLimitDeferred,
-    NvidiaNimEmbeddingClient,
 )
 from holoclip.providers.source.yt_dlp import YtDlpError, YtDlpSourceProvider
 from holoclip.providers.llm.nvidia_nim import (
     NvidiaNimAuthorizationError,
-    NvidiaNimClient,
     NvidiaNimTimeoutError,
 )
+from holoclip.providers.runtime import MeshLLMClient, MeshEmbeddingClient, RoutingSettings, ProviderRuntime
+from holoclip.providers.mesh import Capability, ExecutionMode, MeshDeferred
+from holoclip.providers.cost import CostPolicyError
 from holoclip.repository import SQLiteCanonicalRepository
 from holoclip.retrieval import (
     RETRIEVAL_VERSION,
@@ -118,7 +119,19 @@ from holoclip.structure_validation import validate_editorial_structure
 from holoclip.transcription import transcribe_media
 
 
-app = typer.Typer(no_args_is_help=True)
+class ProviderCommandGroup(typer.core.TyperGroup):
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except CostPolicyError as exc:
+            typer.echo(json.dumps({"status": "BLOCKED_QUOTA" if getattr(exc, "quota", False)
+                                  else "BLOCKED_DEPENDENCY", "reason": str(exc),
+                                  "retry_after": getattr(exc, "retry_after", None),
+                                  "cost_policy": "ZERO_COST_ONLY", "paid_fallback_allowed": False}), err=True)
+            ctx.exit(3)
+
+
+app = typer.Typer(no_args_is_help=True, cls=ProviderCommandGroup)
 app.add_typer(provider_benchmark_app, name="providers")
 
 
@@ -136,7 +149,7 @@ def _load_env_file(path: Path = Path(".env")) -> None:
 async def _detect_candidates(
     segments: list,
     *,
-    settings: NimSettings,
+    settings: RoutingSettings,
     top_k: int,
     window_minutes: float,
     overlap_minutes: float,
@@ -156,7 +169,7 @@ async def _detect_candidates(
         f"Transcript chunks: {len(chunks)} "
         f"(fast={settings.fast_model}, final={settings.model})"
     )
-    async with NvidiaNimClient(settings, event_callback=typer.echo) as client:
+    async with MeshLLMClient(settings, event_callback=typer.echo) as client:
         if editorial_profile_path is not None:
             try:
                 editorial_profile = await _refresh_editorial_profile(
@@ -164,6 +177,8 @@ async def _detect_candidates(
                     path=editorial_profile_path,
                 )
             except (NvidiaNimTimeoutError, NvidiaNimAuthorizationError, ValueError) as exc:
+                if getattr(client, "strict_output", False):
+                    raise MeshDeferred([f"Editorial profile refresh needs repair: {type(exc).__name__}"]) from exc
                 typer.echo(
                     "Automatic editorial profile refresh deferred; continuing "
                     f"without learned profile: {exc}"
@@ -207,13 +222,13 @@ async def _detect_candidates(
                 strong_reasoning_effort=settings.strong_reasoning_effort,
                 progress=typer.echo,
                 stage_cache=stage_cache,
-                cache_provider="nvidia_nim",
+                cache_provider="capability_mesh",
                 editorial_profile=editorial_profile,
             )
             return await discover_and_plan(detector)
 
         embedding_settings = NimEmbeddingSettings.from_env()
-        async with NvidiaNimEmbeddingClient(embedding_settings) as embedding_client:
+        async with MeshEmbeddingClient(embedding_settings) as embedding_client:
             detector = CandidateDetector(
                 client,
                 fast_model=settings.fast_model,
@@ -222,7 +237,7 @@ async def _detect_candidates(
                 strong_reasoning_effort=settings.strong_reasoning_effort,
                 progress=typer.echo,
                 stage_cache=stage_cache,
-                cache_provider="nvidia_nim",
+                cache_provider="capability_mesh",
                 embedding_provider=embedding_client,
                 retrieval_repository=retrieval_repository,
                 editorial_profile=editorial_profile,
@@ -273,7 +288,7 @@ async def _refresh_editorial_profile(client, *, settings, stage_cache, path: Pat
             client, examples, model=settings.model, reasoning_effort=settings.strong_reasoning_effort,
             observation_model=settings.fast_model, observation_reasoning_effort=settings.fast_reasoning_effort,
             thresholds=existing.thresholds if existing else None,
-            stage_cache=stage_cache, cache_provider="nvidia_nim",
+            stage_cache=stage_cache, cache_provider="capability_mesh",
             plan_path=path.with_suffix(".batches.json"), cards_directory=path.parent / "learning_cards",
             progress=typer.echo,
         )
@@ -306,7 +321,7 @@ def analyze(
 ) -> None:
     """Analyze a timed transcript JSON file and print clip candidates."""
     _load_env_file()
-    settings = NimSettings.from_env()
+    settings = RoutingSettings.from_env()
     segments = load_transcript(transcript)
 
     async def _run(
@@ -413,7 +428,7 @@ def discover(
 ) -> None:
     """Transcribe local media, discover clip candidates, and save an evaluation run."""
     _load_env_file()
-    nim_settings = NimSettings.from_env()
+    nim_settings = RoutingSettings.from_env()
     groq_settings = GroqTranscriptionSettings.from_env()
     resolved_stream_id = stream_id or media.stem
     transcript_path = (
@@ -516,11 +531,11 @@ def examples_learn_profile(
 ) -> None:
     """Learn a corpus-level editorial model from trusted human-made clips."""
     _load_env_file()
-    settings = NimSettings.from_env()
+    settings = RoutingSettings.from_env()
     examples = load_human_clip_store(store)
 
     async def _run(stage_cache: StageArtifactCache) -> EditorialProfile:
-        async with NvidiaNimClient(
+        async with MeshLLMClient(
             settings,
             event_callback=typer.echo,
         ) as llm:
@@ -531,7 +546,7 @@ def examples_learn_profile(
                 reasoning_effort=settings.fast_reasoning_effort if diagnostic_fast else settings.strong_reasoning_effort,
                 batch_size=batch_size,
                 stage_cache=stage_cache,
-                cache_provider="nvidia_nim",
+                cache_provider="capability_mesh",
                 observation_model=settings.fast_model,
                 observation_reasoning_effort=settings.fast_reasoning_effort,
                 plan_path=output.with_suffix(".batches.json"),
@@ -670,7 +685,7 @@ def examples_grow_corpus(
 ) -> None:
     """Discover public human clips, quarantine uncertainty, ingest sequentially, then relearn."""
     _load_env_file()
-    settings = NimSettings.from_env()
+    settings = RoutingSettings.from_env()
     groq = GroqTranscriptionSettings.from_env()
     embedding_settings = NimEmbeddingSettings.from_env()
     provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
@@ -686,8 +701,8 @@ def examples_grow_corpus(
                     policy_rules=rules, scan_limit=scan_limit, max_new_examples=max_new_examples,
                     target_trusted=target_trusted, target_streams=target_streams, discover_only=True,
                     progress=typer.echo)
-            async with (NvidiaNimClient(settings, event_callback=typer.echo) as llm,
-                        NvidiaNimEmbeddingClient(embedding_settings) as embedding):
+            async with (MeshLLMClient(settings, event_callback=typer.echo) as llm,
+                        MeshEmbeddingClient(embedding_settings) as embedding):
                 async def ingest(**kwargs):
                     return await ingest_human_example_from_urls(provider, **kwargs,
                         download_root=Path("data/sources/examples"), transcript_root=Path("data/transcripts"),
@@ -761,12 +776,12 @@ def editorial_ab(
         typer.echo("Editorial learning readiness=false; ON/OFF evaluation is deferred.", err=True)
         raise typer.Exit(6)
     _load_env_file()
-    settings = NimSettings.from_env()
+    settings = RoutingSettings.from_env()
     examples = load_human_clip_store(Path(ready.induction_config.get("corpus_store", str(profile.parent / "human_clips.jsonl"))))
     async def run():
         with SQLiteCanonicalRepository(database) as repository:
             cache = StageArtifactCache(repository, Path("data/artifacts/stages"))
-            async with NvidiaNimClient(settings, event_callback=typer.echo) as llm:
+            async with MeshLLMClient(settings, event_callback=typer.echo) as llm:
                 return await run_editorial_ab(llm, transcript=transcript, stream_id=stream_id,
                     examples=examples, profile=ready, fast_model=settings.fast_model, strong_model=settings.model,
                     fast_reasoning_effort=settings.fast_reasoning_effort,
@@ -822,7 +837,7 @@ def retrieval_ab(
 ) -> None:
     """Run baseline vs retrieval-guided discovery/final-selection evaluation."""
     _load_env_file()
-    nim_settings = NimSettings.from_env()
+    nim_settings = RoutingSettings.from_env()
     embedding_settings = NimEmbeddingSettings.from_env()
     segments = load_transcript(transcript)
     resolved_stream_id = stream_id or transcript.stem
@@ -866,7 +881,7 @@ def retrieval_ab(
         stage_cache: StageArtifactCache,
         repository: SQLiteCanonicalRepository,
     ) -> dict[str, object]:
-        async with NvidiaNimClient(
+        async with MeshLLMClient(
             nim_settings,
             event_callback=typer.echo,
         ) as llm:
@@ -878,7 +893,7 @@ def retrieval_ab(
                 strong_reasoning_effort=nim_settings.strong_reasoning_effort,
                 progress=typer.echo,
                 stage_cache=stage_cache,
-                cache_provider="nvidia_nim",
+                cache_provider="capability_mesh",
                 final_temperature=final_temperature,
             )
 
@@ -895,7 +910,7 @@ def retrieval_ab(
                 top_k=top_k,
             )
 
-            async with NvidiaNimEmbeddingClient(
+            async with MeshEmbeddingClient(
                 embedding_settings
             ) as embedding:
                 documents = repository.list_retrieval_documents(
@@ -916,7 +931,7 @@ def retrieval_ab(
                     strong_reasoning_effort=nim_settings.strong_reasoning_effort,
                     progress=typer.echo,
                     stage_cache=stage_cache,
-                    cache_provider="nvidia_nim",
+                    cache_provider="capability_mesh",
                     embedding_provider=embedding,
                     retrieval_repository=repository,
                     retrieval_positive_k=positive_k,
@@ -1092,68 +1107,28 @@ def retrieval_ab(
 
 @app.command()
 def doctor() -> None:
-    """Check NVIDIA NIM model listing and per-model inference access."""
+    """Inspect free contracts, model lifecycle and qualified capabilities without inference."""
     _load_env_file()
-    settings = NimSettings.from_env()
-
-    async def _run() -> tuple[int, set[str], list[tuple[str, str, str | None]]]:
-        async with NvidiaNimClient(settings) as client:
-            models = await client.list_models()
-            data = models.get("data", [])
-            model_ids = {
-                str(item.get("id"))
-                for item in data
-                if isinstance(item, dict) and item.get("id")
-            }
-
-            checks: list[tuple[str, str, str | None]] = []
-            for label, model in (
-                ("strong", settings.model),
-                ("fast", settings.fast_model),
-            ):
-                try:
-                    await client.chat(
-                        [{"role": "user", "content": "Reply with OK only."}],
-                        model=model,
-                        temperature=0.0,
-                        max_tokens=8,
-                        reasoning_effort="low",
-                    )
-                except NvidiaNimAuthorizationError as exc:
-                    checks.append((label, model, str(exc)))
-                else:
-                    checks.append((label, model, None))
-
-            return len(model_ids), model_ids, checks
-
-    try:
-        model_count, model_ids, checks = asyncio.run(_run())
-    except NvidiaNimAuthorizationError as exc:
-        typer.echo(f"NVIDIA NIM models: FAIL ({exc})")
-        typer.echo(
-            "The request failed before per-model inference checks. "
-            "Verify that holoclip is loading the same NVIDIA_API_KEY as the working client."
-        )
-        raise typer.Exit(2) from exc
-
-    typer.echo(f"NVIDIA NIM models: OK ({model_count} listed)")
-    failed = False
-    for label, model, error in checks:
-        listed = "listed" if model in model_ids else "not listed"
-        if error is None:
-            typer.echo(f"{label} model {model}: OK ({listed})")
-        else:
-            failed = True
-            typer.echo(f"{label} model {model}: FAIL ({listed}) - {error}")
-
-    if failed:
-        typer.echo(
-            "If one configured model works and the other fails, use the working model for both "
-            "NVIDIA_NIM_MODEL and NVIDIA_NIM_FAST_MODEL until the endpoint issue is resolved."
-        )
-        raise typer.Exit(2)
-
-    typer.echo("NVIDIA NIM inference: OK")
+    async def inspect():
+        runtime = ProviderRuntime()
+        try:
+            await runtime.startup()
+            required = [(Capability.REASONING_STRONG, ExecutionMode.TEXT),
+                        (Capability.REASONING_FAST, ExecutionMode.TEXT),
+                        (Capability.ASR_SEGMENTS, ExecutionMode.AUDIO),
+                        (Capability.EMBEDDING, ExecutionMode.EMBEDDING),
+                        (Capability.VIDEO_MULTIFRAME, ExecutionMode.MULTIFRAME)]
+            routes = {cap.value: [r.entry.identity for r in runtime.router.candidates(
+                runtime.contract("readiness:" + cap.value, mode, {cap}))] for cap, mode in required}
+            return {"cost_policy": "ZERO_COST_ONLY", "paid_fallback_allowed": False,
+                    "qualified_routes": routes, "ready": all(routes.values()),
+                    "status": "READY" if all(routes.values()) else "BLOCKED_DEPENDENCY"}
+        finally:
+            await runtime.aclose()
+    report = asyncio.run(inspect())
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+    if not report["ready"]:
+        raise typer.Exit(3)
 
 
 def _refresh_example_index(
@@ -1167,7 +1142,7 @@ def _refresh_example_index(
 
     async def _run():
         with SQLiteCanonicalRepository(database) as repository:
-            async with NvidiaNimEmbeddingClient(settings) as provider:
+            async with MeshEmbeddingClient(settings) as provider:
                 return await index_human_examples(provider, repository, examples)
 
     try:
@@ -1363,7 +1338,7 @@ def examples_ingest_url(
     _load_env_file()
 
     groq_settings = GroqTranscriptionSettings.from_env()
-    nim_settings = NimSettings.from_env()
+    nim_settings = RoutingSettings.from_env()
     embedding_settings = NimEmbeddingSettings.from_env()
     try:
         policy_rules = load_policy_rules(policy_file)
@@ -1386,11 +1361,11 @@ def examples_ingest_url(
                 Path("data/artifacts/stages"),
             )
             async with (
-                NvidiaNimClient(
+                MeshLLMClient(
                     nim_settings,
                     event_callback=typer.echo,
                 ) as llm,
-                NvidiaNimEmbeddingClient(embedding_settings) as embedding,
+                MeshEmbeddingClient(embedding_settings) as embedding,
             ):
                 return await ingest_human_example_from_urls(
                     source_provider,
@@ -1580,7 +1555,7 @@ def examples_ingest_batch(
         return
 
     groq_settings = GroqTranscriptionSettings.from_env()
-    nim_settings = NimSettings.from_env()
+    nim_settings = RoutingSettings.from_env()
     embedding_settings = NimEmbeddingSettings.from_env()
 
     try:
@@ -1601,11 +1576,11 @@ def examples_ingest_batch(
                 Path("data/artifacts/stages"),
             )
             async with (
-                NvidiaNimClient(
+                MeshLLMClient(
                     nim_settings,
                     event_callback=typer.echo,
                 ) as llm,
-                NvidiaNimEmbeddingClient(embedding_settings) as embedding,
+                MeshEmbeddingClient(embedding_settings) as embedding,
             ):
                 for index, item in enumerate(items, start=1):
                     prefix = f"[{index}/{len(items)}]"
@@ -1962,7 +1937,7 @@ def examples_enrich(
 ) -> None:
     """Extract editorial structure and adjacent weak negatives for one aligned example."""
     _load_env_file()
-    settings = NimSettings.from_env()
+    settings = RoutingSettings.from_env()
     examples = load_human_clip_store(store)
     example = next((item for item in examples if item.id == example_id), None)
     if example is None:
@@ -1987,7 +1962,7 @@ def examples_enrich(
                 repository,
                 Path("data/artifacts/stages"),
             )
-            async with NvidiaNimClient(
+            async with MeshLLMClient(
                 settings,
                 event_callback=typer.echo,
             ) as client:
@@ -1999,7 +1974,7 @@ def examples_enrich(
                     reasoning_effort=settings.strong_reasoning_effort,
                     weak_negative_window_seconds=weak_negative_window,
                     stage_cache=stage_cache,
-                    cache_provider="nvidia_nim",
+                    cache_provider="capability_mesh",
                 )
 
     try:
@@ -2055,7 +2030,7 @@ def examples_revalidate(
         typer.echo(f"no human clip examples found: {store}")
         return
 
-    nim_settings = NimSettings.from_env()
+    nim_settings = RoutingSettings.from_env()
     embedding_settings = NimEmbeddingSettings.from_env()
 
     async def _run() -> dict[str, object]:
@@ -2073,7 +2048,7 @@ def examples_revalidate(
                 repository,
                 Path("data/artifacts/stages"),
             )
-            async with NvidiaNimClient(
+            async with MeshLLMClient(
                 nim_settings,
                 event_callback=typer.echo,
             ) as llm:
@@ -2147,7 +2122,7 @@ def examples_revalidate(
                                 reasoning_effort=nim_settings.strong_reasoning_effort,
                                 weak_negative_window_seconds=weak_negative_window,
                                 stage_cache=stage_cache,
-                                cache_provider="nvidia_nim",
+                                cache_provider="capability_mesh",
                             )
                         except NvidiaNimTimeoutError as exc:
                             retryable_failures += 1
@@ -2181,7 +2156,7 @@ def examples_revalidate(
                     )
 
             final_examples = load_human_clip_store(store)
-            async with NvidiaNimEmbeddingClient(
+            async with MeshEmbeddingClient(
                 embedding_settings
             ) as embedding:
                 index_stats = await index_human_examples(
@@ -2259,7 +2234,7 @@ def examples_index(
 
     async def _run():
         with SQLiteCanonicalRepository(database) as repository:
-            async with NvidiaNimEmbeddingClient(settings) as provider:
+            async with MeshEmbeddingClient(settings) as provider:
                 return await index_human_examples(provider, repository, examples)
 
     try:
@@ -2290,7 +2265,7 @@ def examples_retrieve(
 
     async def _run():
         with SQLiteCanonicalRepository(database) as repository:
-            async with NvidiaNimEmbeddingClient(settings) as provider:
+            async with MeshEmbeddingClient(settings) as provider:
                 return await retrieve_structural_examples(
                     provider,
                     repository,

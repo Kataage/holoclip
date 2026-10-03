@@ -267,7 +267,7 @@ class StageArtifactCache:
     ) -> StageRun:
         from holoclip.providers.cost import CostPolicyError, QuotaBlocked
 
-        if isinstance(error, QuotaBlocked):
+        if isinstance(error, QuotaBlocked) or (isinstance(error, CostPolicyError) and getattr(error, "quota", False)):
             status = StageStatus.BLOCKED_QUOTA
             retry_after = error.retry_after
         elif isinstance(error, CostPolicyError):
