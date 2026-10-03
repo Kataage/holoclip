@@ -12,6 +12,8 @@ from holoclip.example_quality import (
     LearningQuality,
     LearningQualityReason,
     evaluate_human_example_learning_quality,
+    explained_clip_bridge_seconds,
+    source_hint_is_authoritative,
 )
 from holoclip.examples import (
     WEAK_NEGATIVE_METHOD,
@@ -42,6 +44,16 @@ class AlignmentAuditSegment(BaseModel):
     source_excerpt: str = ""
 
 
+class ClipGapAudit(BaseModel):
+    start: float
+    end: float
+    seconds: float
+    transcript_excerpt: str = ""
+    source_gap_seconds: float | None = None
+    source_cut_seconds: float | None = None
+    explained_bridge: bool = False
+
+
 class RetrievalAuditDocument(BaseModel):
     id: str
     kind: str
@@ -64,6 +76,7 @@ class HumanExampleAuditReport(BaseModel):
     source_start: float | None = None
     source_end: float | None = None
     alignment_segments: list[AlignmentAuditSegment] = Field(default_factory=list)
+    uncovered_clip_ranges: list[ClipGapAudit] = Field(default_factory=list)
     clip_selected_seconds: float = 0.0
     source_selected_seconds: float = 0.0
     source_bounding_seconds: float = 0.0
@@ -83,6 +96,7 @@ class HumanExampleAuditReport(BaseModel):
     source_resolution_reason: str | None = None
     source_resolution_score: float | None = None
     source_auto_detected: bool | None = None
+    source_hint_authoritative: bool | None = None
 
     setup: str = ""
     development: str = ""
@@ -221,6 +235,81 @@ def _load_optional_transcript(
         return []
 
 
+def _build_clip_gap_audits(
+    example: HumanClipExample,
+    clip_transcript: list[TranscriptSegment],
+) -> list[ClipGapAudit]:
+    ordered = sorted(
+        example.alignment_segments,
+        key=lambda item: (item.clip_start, item.clip_end),
+    )
+    if not ordered:
+        return []
+
+    timeline_end = (
+        max((item.end for item in clip_transcript), default=ordered[-1].clip_end)
+        if clip_transcript
+        else ordered[-1].clip_end
+    )
+    gaps: list[ClipGapAudit] = []
+
+    if ordered[0].clip_start > 0:
+        gaps.append(
+            ClipGapAudit(
+                start=0.0,
+                end=ordered[0].clip_start,
+                seconds=ordered[0].clip_start,
+                transcript_excerpt=_excerpt(
+                    clip_transcript,
+                    0.0,
+                    ordered[0].clip_start,
+                ),
+            )
+        )
+
+    for left, right in zip(ordered, ordered[1:], strict=False):
+        gap_start = left.clip_end
+        gap_end = right.clip_start
+        if gap_end <= gap_start:
+            continue
+        clip_gap = gap_end - gap_start
+        source_gap = right.source_start - left.source_end
+        source_cut = source_gap - clip_gap
+        gaps.append(
+            ClipGapAudit(
+                start=gap_start,
+                end=gap_end,
+                seconds=clip_gap,
+                transcript_excerpt=_excerpt(
+                    clip_transcript,
+                    gap_start,
+                    gap_end,
+                ),
+                source_gap_seconds=source_gap,
+                source_cut_seconds=source_cut,
+                explained_bridge=(
+                    explained_clip_bridge_seconds(left, right) > 0
+                ),
+            )
+        )
+
+    if timeline_end > ordered[-1].clip_end:
+        gaps.append(
+            ClipGapAudit(
+                start=ordered[-1].clip_end,
+                end=timeline_end,
+                seconds=timeline_end - ordered[-1].clip_end,
+                transcript_excerpt=_excerpt(
+                    clip_transcript,
+                    ordered[-1].clip_end,
+                    timeline_end,
+                ),
+            )
+        )
+
+    return gaps
+
+
 def parse_youtube_time_hint(url: str | None) -> float | None:
     if not url:
         return None
@@ -340,6 +429,10 @@ def build_human_example_audit(
             audit_segments[0].source_start - declared_source_start_hint
         )
 
+    uncovered_clip_ranges = _build_clip_gap_audits(
+        example,
+        clip_transcript,
+    )
     learning_quality = evaluate_human_example_learning_quality(example)
     structure_validation = validate_editorial_structure(example)
     alignment_quality = learning_quality.metrics
@@ -395,6 +488,7 @@ def build_human_example_audit(
         source_start=example.source_start,
         source_end=example.source_end,
         alignment_segments=audit_segments,
+        uncovered_clip_ranges=uncovered_clip_ranges,
         clip_selected_seconds=clip_selected_seconds,
         source_selected_seconds=source_selected_seconds,
         source_bounding_seconds=source_bounding_seconds,
@@ -423,6 +517,11 @@ def build_human_example_audit(
         source_resolution_reason=provenance.get("source_resolution_reason"),
         source_resolution_score=source_resolution_score,
         source_auto_detected=source_auto_detected,
+        source_hint_authoritative=(
+            source_hint_is_authoritative(example)
+            if declared_source_start_hint is not None
+            else None
+        ),
         setup=example.setup,
         development=example.development,
         payoff=example.payoff,
@@ -478,6 +577,17 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
             "largest uncovered clip gap: "
             f"{report.alignment_quality.largest_uncovered_clip_gap:.1f}s"
         ),
+        f"explained bridge seconds: {report.alignment_quality.bridged_clip_seconds:.1f}s",
+        f"explained bridge count: {report.alignment_quality.explained_bridge_count}",
+        f"explained clip coverage: {report.alignment_quality.explained_clip_coverage_ratio:.1%}",
+        (
+            "explained clip uncovered: "
+            f"{report.alignment_quality.explained_uncovered_clip_seconds:.1f}s"
+        ),
+        (
+            "largest unexplained clip gap: "
+            f"{report.alignment_quality.largest_unexplained_clip_gap:.1f}s"
+        ),
         f"source selected: {report.source_selected_seconds:.1f}s",
         f"removed/gap inside bounding range: {report.source_gap_seconds:.1f}s",
         (
@@ -523,6 +633,10 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
                 "=== Source-resolution provenance ===",
                 f"declared source URL: {report.declared_source_url}",
                 f"auto detected: {report.source_auto_detected}",
+                (
+                    "timestamp authoritative: "
+                    f"{report.source_hint_authoritative}"
+                ),
                 f"reason: {report.source_resolution_reason or '-'}",
                 f"score: {report.source_resolution_score if report.source_resolution_score is not None else '-'}",
             ]
@@ -535,6 +649,31 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
             lines.append(
                 "first alignment - declared hint: "
                 f"{report.first_alignment_delta_from_hint:+.1f}s"
+            )
+
+    if report.uncovered_clip_ranges:
+        lines.extend(
+            [
+                "",
+                f"=== Uncovered clip ranges ({len(report.uncovered_clip_ranges)}) ===",
+            ]
+        )
+        for index, gap in enumerate(report.uncovered_clip_ranges, start=1):
+            lines.append(
+                f"#{index} {_clock(gap.start)} - {_clock(gap.end)} "
+                f"({gap.seconds:.1f}s)"
+            )
+            if gap.source_gap_seconds is not None:
+                lines.append(
+                    f"  source gap between anchors: {gap.source_gap_seconds:.1f}s"
+                )
+            if gap.source_cut_seconds is not None:
+                lines.append(
+                    f"  inferred source cut: {gap.source_cut_seconds:+.1f}s"
+                )
+            lines.append(f"  explained bridge: {gap.explained_bridge}")
+            lines.append(
+                f"  clip text: {_short(gap.transcript_excerpt, 420) or '(none)'}"
             )
 
     for segment in report.alignment_segments:

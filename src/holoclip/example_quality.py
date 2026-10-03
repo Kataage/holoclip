@@ -20,6 +20,9 @@ TRUSTED_MIN_CLIP_COVERAGE = 0.70
 MIN_LARGE_CLIP_GAP_SECONDS = 30.0
 LARGE_CLIP_GAP_RATIO = 0.20
 SOURCE_HINT_REVIEW_DELTA_SECONDS = 600.0
+EXPLAINED_BRIDGE_MAX_CLIP_GAP_SECONDS = 90.0
+EXPLAINED_BRIDGE_MAX_SOURCE_CUT_SECONDS = 45.0
+EXPLAINED_BRIDGE_CLOCK_TOLERANCE_SECONDS = 3.0
 
 
 class LearningQuality(StrEnum):
@@ -52,6 +55,12 @@ class AlignmentQualityMetrics(BaseModel):
     clip_coverage_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
     uncovered_clip_seconds: float = 0.0
     largest_uncovered_clip_gap: float = 0.0
+    bridged_clip_seconds: float = 0.0
+    explained_clip_seconds: float = 0.0
+    explained_clip_coverage_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    explained_uncovered_clip_seconds: float = 0.0
+    explained_bridge_count: int = 0
+    largest_unexplained_clip_gap: float = 0.0
 
     aligned_source_seconds: float = 0.0
     source_bounding_seconds: float = 0.0
@@ -164,6 +173,33 @@ def _largest_uncovered_gap(
     return largest
 
 
+def is_trustworthy_alignment_boundary(segment) -> bool:
+    return (
+        segment.matched_anchors >= 2
+        or segment.confidence >= TRUSTED_MIN_ALIGNMENT_CONFIDENCE
+    )
+
+
+def explained_clip_bridge_seconds(left, right) -> float:
+    clip_gap = right.clip_start - left.clip_end
+    source_gap = right.source_start - left.source_end
+    if clip_gap <= 0:
+        return 0.0
+    if clip_gap > EXPLAINED_BRIDGE_MAX_CLIP_GAP_SECONDS:
+        return 0.0
+    if not (
+        is_trustworthy_alignment_boundary(left)
+        and is_trustworthy_alignment_boundary(right)
+    ):
+        return 0.0
+    if source_gap < clip_gap - EXPLAINED_BRIDGE_CLOCK_TOLERANCE_SECONDS:
+        return 0.0
+    source_cut = max(0.0, source_gap - clip_gap)
+    if source_cut > EXPLAINED_BRIDGE_MAX_SOURCE_CUT_SECONDS:
+        return 0.0
+    return clip_gap
+
+
 def compute_alignment_quality_metrics(
     example: HumanClipExample,
 ) -> AlignmentQualityMetrics:
@@ -195,6 +231,40 @@ def compute_alignment_quality_metrics(
     uncovered_clip_seconds = max(0.0, clip_timeline_seconds - aligned_clip_seconds)
     largest_uncovered_clip_gap = _largest_uncovered_gap(
         clip_ranges,
+        timeline_start=clip_timeline_start,
+        timeline_end=clip_timeline_end,
+    )
+
+    clip_ordered = sorted(
+        segments,
+        key=lambda item: (item.clip_start, item.clip_end),
+    )
+    bridged_clip_seconds = 0.0
+    explained_bridge_count = 0
+    explained_ranges = list(clip_ranges)
+    for left, right in zip(clip_ordered, clip_ordered[1:], strict=False):
+        bridge_seconds = explained_clip_bridge_seconds(left, right)
+        if bridge_seconds <= 0:
+            continue
+        bridged_clip_seconds += bridge_seconds
+        explained_bridge_count += 1
+        explained_ranges.append((left.clip_end, right.clip_start))
+
+    explained_clip_seconds = min(
+        clip_timeline_seconds,
+        aligned_clip_seconds + bridged_clip_seconds,
+    )
+    explained_clip_coverage_ratio = (
+        min(1.0, explained_clip_seconds / clip_timeline_seconds)
+        if clip_timeline_seconds > 0
+        else 0.0
+    )
+    explained_uncovered_clip_seconds = max(
+        0.0,
+        clip_timeline_seconds - explained_clip_seconds,
+    )
+    largest_unexplained_clip_gap = _largest_uncovered_gap(
+        explained_ranges,
         timeline_start=clip_timeline_start,
         timeline_end=clip_timeline_end,
     )
@@ -253,6 +323,12 @@ def compute_alignment_quality_metrics(
         clip_coverage_ratio=clip_coverage_ratio,
         uncovered_clip_seconds=uncovered_clip_seconds,
         largest_uncovered_clip_gap=largest_uncovered_clip_gap,
+        bridged_clip_seconds=bridged_clip_seconds,
+        explained_clip_seconds=explained_clip_seconds,
+        explained_clip_coverage_ratio=explained_clip_coverage_ratio,
+        explained_uncovered_clip_seconds=explained_uncovered_clip_seconds,
+        explained_bridge_count=explained_bridge_count,
+        largest_unexplained_clip_gap=largest_unexplained_clip_gap,
         aligned_source_seconds=aligned_source_seconds,
         source_bounding_seconds=source_bounding_seconds,
         source_gap_seconds=source_gap_seconds,
@@ -265,14 +341,30 @@ def compute_alignment_quality_metrics(
     )
 
 
-def _source_hint_delta(example: HumanClipExample) -> float | None:
+def _source_hint_url(example: HumanClipExample) -> str | None:
     provenance = example.acquisition_provenance
-    raw_url = (
-        provenance.get("resolved_source_url")
-        or provenance.get("requested_source_url")
-        or example.source_url
-    )
-    hint = parse_youtube_time_hint(str(raw_url) if raw_url else None)
+    requested = provenance.get("requested_source_url")
+    if requested:
+        return str(requested)
+    resolved = provenance.get("resolved_source_url")
+    if resolved:
+        return str(resolved)
+    return example.source_url
+
+
+def source_hint_is_authoritative(example: HumanClipExample) -> bool:
+    provenance = example.acquisition_provenance
+    requested = provenance.get("requested_source_url")
+    if requested and parse_youtube_time_hint(str(requested)) is not None:
+        return True
+    if provenance.get("source_auto_detected") is True:
+        return False
+    return True
+
+
+def _source_hint_delta(example: HumanClipExample) -> float | None:
+    raw_url = _source_hint_url(example)
+    hint = parse_youtube_time_hint(raw_url)
     if hint is None or not example.alignment_segments:
         return None
     return example.alignment_segments[0].source_start - hint
@@ -306,13 +398,13 @@ def evaluate_human_example_learning_quality(
         reasons.append(LearningQualityReason.LEGACY_ALIGNMENT_METHOD)
 
     if metrics.clip_timeline_seconds > 0:
-        if metrics.clip_coverage_ratio < TRUSTED_MIN_CLIP_COVERAGE:
+        if metrics.explained_clip_coverage_ratio < TRUSTED_MIN_CLIP_COVERAGE:
             reasons.append(LearningQualityReason.LOW_CLIP_COVERAGE)
         gap_threshold = max(
             MIN_LARGE_CLIP_GAP_SECONDS,
             metrics.clip_timeline_seconds * LARGE_CLIP_GAP_RATIO,
         )
-        if metrics.largest_uncovered_clip_gap > gap_threshold:
+        if metrics.largest_unexplained_clip_gap > gap_threshold:
             reasons.append(LearningQualityReason.LARGE_UNCOVERED_CLIP_GAP)
 
     if metrics.weak_singleton_count:
@@ -323,6 +415,7 @@ def evaluate_human_example_learning_quality(
     source_hint_delta = _source_hint_delta(example)
     if (
         source_hint_delta is not None
+        and source_hint_is_authoritative(example)
         and abs(source_hint_delta) > SOURCE_HINT_REVIEW_DELTA_SECONDS
     ):
         reasons.append(LearningQualityReason.SOURCE_HINT_DISAGREEMENT)

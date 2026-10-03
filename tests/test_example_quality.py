@@ -96,6 +96,41 @@ def test_marginal_confidence_routes_to_review() -> None:
     assert LearningQualityReason.MARGINAL_ALIGNMENT_CONFIDENCE in quality.reasons
 
 
+def test_coherent_anchor_gaps_count_toward_explained_coverage() -> None:
+    item = example_with_segments(
+        [
+            aligned_segment(0, 40, 100, 140, confidence=0.8, anchors=2),
+            aligned_segment(80, 100, 198, 218, confidence=0.9, anchors=1),
+            aligned_segment(140, 180, 278, 318, confidence=0.85, anchors=3),
+        ]
+    )
+
+    quality = evaluate_human_example_learning_quality(item)
+
+    assert quality.metrics.clip_coverage_ratio == (100 / 180)
+    assert quality.metrics.bridged_clip_seconds == 80
+    assert quality.metrics.explained_clip_coverage_ratio == 1.0
+    assert quality.metrics.explained_bridge_count == 2
+    assert quality.metrics.largest_unexplained_clip_gap == 0
+    assert quality.decision is LearningQuality.TRUSTED
+    assert LearningQualityReason.LOW_CLIP_COVERAGE not in quality.reasons
+
+
+def test_weak_boundary_prevents_explained_gap_bridge() -> None:
+    item = example_with_segments(
+        [
+            aligned_segment(0, 20, 100, 120, confidence=0.9, anchors=3),
+            aligned_segment(60, 80, 170, 190, confidence=0.65, anchors=1),
+        ]
+    )
+
+    quality = evaluate_human_example_learning_quality(item)
+
+    assert quality.metrics.bridged_clip_seconds == 0
+    assert quality.metrics.explained_clip_coverage_ratio == 0.5
+    assert quality.decision is LearningQuality.REVIEW
+
+
 def test_sparse_multicut_is_preserved_for_review_not_rejected() -> None:
     item = example_with_segments(
         [
@@ -139,6 +174,41 @@ def test_large_source_hint_disagreement_routes_to_review() -> None:
     assert quality.decision is LearningQuality.REVIEW
     assert LearningQualityReason.SOURCE_HINT_DISAGREEMENT in quality.reasons
     assert quality.source_hint_delta_seconds == -1500
+
+
+def test_auto_detected_source_hint_disagreement_is_diagnostic_only() -> None:
+    item = example_with_segments(
+        [aligned_segment(0, 60, 300, 360)],
+        source_url="https://youtu.be/source",
+    )
+    item.acquisition_provenance = {
+        "requested_source_url": None,
+        "resolved_source_url": "https://youtu.be/source?t=1800",
+        "source_auto_detected": True,
+    }
+
+    quality = evaluate_human_example_learning_quality(item)
+
+    assert quality.source_hint_delta_seconds == -1500
+    assert quality.decision is LearningQuality.TRUSTED
+    assert LearningQualityReason.SOURCE_HINT_DISAGREEMENT not in quality.reasons
+
+
+def test_explicit_requested_source_hint_disagreement_still_routes_to_review() -> None:
+    item = example_with_segments(
+        [aligned_segment(0, 60, 300, 360)],
+        source_url="https://youtu.be/source",
+    )
+    item.acquisition_provenance = {
+        "requested_source_url": "https://youtu.be/source?t=1800",
+        "resolved_source_url": "https://youtu.be/source?t=1800",
+        "source_auto_detected": False,
+    }
+
+    quality = evaluate_human_example_learning_quality(item)
+
+    assert quality.decision is LearningQuality.REVIEW
+    assert LearningQualityReason.SOURCE_HINT_DISAGREEMENT in quality.reasons
 
 
 def test_old_alignment_method_routes_to_review() -> None:
