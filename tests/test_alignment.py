@@ -8,6 +8,7 @@ from holoclip.alignment import (
     _best_alignment_path,
     _filter_spurious_segments,
     _merge_consistent_segments,
+    _resolve_anchor_budget,
     _select_anchor_segments,
     align_clip_to_source,
     normalize_match_text,
@@ -21,6 +22,34 @@ def segment(start: float, text: str, duration: float = 6.0) -> TranscriptSegment
 
 def test_normalize_match_text_removes_spacing_and_punctuation() -> None:
     assert normalize_match_text(" 今日は、いい天気！ ") == "今日はいい天気"
+
+
+def test_adaptive_anchor_budget_scales_with_clip_duration() -> None:
+    short = [
+        segment(0, "short start"),
+        segment(120, "short end"),
+    ]
+    long = [
+        segment(0, "long start"),
+        segment(900, "long end"),
+    ]
+    very_long = [
+        segment(0, "very long start"),
+        segment(3600, "very long end"),
+    ]
+
+    assert _resolve_anchor_budget(short, max_anchors=None) == 36
+    assert _resolve_anchor_budget(long, max_anchors=None) == 61
+    assert _resolve_anchor_budget(very_long, max_anchors=None) == 72
+
+
+def test_explicit_anchor_budget_overrides_adaptive_rule() -> None:
+    clip = [
+        segment(0, "start"),
+        segment(900, "end"),
+    ]
+
+    assert _resolve_anchor_budget(clip, max_anchors=24) == 24
 
 
 def test_anchor_selection_is_timeline_balanced() -> None:

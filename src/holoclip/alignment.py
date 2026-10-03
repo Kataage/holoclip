@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import statistics
 import unicodedata
 
@@ -8,9 +9,11 @@ from pydantic import BaseModel, Field
 from holoclip.models import TranscriptSegment
 
 
-ALIGNMENT_METHOD = "transcript-anchor-v7"
+ALIGNMENT_METHOD = "transcript-anchor-v8"
 WEAK_SINGLETON_MAX_CONFIDENCE = 0.70
 DEFAULT_MAX_ANCHORS = 36
+MAX_ADAPTIVE_ANCHORS = 72
+TARGET_ANCHOR_INTERVAL_SECONDS = 15.0
 ENDPOINT_EXTENSION_MAX_SECONDS = 5.0
 GENERIC_BOILERPLATE_PHRASES = (
     "ご視聴ありがとうございました",
@@ -99,6 +102,31 @@ def _is_generic_boilerplate(text: str) -> bool:
         if phrase_norm in normalized and len(normalized) <= len(phrase_norm) + 6:
             return True
     return False
+
+
+def _resolve_anchor_budget(
+    clip: list[TranscriptSegment],
+    *,
+    max_anchors: int | None,
+) -> int:
+    if max_anchors is not None:
+        if max_anchors <= 0:
+            raise ValueError("max_anchors must be positive")
+        return max_anchors
+
+    if not clip:
+        return DEFAULT_MAX_ANCHORS
+
+    timeline_start = min(item.start for item in clip)
+    timeline_end = max(item.end for item in clip)
+    duration = max(0.0, timeline_end - timeline_start)
+    density_budget = math.ceil(
+        duration / TARGET_ANCHOR_INTERVAL_SECONDS
+    )
+    return min(
+        MAX_ADAPTIVE_ANCHORS,
+        max(DEFAULT_MAX_ANCHORS, density_budget),
+    )
 
 
 def _select_anchor_segments(
@@ -527,7 +555,7 @@ def align_clip_to_source(
     clip_segments: list[TranscriptSegment],
     source_segments: list[TranscriptSegment],
     *,
-    max_anchors: int = DEFAULT_MAX_ANCHORS,
+    max_anchors: int | None = None,
     top_matches_per_anchor: int = 8,
     min_anchor_similarity: float = 0.28,
     same_offset_tolerance_seconds: float = 22.0,
@@ -541,9 +569,13 @@ def align_clip_to_source(
     clip = sorted(clip_segments, key=lambda item: (item.start, item.end))
     source = sorted(source_segments, key=lambda item: (item.start, item.end))
 
-    anchors = _select_anchor_segments(
+    anchor_budget = _resolve_anchor_budget(
         clip,
         max_anchors=max_anchors,
+    )
+    anchors = _select_anchor_segments(
+        clip,
+        max_anchors=anchor_budget,
     )
     if not anchors:
         raise ValueError("clip transcript has no informative anchor candidates")
