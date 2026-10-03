@@ -121,7 +121,9 @@ bias; it does not prove a representative corpus.
 For eligible queued items the existing audio/transcription/alignment/quality/enrichment/index
 pipeline runs sequentially, with its caches and unchanged quality thresholds. The queue records
 the actual learning-quality decision, not merely successful enrichment. Review examples never
-auto-promote to trusted. Profile refresh follows each cycle. Increase the target to continue
+auto-promote to trusted. Profile refresh follows each cycle. Reaching the clip/stream count floors
+does not stop configured growth cycles while pattern coverage or other readiness gates are still
+unmet. Increase the target to continue
 collecting beyond the initial corpus floor. `--discover-only` resolves metadata without audio.
 
 Acquisition follows existing source policy gates and requires publicly available, ended content.

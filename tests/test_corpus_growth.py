@@ -6,6 +6,8 @@ from holoclip.corpus_growth import CorpusGrowthState, grow_corpus
 from holoclip.examples import load_human_clip_store, upsert_human_clip_examples
 from holoclip.providers.source.base import SourceCandidate, SourceMetadata
 from test_editorial_profile import trusted_example
+from typer.testing import CliRunner
+from holoclip import cli
 
 
 class PublicProvider:
@@ -117,3 +119,53 @@ async def test_metadata_only_mode_never_downloads_and_keeps_queue(tmp_path):
     assert report["attempted"] == 0
     assert report["resolved"] == 1
     assert report["queue_counts"] == {"queued": 1}
+
+
+def test_growth_keeps_running_after_count_floors_if_model_is_unready(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    store = tmp_path / "human_clips.jsonl"
+    upsert_human_clip_examples(
+        store, [trusted_example(str(i), stream_id=f"s{i // 2}") for i in range(30)]
+    )
+
+    class Context:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+    monkeypatch.setattr(cli, "_load_env_file", lambda: None)
+    monkeypatch.setattr(cli, "YtDlpSourceProvider", lambda **kwargs: object())
+    monkeypatch.setattr(cli, "NvidiaNimClient", Context)
+    monkeypatch.setattr(cli, "NvidiaNimEmbeddingClient", Context)
+    targets = []
+
+    async def grow(*args, **kwargs):
+        targets.append(kwargs["target_trusted"])
+        return {"trusted_examples": 30, "trusted_streams": 15}
+
+    async def refresh(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(cli, "grow_corpus", grow)
+    monkeypatch.setattr(cli, "_refresh_editorial_profile", refresh)
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "examples-grow-corpus",
+            "--store",
+            str(store),
+            "--profile",
+            str(tmp_path / "profile.json"),
+            "--database",
+            str(tmp_path / "db"),
+            "--cycles",
+            "3",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert targets == [33, 33, 33]

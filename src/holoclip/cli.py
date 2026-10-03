@@ -250,6 +250,7 @@ async def _refresh_editorial_profile(client, *, settings, stage_cache, path: Pat
         existing = await induce_editorial_profile(
             client, examples, model=settings.model, reasoning_effort=settings.strong_reasoning_effort,
             observation_model=settings.fast_model, observation_reasoning_effort=settings.fast_reasoning_effort,
+            thresholds=existing.thresholds if existing else None,
             stage_cache=stage_cache, cache_provider="nvidia_nim",
             plan_path=path.with_suffix(".batches.json"), cards_directory=path.parent / "learning_cards",
             progress=typer.echo,
@@ -674,11 +675,25 @@ def examples_grow_corpus(
                         allow_policy_review=False, progress=typer.echo)
                 for cycle in range(cycles):
                     typer.echo(f"Corpus growth cycle {cycle + 1}/{cycles}")
+                    current_examples = load_human_clip_store(store)
+                    current_stats = compute_human_clip_stats(current_examples)
+                    trusted_streams = len({x.stream_id for x in current_examples
+                        if x.stream_id and evaluate_human_example_learning_quality(x).decision is LearningQuality.TRUSTED})
+                    # The corpus count floors are not sufficient learning readiness.
+                    # Keep collecting within the configured cycle budget if pattern coverage
+                    # or other model gates remain unmet after reaching the count targets.
+                    current_profile = _load_ready_editorial_profile(profile)
+                    effective_target = target_trusted
+                    if (current_stats.trusted_for_learning >= target_trusted
+                            and trusted_streams >= target_streams
+                            and (current_profile is None or not current_profile.readiness.ready)):
+                        effective_target = current_stats.trusted_for_learning + max_new_examples
                     report = await grow_corpus(provider, store=store, state_path=state, ingest=ingest,
                         policy_rules=rules, scan_limit=scan_limit, max_new_examples=max_new_examples,
-                        target_trusted=target_trusted, target_streams=target_streams, progress=typer.echo)
-                    await _refresh_editorial_profile(llm, settings=settings, stage_cache=cache, path=profile, store=store)
-                    if report["trusted_examples"] >= target_trusted and report["trusted_streams"] >= target_streams:
+                        target_trusted=effective_target, target_streams=target_streams, progress=typer.echo)
+                    ready_profile = await _refresh_editorial_profile(llm, settings=settings, stage_cache=cache, path=profile, store=store)
+                    if (report["trusted_examples"] >= target_trusted and report["trusted_streams"] >= target_streams
+                            and ready_profile is not None):
                         break
                 return report
     report = asyncio.run(run())
