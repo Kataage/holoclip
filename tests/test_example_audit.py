@@ -9,6 +9,7 @@ from holoclip.example_audit import (
     parse_youtube_time_hint,
 )
 from holoclip.examples import (
+    WEAK_NEGATIVE_METHOD,
     AlignmentSegmentExample,
     HumanClipExample,
     WeakNegativeExample,
@@ -87,6 +88,7 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
         development="展開",
         payoff="オチ",
         why_selected="構成が明確",
+        weak_negative_method=WEAK_NEGATIVE_METHOD,
         weak_negatives=[
             WeakNegativeExample(
                 start=140,
@@ -132,6 +134,9 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
     assert report.alignment_quality.clip_coverage_ratio == 1.0
     assert report.learning_quality.value == "trusted"
     assert report.learning_quality_reasons == []
+    assert report.positive_retrieval_eligible is True
+    assert report.weak_negatives_eligible == 1
+    assert report.weak_negatives_suppressed == 0
     assert report.declared_source_start_hint == 120
     assert report.first_alignment_delta_from_hint == 0
     assert report.retrieval_documents[0].kind == "positive"
@@ -142,6 +147,8 @@ def test_audit_exposes_alignment_transcripts_gaps_and_source_hint(
     assert "removed/gap inside bounding range: 60.0s" in rendered
     assert "clip coverage: 100.0%" in rendered
     assert "decision: trusted" in rendered
+    assert "positive retrieval eligible: True" in rendered
+    assert "weak negatives eligible: 1" in rendered
     assert "first alignment - declared hint: +0.0s" in rendered
     assert "元配信の最初" in rendered
     assert f"Retrieval documents ({len(documents)})" in rendered
