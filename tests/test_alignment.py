@@ -213,6 +213,47 @@ def test_filter_spurious_singleton_source_regression() -> None:
     assert [item.source_start for item in filtered] == [1997, 2175]
 
 
+def test_filter_removes_weak_singleton_contained_in_adjacent_strong_span() -> None:
+    def item(
+        clip_start: float,
+        clip_end: float,
+        source_start: float,
+        source_end: float,
+        confidence: float,
+        anchors: int,
+    ) -> AlignmentSegment:
+        return AlignmentSegment(
+            clip_start=clip_start,
+            clip_end=clip_end,
+            source_start=source_start,
+            source_end=source_end,
+            confidence=confidence,
+            matched_anchors=anchors,
+            median_offset=source_start - clip_start,
+            anchors=[
+                AlignmentAnchor(
+                    clip_start=clip_start + index,
+                    source_start=source_start + index,
+                    similarity=confidence,
+                    clip_text="clip",
+                    source_text="source",
+                )
+                for index in range(anchors)
+            ],
+        )
+
+    segments = [
+        item(8, 122, 1242, 1356, 0.849, 6),
+        item(143, 147, 1944, 1948, 0.545, 1),
+        item(155, 751, 1390, 1986, 0.858, 29),
+    ]
+
+    filtered = _filter_spurious_segments(segments)
+
+    assert len(filtered) == 2
+    assert filtered == [segments[0], segments[2]]
+
+
 def test_filter_keeps_strong_or_multi_anchor_reordered_segment() -> None:
     strong = AlignmentSegment(
         clip_start=20,
