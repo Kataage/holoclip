@@ -1,0 +1,113 @@
+# Real-media provider benchmark and qualification (#99)
+
+`holoclip providers` compares the same measured human-made clip windows through
+native video, multi-image, contact sheets and individual-image evidence fusion.
+It also compares transcript reasoning, ASR segment/word timestamps and embeddings.
+A successful HTTP response never grants production qualification. No real-media
+production qualification bundle has been established yet.
+
+## One command and resume
+
+Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
+The credential-bound free account evidence file described in
+[the cost policy](zero-cost-provider-policy.md) is required.
+
+```powershell
+uv run --extra media --extra dev holoclip providers corpus-run D:\AI\holoclip `
+  --env-file D:\AI\holoclip\.env `
+  --accounts data/provider-benchmark/free-accounts.json `
+  --output data/provider-benchmark --max-clips 3
+```
+
+This probes public metadata/policy, acquires finished **video**, builds measured
+bounded windows with existing transcript context, creates a manifest, discovers
+models, and runs eligible models/modes twice. Audio-only acquisition cannot qualify
+vision. It sends no learned corpus payoff/selection answers in the inference prompt.
+Existing corpus clips remain `held_out=false`; the command cannot promote them.
+Japanese titles select candidates, without proving semantic correctness.
+
+Rerun the same command after quota reset. Successful work units are checksum cached;
+failed/uncertain attempts retain reservations and history. `BLOCKED_QUOTA` preserves
+the retry cursor. No account upgrade, paid endpoint or weaker-quality continuation
+exists. Missing credentials and unverified contracts produce machine-readable blocks
+without an inference request. Free/account evidence expiry independently blocks work:
+refresh it only after checking the actual contract/account. An API success does not
+renew a billing attestation. The original `.env` is never modified.
+
+Prepared manifests can be resumed with `providers run <manifest> --env-file ...
+--accounts ... --output ...`. Repeatable `--only provider:model` supports transport
+diagnostics. A single-repeat smoke cannot qualify consistency. Benchmark provider
+order is counterbalanced; native/contact-sheet modes precede dense batches so that
+one provider does not consume all daily budget before other modes are sampled.
+This diagnostic schedule is separate from capability-based production ranking.
+
+## Output and evidence
+
+`latest.json` points to an immutable checksum-named report. Each job retains a latest
+resume cursor and immutable attempt files. Reports preserve original clip identity,
+source provenance, measurement/file/frame/sheet hashes, protocol/input/dataset
+fingerprints, exact model/mode, repeat number, parsed responses, state/error,
+wall-clock p50/p95, success/JSON rates, 429/403/503 counts and requests per clip.
+
+Per-job HTTP telemetry records reserved units, numeric provider-reported usage and
+selected rate/reset headers. It excludes credentials, arbitrary headers and response
+content. Reservations are estimates, not provider billing meters. A complete successful
+model list marks missing IDs deprecated; partial/error/auth lists cannot. Model-list
+presence never overrides pricing or quality evidence.
+
+Quality and `clips_per_day` remain `null` without real qualified workloads and measured
+effective account limits. Published daily maxima, unknown NVIDIA quotas and estimated
+Cloudflare neurons do not establish production capacity. A talk-only corpus cannot
+establish game UI, small UI events, visual gags or their grounding quality.
+
+## Qualification
+
+Reserve a small original-clip holdout excluded from Editorial/Editing Profile training.
+Do not relabel trained examples as held out. Capability-specific `Assessment` records
+bind to `make_input_fingerprint(result)` and cite reviewer/gold evidence. Free independent
+judges may draft `AUTO_WEAK_TEACHER` records; those never grant production access.
+Reviewed gold uses `HUMAN_GOLD` or `HUMAN_REVIEWED_TEACHER`. Import one reviewed batch:
+
+```powershell
+uv run holoclip providers qualify <immutable-report.json> <reviewed-assessments.json> `
+  data/providers/qualifications.json
+```
+
+All relevant jobs need reviewed evidence; at least 30 distinct measured inputs from
+five original clips, two actual independent repeats, quality >= .8, success >= .95,
+JSON validity >= .99, hallucination <= .02, error <= .05, consistency >= .9 and zero
+critical hallucinations. Each dimension needs three reviewed observations and the
+router checks stage-specific required dimensions again. Quality/capability/mode are
+independent: text reasoning cannot qualify grounding or OCR. Missing, changed,
+duplicated, weak, inconsistent and low-quality evidence cannot grant access.
+
+Bundles pin the immutable assessed report hash. Loading verifies the hash and recomputes
+every score before accepting declared rows; detached JSON lists and edited scores fail.
+Local human-review declarations are an explicit evidence trust boundary, not cryptographic
+proof someone watched a video. Automated semantic grading/independent-judge collection
+is not implemented yet. This infrastructure accepts one evaluation-tooling batch; it
+must not demand manual labeling of the full corpus or invent human review.
+
+## Contract/discovery audit, October 4 JST / October 3 UTC 2026
+
+- [Groq billing](https://console.groq.com/docs/billing-faqs) requires a payment method
+  for Free-to-Developer upgrade. [Rate limits](https://console.groq.com/docs/rate-limits)
+  describe Free limits and 429, without automatic paid overage. Account evidence must
+  attest the credential belongs to Free; paid spend limits are insufficient.
+- [Nemotron Omni model card](https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning/modelcard)
+  is English-only. Native-video metadata does not qualify Japanese reasoning/OCR.
+- [NVIDIA Llama 90B](https://build.nvidia.com/meta/llama-3.2-90b-vision-instruct)
+  redirected to unavailable. It appeared in authenticated `/models`, but that alone
+  does not establish a currently free callable endpoint. It stays policy blocked.
+- Cosmos was absent from this account's complete authenticated list. Its hosted video
+  schema remains unverified. No paid deployment replaces it.
+- [Cerebras catalog](https://inference-docs.cerebras.ai/models/overview) describes Free
+  Trial access; recurring zero-cost eligibility remains unverified.
+- Gemini, Cloudflare and Mistral have no locally configured credentials. Their real
+  comparisons remain pending; mock/fault-test success is not benchmark evidence.
+
+Real native/multi-image/contact-sheet A/B, a game/UI/reaction/OCR holdout, independent
+semantic grading, Cosmos/Active Speaker verified transports, contract refresh and
+measured capacity remain acceptance gates. Editorial Profile is not Editing Profile.
+This does not establish source/finished edit transforms, RenderPlan, renderer QA/repair
+or publishing readiness. Parent issues must stay open until evidence gates pass.

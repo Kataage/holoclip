@@ -1,5 +1,9 @@
 # holoclip
 
+Zero-cost provider comparisons and evidence-bound qualification are documented in
+[the real-media benchmark workflow](docs/provider-benchmark.md). A free API smoke
+response does not grant production quality qualification.
+
 AI-assisted hololive clip discovery pipeline.
 
 The first milestone is deliberately narrow:

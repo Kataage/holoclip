@@ -89,7 +89,8 @@ class VideoUnderstandingProvider:
         self.adapters = adapters
 
     async def understand(self, window: MeasuredVideoWindow, *, diagnostic_identity=None,
-                         diagnostic_mode=None, dimensions=frozenset({"japanese", "avatar", "game_ui", "reaction", "ocr"})):
+                         diagnostic_mode=None, benchmark_run_id=None,
+                         dimensions=frozenset({"japanese", "avatar", "game_ui", "reaction", "ocr"})):
         alternatives = tuple(ModeRequirement(mode=m, required={cap, Capability.JSON}) for m, cap in [
             (ExecutionMode.NATIVE, Capability.VIDEO_NATIVE),
             (ExecutionMode.MULTIFRAME, Capability.VIDEO_MULTIFRAME),
@@ -99,7 +100,8 @@ class VideoUnderstandingProvider:
         contract = StageContract(stage="provider_benchmark_video" if diagnostic_identity else "video_semantics",
             alternatives=alternatives, dimensions=dimensions, public_data=True,
             quota_estimate={"requests": 1}, timeout_seconds=120)
-        payload = {"measurement": window.model_dump(mode="json"), "prompt_version": "grounded-video-v1"}
+        payload = {"measurement": window.model_dump(mode="json"), "prompt_version": "grounded-video-v1",
+                   "benchmark_run_id": benchmark_run_id}
         if diagnostic_identity:
             payload.update(diagnostic_identity=diagnostic_identity, diagnostic_mode=diagnostic_mode)
 
@@ -139,6 +141,7 @@ class VideoUnderstandingProvider:
                     json.dumps(context, ensure_ascii=False))
                 output = await self.adapters.call_json(route, prompt, images=images, video=video,
                     public=True, cache_identity={"window": window.media_sha256,
+                        "benchmark_run_id": benchmark_run_id,
                         "duration_seconds": window.source_end - window.source_start,
                         "frame_ids": [f.id for f in selected]})
                 # A batch may reference only the frames actually sent, plus their shots/context.

@@ -43,6 +43,8 @@ class QualityFloor(BaseModel):
     success_rate: float = Field(default=0.95, ge=0.95, le=1)
     json_validity: float = Field(default=0.99, ge=0.99, le=1)
     max_hallucination_rate: float = Field(default=0.02, ge=0, le=0.02)
+    max_error_rate: float = Field(default=0.05, ge=0, le=0.05)
+    consistency: float = Field(default=0.9, ge=0.9, le=1)
     min_gold_cases: int = Field(default=30, ge=30)
 
 
@@ -85,6 +87,7 @@ class Qualification(BaseModel):
             self.quality_score >= floor.quality_score and self.success_rate >= floor.success_rate and
             self.json_validity >= floor.json_validity and
             self.hallucination_rate <= floor.max_hallucination_rate and
+            self.error_rate <= floor.max_error_rate and self.consistency >= floor.consistency and
             dimensions <= self.covered_dimensions
         )
 
@@ -254,6 +257,10 @@ class CapabilityRouter:
                         raise ValueError("Expected structured JSON object")
                     if validate:
                         output = validate(output)
+                    if contract.second_opinion_required:
+                        # Validate inside the guarded attempt, before recording success.
+                        Opinion(provider=route.entry.provider, **{
+                            k: output.get(k) for k in ("decision", "confidence", "evidence_ids")})
             except QuotaBlocked as exc:
                 quota_seen = True
                 retry = exc.retry_after if retry is None else min(retry, exc.retry_after or retry)
@@ -356,4 +363,16 @@ def reconcile_opinions(first: Opinion, second: Opinion | None) -> dict:
 def load_qualifications(path: Path) -> list[Qualification]:
     if not path.exists():
         return []
-    return [Qualification.model_validate(row) for row in json.loads(path.read_text(encoding="utf-8"))]
+    from holoclip.provider_benchmark import VERSION, derive_qualifications
+    from holoclip.video_measurement import checksum_file
+    bundle = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(bundle, dict) or bundle.get("version") != VERSION:
+        raise CostPolicyError("Qualification needs a checksum-bound benchmark bundle")
+    report_path = path.parent / bundle["report_path"]
+    if checksum_file(report_path) != bundle["report_sha256"]:
+        raise CostPolicyError("Qualification benchmark report changed")
+    actual = derive_qualifications(json.loads(report_path.read_text(encoding="utf-8")), bundle["report_sha256"])
+    declared = [Qualification.model_validate(row) for row in bundle["qualifications"]]
+    if actual != declared:
+        raise CostPolicyError("Qualification differs from recomputed benchmark evidence")
+    return actual

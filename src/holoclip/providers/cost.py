@@ -11,6 +11,7 @@ import math
 import os
 import re
 import sqlite3
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
@@ -18,6 +19,9 @@ from typing import Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
+
+# Isolated job attribution also works when callers run independent stages concurrently.
+request_scope: ContextVar[str] = ContextVar("holoclip_request_scope", default="")
 
 
 class CostPolicy(StrEnum):
@@ -99,7 +103,9 @@ def _fresh(timestamp: datetime, now: datetime, lifetime: timedelta) -> bool:
 
 def free_registry() -> dict[str, FreeModel]:
     """Dated candidate evidence, never a production quality qualification."""
-    verified = datetime(2026, 10, 4, tzinfo=UTC)
+    # The audit was performed on October 4 JST, October 3 UTC. Never round a
+    # local calendar date forward to UTC midnight: that creates future evidence.
+    verified = datetime(2026, 10, 3, 22, tzinfo=UTC)
     text = {Capability.REASONING_STRONG, Capability.REASONING_FAST, Capability.JSON}
     vision = text | {Capability.IMAGE, Capability.VIDEO_MULTIFRAME, Capability.GROUNDING,
                      Capability.JAPANESE_READING, Capability.RENDER_QA}
@@ -176,6 +182,8 @@ class QuotaLedger:
             db.execute("CREATE TABLE IF NOT EXISTS blocks (account TEXT PRIMARY KEY, until REAL)")
             db.execute("CREATE TABLE IF NOT EXISTS requests (id INTEGER PRIMARY KEY, account TEXT, "
                        "model TEXT, at TEXT, estimate TEXT, status TEXT)")
+            db.execute("CREATE TABLE IF NOT EXISTS request_observations (request_id INTEGER PRIMARY KEY, "
+                       "scope TEXT, usage TEXT, rate_headers TEXT)")
 
     def connect(self):
         return sqlite3.connect(self.path, timeout=30)
@@ -206,7 +214,33 @@ class QuotaLedger:
             cursor = db.execute("INSERT INTO requests(account,model,at,estimate,status) "
                                 "VALUES (?,?,?,?,?)", (account, model, now.isoformat(),
                                                        json.dumps(estimate), "reserved"))
+            db.execute("INSERT INTO request_observations VALUES (?,?,?,?)",
+                       (cursor.lastrowid, request_scope.get(), "{}", "{}"))
             return cursor.lastrowid
+
+    def observe(self, request_id: int, response: httpx.Response):
+        # Store numeric usage only: never content, credentials or arbitrary headers.
+        try:
+            payload = response.json()
+            raw = payload.get("usage", payload.get("usageMetadata", {}))
+        except (ValueError, AttributeError):
+            raw = {}
+        usage = {k: v for k, v in raw.items() if isinstance(v, (int, float)) and
+                 not isinstance(v, bool) and math.isfinite(v)} if isinstance(raw, dict) else {}
+        headers = {k: v for k, v in response.headers.items() if k.startswith("x-ratelimit-") or
+                   k in {"retry-after", "ratelimit-remaining", "ratelimit-reset"}}
+        with self.connect() as db:
+            db.execute("UPDATE request_observations SET usage=?,rate_headers=? WHERE request_id=?",
+                       (json.dumps(usage), json.dumps(headers), request_id))
+
+    def telemetry(self, scope: str) -> list[dict]:
+        with self.connect() as db:
+            rows = db.execute("SELECT r.id,r.account,r.model,r.at,r.estimate,r.status,o.usage,o.rate_headers "
+                              "FROM requests r JOIN request_observations o ON o.request_id=r.id "
+                              "WHERE o.scope=? ORDER BY r.id", (scope,)).fetchall()
+        return [{"id": r[0], "account": r[1], "model": r[2], "at": r[3],
+                 "reserved_units": json.loads(r[4]), "status": r[5],
+                 "observed_usage": json.loads(r[6]), "rate_headers": json.loads(r[7])} for r in rows]
 
     def finish(self, request_id: int, status: str):
         with self.connect() as db:
@@ -299,6 +333,7 @@ class CostGuard:
             self.ledger.finish(reservation, "uncertain")
             raise
         self.ledger.finish(reservation, f"http_{response.status_code}")
+        self.ledger.observe(reservation, response)
         if 300 <= response.status_code < 400:
             raise CostPolicyError("Provider redirect rejected before following another endpoint")
         if response.status_code == 429:
