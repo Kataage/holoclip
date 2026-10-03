@@ -434,7 +434,7 @@ async def test_candidate_analysis_falls_back_when_auto_refresh_fails(tmp_path, m
             return None
 
     monkeypatch.setattr(cli, "_refresh_editorial_profile", fail_refresh)
-    monkeypatch.setattr(cli, "NvidiaNimClient", Context)
+    monkeypatch.setattr(cli, "MeshLLMClient", Context)
 
     result = await _detect_candidates(
         [TranscriptSegment(start=0, end=60, text="unseen transcript")],

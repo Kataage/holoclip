@@ -16,7 +16,7 @@ The credential-bound free account evidence file described in
 uv run --extra media --extra dev holoclip providers corpus-run D:\AI\holoclip `
   --env-file D:\AI\holoclip\.env `
   --accounts data/provider-benchmark/free-accounts.json `
-  --output data/provider-benchmark --max-clips 3
+  --output data/provider-benchmark --max-clips 3 --wait-for-quota
 ```
 
 This probes public metadata/policy, acquires finished **video**, builds measured

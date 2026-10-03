@@ -182,7 +182,7 @@ async def test_transcription_retry_reuses_successful_chunk_after_quota_block(
     monkeypatch.setattr(transcription, "split_media_audio", fake_split)
     monkeypatch.setattr(
         transcription,
-        "GroqWhisperTranscriber",
+        "MeshTranscriber",
         FakeTranscriber,
     )
 
@@ -217,9 +217,9 @@ async def test_transcription_retry_reuses_successful_chunk_after_quota_block(
             subject_type="local_media_chunk",
             subject_id=f"{media_identity['path']}#chunk-0001",
             input_fingerprint=second_fingerprint,
-            stage_version="1",
-            provider="groq",
-            model=settings.model,
+            stage_version="mesh-1",
+            provider="capability_mesh",
+            model="asr_segment_timestamps",
             prompt_version=None,
         )
         assert blocked is not None

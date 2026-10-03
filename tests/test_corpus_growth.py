@@ -140,8 +140,8 @@ def test_growth_keeps_running_after_count_floors_if_model_is_unready(tmp_path, m
 
     monkeypatch.setattr(cli, "_load_env_file", lambda: None)
     monkeypatch.setattr(cli, "YtDlpSourceProvider", lambda **kwargs: object())
-    monkeypatch.setattr(cli, "NvidiaNimClient", Context)
-    monkeypatch.setattr(cli, "NvidiaNimEmbeddingClient", Context)
+    monkeypatch.setattr(cli, "MeshLLMClient", Context)
+    monkeypatch.setattr(cli, "MeshEmbeddingClient", Context)
     targets = []
 
     async def grow(*args, **kwargs):
@@ -192,8 +192,8 @@ def test_growth_continues_when_profile_refresh_fails(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cli, "_load_env_file", lambda: None)
     monkeypatch.setattr(cli, "YtDlpSourceProvider", lambda **kwargs: object())
-    monkeypatch.setattr(cli, "NvidiaNimClient", Context)
-    monkeypatch.setattr(cli, "NvidiaNimEmbeddingClient", Context)
+    monkeypatch.setattr(cli, "MeshLLMClient", Context)
+    monkeypatch.setattr(cli, "MeshEmbeddingClient", Context)
     targets = []
 
     async def grow(*args, **kwargs):

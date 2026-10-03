@@ -25,7 +25,7 @@ from holoclip.providers.cost import (
     AccountEvidence, Capability, CostGuard, CostPolicyError, QuotaBlocked, QuotaLedger, request_scope,
 )
 from holoclip.providers.mesh import (
-    CapabilityRouter, ExecutionMode, MeshDeferred, MeshState, ProviderState, Qualification,
+    CapabilityRouter, ExecutionMode, MeshDeferred, ProviderState, Qualification,
     QualityFloor, Route,
 )
 from holoclip.repository import SQLiteCanonicalRepository
@@ -177,34 +177,14 @@ class BenchmarkRunner:
         self.repository.close()
 
     async def discovery(self, timeout: float) -> dict:
-        found = {}
-        state = MeshState(self.guard)
-        for provider in sorted({e.provider for e in self.guard.registry.values()}):
-            entries = [e for e in self.guard.registry.values() if e.provider == provider and e.available]
-            if not self.keys.get(provider) or not entries:
-                found[provider] = {"state": "MISSING_CREDENTIALS_OR_FREE_CONTRACT"}
-                continue
-            try:
-                self.guard.authorize(provider, entries[0].model, entries[0].base_url,
-                                     self.keys[provider], public=True)
-                async with asyncio.timeout(timeout):
-                    ids, complete = await self.adapters.discover_models(entries[0])
-                state.reconcile_models(provider, ids, complete=complete)
-                # A returned model ID does not prove pricing or erase a quality rejection.
-                for entry in entries:
-                    if entry.model in ids and state.state(entry.identity) == ProviderState.MODEL_DEPRECATED:
-                        state.record(entry.identity, ProviderState.VERIFIED_FREE)
-                found[provider] = {"state": "DISCOVERED", "complete": complete, "ids": sorted(ids)}
-            except (CostPolicyError, httpx.HTTPError, TimeoutError, ValueError) as exc:
-                found[provider] = {"state": "DISCOVERY_FAILED", "error_class": type(exc).__name__}
-        return found
+        return await self.adapters.discovery_snapshot(timeout=timeout)
 
     async def invoke(self, case, entry, mode, job_id):
         route = Route(entry=entry, mode=mode, qualification=())
         if case.task == "video":
             return (await VideoUnderstandingProvider(self.router, self.adapters).understand(
                 verified_window(case), diagnostic_identity=entry.identity, diagnostic_mode=mode.value,
-                benchmark_run_id=job_id))["output"]
+                benchmark_run_id=job_id, public_data=case.public_data))["output"]
         if case.task == "text":
             return await self.adapters.call_json(route, case.prompt, public=True,
                                                  cache_identity={"benchmark_run_id": job_id})
@@ -243,7 +223,8 @@ class BenchmarkRunner:
             raise ValueError("Invalid embedding vector")
         return {"dimensions": len(values), "vector": values}
 
-    async def run(self, manifest: BenchmarkManifest, *, only: frozenset[str] = frozenset(), progress=None):
+    async def run(self, manifest: BenchmarkManifest, *, only: frozenset[str] = frozenset(), progress=None,
+                  resume_quota_only=False):
         input_ids = {c.id: make_input_fingerprint(verified_window(c).model_dump(mode="json"))
                      if c.task == "video" else c.media_sha256 or make_input_fingerprint(c.prompt)
                      for c in manifest.cases}
@@ -268,6 +249,7 @@ class BenchmarkRunner:
             previous = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
             now = self.guard.clock()
             if previous and (previous["status"] == "SUCCEEDED" or
+                (resume_quota_only and previous["status"] != "BLOCKED_QUOTA") or
                 previous.get("retry_at", 0) > now.timestamp()):
                 results.append(previous)
                 continue
@@ -513,14 +495,28 @@ def prepare_corpus(corpus_root: Path, output: Path, *, max_clips=3, window_secon
 @app.command("run")
 def run_command(manifest: Path, accounts: Path = typer.Option(...),
                 env_file: Path | None = None, output: Path = Path("data/provider-benchmark"),
-                only: list[str] = typer.Option(None)):
+                only: list[str] = typer.Option(None), wait_for_quota: bool = False):
     """Run/resume all modes and available free models with one command."""
     raw = json.loads(accounts.read_text(encoding="utf-8"))
     guard = CostGuard(QuotaLedger(output / "quota.db"), [AccountEvidence.model_validate(r) for r in raw])
     async def execute():
         runner = BenchmarkRunner(guard, read_keys(env_file), output)
         try:
-            return await runner.run(load_manifest(manifest), only=frozenset(only or []), progress=typer.echo)
+            prepared = load_manifest(manifest)
+            path = await runner.run(prepared, only=frozenset(only or []), progress=typer.echo)
+            while wait_for_quota:
+                report = json.loads(path.read_text(encoding="utf-8"))
+                resets = [r["retry_at"] for r in report["results"] if r["status"] == "BLOCKED_QUOTA"]
+                if not resets:
+                    break
+                reset = min(resets)
+                while guard.clock().timestamp() < reset:
+                    remaining = reset - guard.clock().timestamp()
+                    typer.echo(f"BLOCKED_QUOTA: cached; automatic resume in {remaining:.0f}s")
+                    await asyncio.sleep(min(60, remaining))
+                path = await runner.run(prepared, only=frozenset(only or []), progress=typer.echo,
+                                        resume_quota_only=True)
+            return path
         finally:
             await runner.aclose()
     path = asyncio.run(execute())
@@ -546,7 +542,7 @@ def qualify_command(report: Path, assessments: Path, output: Path):
 @app.command("corpus-run")
 def corpus_run_command(corpus_root: Path, accounts: Path = typer.Option(...),
                        env_file: Path | None = None, output: Path = Path("data/provider-benchmark"),
-                       max_clips: int = 3):
+                       max_clips: int = 3, wait_for_quota: bool = False):
     """Prepare human-made corpus videos and run/resume the comparison in one invocation."""
     manifest = prepare_corpus(corpus_root, output, max_clips=max_clips, progress=typer.echo)
-    run_command(manifest, accounts=accounts, env_file=env_file, output=output, only=[])
+    run_command(manifest, accounts=accounts, env_file=env_file, output=output, only=[], wait_for_quota=wait_for_quota)

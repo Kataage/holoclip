@@ -117,7 +117,7 @@ class Route(BaseModel):
     qualification: tuple[Qualification, ...]
 
 
-class MeshDeferred(RuntimeError):
+class MeshDeferred(CostPolicyError):
     def __init__(self, reasons: list[str], *, quota=False, retry_after=None):
         self.reasons = reasons
         self.quota = quota
@@ -268,6 +268,10 @@ class CapabilityRouter:
                                   mode=route.mode, delay=exc.retry_after or 86400)
                 reasons.append(f"{route.entry.identity}: BLOCKED_QUOTA")
                 continue
+            except asyncio.CancelledError as exc:
+                if run:
+                    self.cache.fail(run, status=StageStatus.CANCELLED, error=exc)
+                raise
             except (TimeoutError, httpx.TimeoutException, httpx.NetworkError):
                 self.state.record(route.entry.identity, ProviderState.DEGRADED, mode=route.mode,
                                   latency=asyncio.get_running_loop().time() - started, delay=300)
@@ -282,7 +286,10 @@ class CapabilityRouter:
                                   if state == ProviderState.DEGRADED else None)
                 reasons.append(f"{route.entry.identity}: HTTP {code}")
                 continue
-            except (ValueError, CostPolicyError):
+            except CostPolicyError:
+                reasons.append(f"{route.entry.identity}: policy blocked")
+                continue
+            except ValueError:
                 requirement = next(a for a in contract.alternatives if a.mode == route.mode)
                 for cap in requirement.required:
                     self.state.record(f"{route.entry.identity}/{route.mode}/{cap}",
