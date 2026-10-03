@@ -8,6 +8,9 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 
+WEAK_NEGATIVE_METHOD = "coverage-aware-v2"
+
+
 class ClipPerformance(BaseModel):
     views: int | None = Field(default=None, ge=0)
     likes: int | None = Field(default=None, ge=0)
@@ -79,6 +82,7 @@ class HumanClipExample(BaseModel):
     payoff: str = ""
     why_selected: str = ""
     weak_negatives: list[WeakNegativeExample] = Field(default_factory=list)
+    weak_negative_method: str | None = None
     structure_method: str | None = None
     structure_model: str | None = None
 
