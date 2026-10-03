@@ -29,10 +29,15 @@ from holoclip.example_batch import (
 )
 from holoclip.example_audit import (
     build_human_example_audit,
+    build_human_example_audit_batch,
     find_human_example,
     format_human_example_audit,
+    format_human_example_audit_batch,
 )
-from holoclip.example_quality import evaluate_human_example_learning_quality
+from holoclip.example_quality import (
+    LearningQuality,
+    evaluate_human_example_learning_quality,
+)
 from holoclip.example_revalidation import realign_human_clip_example
 from holoclip.examples import (
     HumanClipExample,
@@ -1584,6 +1589,87 @@ def examples_show(
         return
 
     typer.echo(format_human_example_audit(report))
+
+
+@app.command()
+def examples_audit(
+    store: Path = typer.Option(
+        Path("data/examples/human_clips.jsonl"),
+        "--store",
+    ),
+    database: Path = typer.Option(
+        Path("data/holoclip.db"),
+        "--database",
+    ),
+    quality: str = typer.Option(
+        "all",
+        "--quality",
+        help="Filter: all, trusted, review, or rejected.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Write the complete audit to a file instead of stdout.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Render the batch audit as JSON.",
+    ),
+) -> None:
+    """Audit human-made clip examples in one read-only batch."""
+    normalized_quality = quality.strip().lower()
+    if normalized_quality == "all":
+        quality_filter = None
+    else:
+        try:
+            quality_filter = LearningQuality(normalized_quality)
+        except ValueError as exc:
+            typer.echo(
+                "--quality must be one of: all, trusted, review, rejected",
+                err=True,
+            )
+            raise typer.Exit(2) from exc
+
+    examples = load_human_clip_store(store)
+    selected = [
+        example
+        for example in examples
+        if quality_filter is None
+        or evaluate_human_example_learning_quality(example).decision
+        is quality_filter
+    ]
+
+    retrieval_documents_by_example: dict[str, list] = {}
+    with SQLiteCanonicalRepository(database) as repository:
+        for example in selected:
+            retrieval_documents_by_example[example.id] = (
+                repository.list_retrieval_documents_for_example(example.id)
+            )
+
+    batch = build_human_example_audit_batch(
+        examples,
+        retrieval_documents_by_example=retrieval_documents_by_example,
+        quality_filter=quality_filter,
+    )
+    if as_json:
+        rendered = json.dumps(
+            batch.model_dump(mode="json"),
+            ensure_ascii=False,
+            indent=2,
+        )
+    else:
+        rendered = format_human_example_audit_batch(batch)
+
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered + "\n", encoding="utf-8")
+        typer.echo(
+            f"wrote {batch.matched_examples} example audit(s): {output}"
+        )
+        return
+
+    typer.echo(rendered)
 
 
 @app.command()

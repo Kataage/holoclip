@@ -5,9 +5,12 @@ from pathlib import Path
 from holoclip.alignment import ALIGNMENT_METHOD
 from holoclip.example_audit import (
     build_human_example_audit,
+    build_human_example_audit_batch,
     format_human_example_audit,
+    format_human_example_audit_batch,
     parse_youtube_time_hint,
 )
+from holoclip.example_quality import LearningQuality
 from holoclip.examples import (
     WEAK_NEGATIVE_METHOD,
     AlignmentSegmentExample,
@@ -287,3 +290,62 @@ def test_audit_warns_when_retrieval_documents_are_stale(tmp_path: Path) -> None:
         "retrieval index does not match" in warning
         for warning in report.warnings
     )
+
+
+
+def test_batch_audit_filters_by_learning_quality() -> None:
+    trusted = HumanClipExample(
+        id="trusted",
+        clip_url="https://youtu.be/trusted",
+        clip_title="trusted",
+        source_start=100,
+        source_end=160,
+        alignment_confidence=0.9,
+        alignment_method=ALIGNMENT_METHOD,
+        alignment_matched_anchors=4,
+        alignment_total_anchors=4,
+        alignment_segments=[
+            AlignmentSegmentExample(
+                clip_start=0,
+                clip_end=60,
+                source_start=100,
+                source_end=160,
+                confidence=0.9,
+                matched_anchors=4,
+            )
+        ],
+        setup="setup",
+        development="development",
+        payoff="payoff",
+        why_selected="why",
+    )
+    review = trusted.model_copy(
+        deep=True,
+        update={
+            "id": "review",
+            "clip_url": "https://youtu.be/review",
+            "clip_title": "review",
+            "alignment_method": "transcript-anchor-v2",
+        },
+    )
+
+    batch = build_human_example_audit_batch(
+        [trusted, review],
+        quality_filter=LearningQuality.REVIEW,
+    )
+
+    assert batch.total_examples == 2
+    assert batch.matched_examples == 1
+    assert batch.quality_counts == {
+        "trusted": 1,
+        "review": 1,
+        "rejected": 0,
+    }
+    assert batch.example_ids == ["review"]
+    assert [report.example_id for report in batch.reports] == ["review"]
+
+    rendered = format_human_example_audit_batch(batch)
+    assert "quality filter: review" in rendered
+    assert "matched examples: 1" in rendered
+    assert "example ids: review" in rendered
+    assert "id: review" in rendered
