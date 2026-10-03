@@ -14,6 +14,14 @@ from holoclip.structure_validation import (
 )
 
 
+REJECT_ALIGNMENT_CONFIDENCE = 0.55
+TRUSTED_MIN_ALIGNMENT_CONFIDENCE = 0.75
+TRUSTED_MIN_CLIP_COVERAGE = 0.70
+MIN_LARGE_CLIP_GAP_SECONDS = 30.0
+LARGE_CLIP_GAP_RATIO = 0.20
+SOURCE_HINT_REVIEW_DELTA_SECONDS = 600.0
+
+
 class LearningQuality(StrEnum):
     TRUSTED = "trusted"
     REVIEW = "review"
@@ -25,6 +33,7 @@ class LearningQualityReason(StrEnum):
     MISSING_ALIGNMENT_SEGMENTS = "missing_alignment_segments"
     MISSING_ALIGNMENT_CONFIDENCE = "missing_alignment_confidence"
     LOW_ALIGNMENT_CONFIDENCE = "low_alignment_confidence"
+    MARGINAL_ALIGNMENT_CONFIDENCE = "marginal_alignment_confidence"
     LEGACY_ALIGNMENT_METHOD = "legacy_alignment_method"
     LOW_CLIP_COVERAGE = "low_clip_coverage"
     LARGE_UNCOVERED_CLIP_GAP = "large_uncovered_clip_gap"
@@ -288,16 +297,21 @@ def evaluate_human_example_learning_quality(
     confidence = example.alignment_confidence
     if confidence is None:
         reasons.append(LearningQualityReason.MISSING_ALIGNMENT_CONFIDENCE)
-    elif confidence < 0.55:
+    elif confidence < REJECT_ALIGNMENT_CONFIDENCE:
         reasons.append(LearningQualityReason.LOW_ALIGNMENT_CONFIDENCE)
+    elif confidence < TRUSTED_MIN_ALIGNMENT_CONFIDENCE:
+        reasons.append(LearningQualityReason.MARGINAL_ALIGNMENT_CONFIDENCE)
 
     if example.alignment_method != ALIGNMENT_METHOD:
         reasons.append(LearningQualityReason.LEGACY_ALIGNMENT_METHOD)
 
     if metrics.clip_timeline_seconds > 0:
-        if metrics.clip_coverage_ratio < 0.70:
+        if metrics.clip_coverage_ratio < TRUSTED_MIN_CLIP_COVERAGE:
             reasons.append(LearningQualityReason.LOW_CLIP_COVERAGE)
-        gap_threshold = max(30.0, metrics.clip_timeline_seconds * 0.20)
+        gap_threshold = max(
+            MIN_LARGE_CLIP_GAP_SECONDS,
+            metrics.clip_timeline_seconds * LARGE_CLIP_GAP_RATIO,
+        )
         if metrics.largest_uncovered_clip_gap > gap_threshold:
             reasons.append(LearningQualityReason.LARGE_UNCOVERED_CLIP_GAP)
 
@@ -307,7 +321,10 @@ def evaluate_human_example_learning_quality(
         reasons.append(LearningQualityReason.NON_MONOTONIC_ALIGNMENT)
 
     source_hint_delta = _source_hint_delta(example)
-    if source_hint_delta is not None and abs(source_hint_delta) > 600.0:
+    if (
+        source_hint_delta is not None
+        and abs(source_hint_delta) > SOURCE_HINT_REVIEW_DELTA_SECONDS
+    ):
         reasons.append(LearningQualityReason.SOURCE_HINT_DISAGREEMENT)
 
     structure = validate_editorial_structure(example)
