@@ -59,6 +59,7 @@ from holoclip.evaluation import (
     append_feedback,
     build_run,
     candidate_pool_fingerprint,
+    compare_evaluation_metrics,
     compute_metrics,
     latest_feedback_index,
     load_feedback,
@@ -2149,6 +2150,75 @@ def review(
 
     if pending == 0:
         typer.echo("未評価の候補はありません。")
+
+
+@app.command()
+def retrieval_ab_metrics(
+    output_root: Path = typer.Option(
+        Path("data/evaluation/ab"),
+        "--output-root",
+    ),
+    feedback_file: Path = typer.Option(
+        Path("data/evaluation/feedback.jsonl"),
+        "--feedback-file",
+    ),
+    known_clips_file: Path | None = typer.Option(
+        None,
+        "--known-clips",
+    ),
+) -> None:
+    """Compare paired retrieval-OFF/ON evaluation metrics."""
+    baseline_runs = load_runs(output_root / "baseline")
+    retrieval_runs = load_runs(output_root / "retrieval")
+
+    baseline_streams = {run.stream_id for run in baseline_runs}
+    retrieval_streams = {run.stream_id for run in retrieval_runs}
+    if baseline_streams != retrieval_streams:
+        missing_retrieval = sorted(baseline_streams - retrieval_streams)
+        missing_baseline = sorted(retrieval_streams - baseline_streams)
+        typer.echo(
+            "paired A/B run directories do not contain the same stream ids",
+            err=True,
+        )
+        if missing_retrieval:
+            typer.echo(
+                "missing retrieval runs: " + ", ".join(missing_retrieval),
+                err=True,
+            )
+        if missing_baseline:
+            typer.echo(
+                "missing baseline runs: " + ", ".join(missing_baseline),
+                err=True,
+            )
+        raise typer.Exit(2)
+
+    feedback = load_feedback(feedback_file)
+    known_clips = load_known_clips(known_clips_file)
+    baseline = compute_metrics(
+        baseline_runs,
+        feedback,
+        known_clips,
+    )
+    retrieval = compute_metrics(
+        retrieval_runs,
+        feedback,
+        known_clips,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "paired_streams": len(baseline_streams),
+                "baseline": baseline.model_dump(mode="json"),
+                "retrieval": retrieval.model_dump(mode="json"),
+                "delta_retrieval_minus_baseline": compare_evaluation_metrics(
+                    baseline,
+                    retrieval,
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 @app.command()
