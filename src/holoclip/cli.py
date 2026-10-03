@@ -1137,6 +1137,7 @@ def examples_align(
             "alignment_confidence": alignment.confidence,
             "alignment_method": ALIGNMENT_METHOD,
             "alignment_matched_anchors": alignment.matched_anchors,
+            "alignment_total_anchors": alignment.total_anchors,
             "alignment_segments": (
                 [
                     {
