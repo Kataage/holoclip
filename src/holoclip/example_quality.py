@@ -60,6 +60,7 @@ class AlignmentQualityMetrics(BaseModel):
     explained_clip_coverage_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
     explained_uncovered_clip_seconds: float = 0.0
     explained_bridge_count: int = 0
+    largest_unexplained_clip_gap: float = 0.0
 
     aligned_source_seconds: float = 0.0
     source_bounding_seconds: float = 0.0
@@ -240,12 +241,14 @@ def compute_alignment_quality_metrics(
     )
     bridged_clip_seconds = 0.0
     explained_bridge_count = 0
+    explained_ranges = list(clip_ranges)
     for left, right in zip(clip_ordered, clip_ordered[1:], strict=False):
         bridge_seconds = explained_clip_bridge_seconds(left, right)
         if bridge_seconds <= 0:
             continue
         bridged_clip_seconds += bridge_seconds
         explained_bridge_count += 1
+        explained_ranges.append((left.clip_end, right.clip_start))
 
     explained_clip_seconds = min(
         clip_timeline_seconds,
@@ -259,6 +262,11 @@ def compute_alignment_quality_metrics(
     explained_uncovered_clip_seconds = max(
         0.0,
         clip_timeline_seconds - explained_clip_seconds,
+    )
+    largest_unexplained_clip_gap = _largest_uncovered_gap(
+        explained_ranges,
+        timeline_start=clip_timeline_start,
+        timeline_end=clip_timeline_end,
     )
 
     aligned_source_seconds = _union_seconds(source_ranges)
@@ -320,6 +328,7 @@ def compute_alignment_quality_metrics(
         explained_clip_coverage_ratio=explained_clip_coverage_ratio,
         explained_uncovered_clip_seconds=explained_uncovered_clip_seconds,
         explained_bridge_count=explained_bridge_count,
+        largest_unexplained_clip_gap=largest_unexplained_clip_gap,
         aligned_source_seconds=aligned_source_seconds,
         source_bounding_seconds=source_bounding_seconds,
         source_gap_seconds=source_gap_seconds,
@@ -395,7 +404,7 @@ def evaluate_human_example_learning_quality(
             MIN_LARGE_CLIP_GAP_SECONDS,
             metrics.clip_timeline_seconds * LARGE_CLIP_GAP_RATIO,
         )
-        if metrics.largest_uncovered_clip_gap > gap_threshold:
+        if metrics.largest_unexplained_clip_gap > gap_threshold:
             reasons.append(LearningQualityReason.LARGE_UNCOVERED_CLIP_GAP)
 
     if metrics.weak_singleton_count:
