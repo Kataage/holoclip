@@ -131,6 +131,44 @@ def test_weak_boundary_prevents_explained_gap_bridge() -> None:
     assert quality.decision is LearningQuality.REVIEW
 
 
+def test_sparse_weak_singleton_warning_does_not_block_strong_alignment() -> None:
+    item = example_with_segments(
+        [
+            aligned_segment(0, 20, 100, 120, confidence=0.9, anchors=3),
+            aligned_segment(20, 40, 120, 140, confidence=0.9, anchors=3),
+            aligned_segment(40, 60, 140, 160, confidence=0.65, anchors=1),
+            aligned_segment(60, 80, 160, 180, confidence=0.9, anchors=3),
+            aligned_segment(80, 100, 180, 200, confidence=0.9, anchors=3),
+            aligned_segment(100, 120, 200, 220, confidence=0.9, anchors=3),
+        ],
+    )
+
+    quality = evaluate_human_example_learning_quality(item)
+
+    assert quality.metrics.weak_singleton_count == 1
+    assert quality.metrics.weak_singleton_ratio == (1 / 6)
+    assert quality.decision is LearningQuality.TRUSTED
+    assert LearningQualityReason.WEAK_SINGLETON_ALIGNMENT not in quality.reasons
+
+
+def test_high_weak_singleton_ratio_routes_to_review() -> None:
+    item = example_with_segments(
+        [
+            aligned_segment(0, 20, 100, 120, confidence=0.65, anchors=1),
+            aligned_segment(20, 40, 120, 140, confidence=0.9, anchors=3),
+            aligned_segment(40, 60, 140, 160, confidence=0.65, anchors=1),
+            aligned_segment(60, 80, 160, 180, confidence=0.9, anchors=3),
+        ],
+    )
+
+    quality = evaluate_human_example_learning_quality(item)
+
+    assert quality.metrics.weak_singleton_count == 2
+    assert quality.metrics.weak_singleton_ratio == 0.5
+    assert quality.decision is LearningQuality.REVIEW
+    assert LearningQualityReason.WEAK_SINGLETON_ALIGNMENT in quality.reasons
+
+
 def test_sparse_multicut_is_preserved_for_review_not_rejected() -> None:
     item = example_with_segments(
         [
