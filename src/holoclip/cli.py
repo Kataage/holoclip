@@ -1299,6 +1299,7 @@ def examples_revalidate(
     async def _run() -> dict[str, object]:
         updated = 0
         alignment_changed = 0
+        alignment_geometry_changed = 0
         alignment_rejected = 0
         llm_reenriched = 0
         weak_negative_refreshed = 0
@@ -1352,6 +1353,8 @@ def examples_revalidate(
                     candidate = realigned.example
                     if realigned.alignment_changed:
                         alignment_changed += 1
+                    if realigned.alignment_geometry_changed:
+                        alignment_geometry_changed += 1
 
                     if not realigned.accepted:
                         alignment_rejected += 1
@@ -1367,7 +1370,7 @@ def examples_revalidate(
                         candidate
                     ).warnings
                     needs_llm = (
-                        realigned.alignment_changed
+                        realigned.alignment_geometry_changed
                         or bool(structure_warnings)
                         or not candidate.structure_method
                     )
@@ -1430,6 +1433,7 @@ def examples_revalidate(
             "total": len(examples),
             "updated": updated,
             "alignment_changed": alignment_changed,
+            "alignment_geometry_changed": alignment_geometry_changed,
             "alignment_rejected": alignment_rejected,
             "llm_reenriched": llm_reenriched,
             "weak_negative_refreshed": weak_negative_refreshed,
