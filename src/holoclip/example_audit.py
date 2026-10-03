@@ -577,6 +577,13 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
             "largest uncovered clip gap: "
             f"{report.alignment_quality.largest_uncovered_clip_gap:.1f}s"
         ),
+        f"explained bridge seconds: {report.alignment_quality.bridged_clip_seconds:.1f}s",
+        f"explained bridge count: {report.alignment_quality.explained_bridge_count}",
+        f"explained clip coverage: {report.alignment_quality.explained_clip_coverage_ratio:.1%}",
+        (
+            "explained clip uncovered: "
+            f"{report.alignment_quality.explained_uncovered_clip_seconds:.1f}s"
+        ),
         f"source selected: {report.source_selected_seconds:.1f}s",
         f"removed/gap inside bounding range: {report.source_gap_seconds:.1f}s",
         (
@@ -622,6 +629,10 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
                 "=== Source-resolution provenance ===",
                 f"declared source URL: {report.declared_source_url}",
                 f"auto detected: {report.source_auto_detected}",
+                (
+                    "timestamp authoritative: "
+                    f"{report.source_hint_authoritative}"
+                ),
                 f"reason: {report.source_resolution_reason or '-'}",
                 f"score: {report.source_resolution_score if report.source_resolution_score is not None else '-'}",
             ]
@@ -634,6 +645,31 @@ def format_human_example_audit(report: HumanExampleAuditReport) -> str:
             lines.append(
                 "first alignment - declared hint: "
                 f"{report.first_alignment_delta_from_hint:+.1f}s"
+            )
+
+    if report.uncovered_clip_ranges:
+        lines.extend(
+            [
+                "",
+                f"=== Uncovered clip ranges ({len(report.uncovered_clip_ranges)}) ===",
+            ]
+        )
+        for index, gap in enumerate(report.uncovered_clip_ranges, start=1):
+            lines.append(
+                f"#{index} {_clock(gap.start)} - {_clock(gap.end)} "
+                f"({gap.seconds:.1f}s)"
+            )
+            if gap.source_gap_seconds is not None:
+                lines.append(
+                    f"  source gap between anchors: {gap.source_gap_seconds:.1f}s"
+                )
+            if gap.source_cut_seconds is not None:
+                lines.append(
+                    f"  inferred source cut: {gap.source_cut_seconds:+.1f}s"
+                )
+            lines.append(f"  explained bridge: {gap.explained_bridge}")
+            lines.append(
+                f"  clip text: {_short(gap.transcript_excerpt, 420) or '(none)'}"
             )
 
     for segment in report.alignment_segments:
