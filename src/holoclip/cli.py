@@ -55,14 +55,17 @@ from holoclip.example_ingest import (
 )
 from holoclip.evaluation import (
     FeedbackRecord,
+    RetrievalABManifest,
     append_feedback,
     build_run,
+    candidate_pool_fingerprint,
     compute_metrics,
     latest_feedback_index,
     load_feedback,
     load_known_clips,
     load_run,
     load_runs,
+    save_retrieval_ab_manifest,
     save_run,
 )
 from holoclip.learning import (
@@ -72,6 +75,7 @@ from holoclip.learning import (
 from holoclip.media import play_media_segment
 from holoclip.migration import migrate_legacy_data, report_as_json
 from holoclip.models import ReviewDecision
+from holoclip.providers.embedding.base import EmbeddingProviderError
 from holoclip.providers.embedding.nvidia_nim import (
     NvidiaEmbeddingAuthorizationError,
     NvidiaEmbeddingRateLimitDeferred,
@@ -84,7 +88,12 @@ from holoclip.providers.llm.nvidia_nim import (
     NvidiaNimTimeoutError,
 )
 from holoclip.repository import SQLiteCanonicalRepository
-from holoclip.retrieval import index_human_examples, retrieve_structural_examples
+from holoclip.retrieval import (
+    RETRIEVAL_VERSION,
+    index_human_examples,
+    retrieval_corpus_fingerprint,
+    retrieve_structural_examples,
+)
 from holoclip.transcript import chunk_segments, load_transcript, save_transcript
 from holoclip.structure_validation import validate_editorial_structure
 from holoclip.transcription import transcribe_media
@@ -337,6 +346,247 @@ def discover(
 
     typer.echo(f"saved evaluation run: {run_path}")
     typer.echo(json.dumps({"candidates": result}, ensure_ascii=False, indent=2))
+
+
+@app.command()
+def retrieval_ab(
+    transcript: Path = typer.Argument(..., exists=True, readable=True),
+    stream_id: str | None = typer.Option(None, "--stream-id"),
+    top_k: int = typer.Option(5, "--top-k", min=1, max=20),
+    window_minutes: float = typer.Option(
+        10.0,
+        "--window-minutes",
+        min=2.0,
+        max=30.0,
+    ),
+    overlap_minutes: float = typer.Option(
+        2.0,
+        "--overlap-minutes",
+        min=0.0,
+        max=10.0,
+    ),
+    positive_k: int = typer.Option(3, "--positive-k", min=0, max=20),
+    negative_k: int = typer.Option(3, "--negative-k", min=0, max=20),
+    final_temperature: float = typer.Option(
+        0.0,
+        "--final-temperature",
+        min=0.0,
+        max=2.0,
+    ),
+    output_root: Path = typer.Option(
+        Path("data/evaluation/ab"),
+        "--output-root",
+    ),
+    database: Path = typer.Option(
+        Path("data/holoclip.db"),
+        "--database",
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Replace an existing paired run for the same stream id.",
+    ),
+) -> None:
+    """Run paired retrieval-OFF/ON final selection over one frozen broad pool."""
+    _load_env_file()
+    nim_settings = NimSettings.from_env()
+    embedding_settings = NimEmbeddingSettings.from_env()
+    segments = load_transcript(transcript)
+    resolved_stream_id = stream_id or transcript.stem
+
+    baseline_path = output_root / "baseline" / f"{resolved_stream_id}.json"
+    retrieval_path = output_root / "retrieval" / f"{resolved_stream_id}.json"
+    manifest_path = output_root / "manifests" / f"{resolved_stream_id}.json"
+
+    existing = [
+        path
+        for path in (baseline_path, retrieval_path, manifest_path)
+        if path.exists()
+    ]
+    if existing and not overwrite:
+        typer.echo(
+            "paired evaluation output already exists; "
+            "use --overwrite to replace it:",
+            err=True,
+        )
+        for path in existing:
+            typer.echo(f"  {path}", err=True)
+        raise typer.Exit(2)
+
+    chunks = chunk_segments(
+        segments,
+        window_seconds=window_minutes * 60.0,
+        overlap_seconds=overlap_minutes * 60.0,
+    )
+
+    async def _run(
+        stage_cache: StageArtifactCache,
+        repository: SQLiteCanonicalRepository,
+    ) -> dict[str, object]:
+        async with NvidiaNimClient(
+            nim_settings,
+            event_callback=typer.echo,
+        ) as llm:
+            baseline_detector = CandidateDetector(
+                llm,
+                fast_model=nim_settings.fast_model,
+                strong_model=nim_settings.model,
+                fast_reasoning_effort=nim_settings.fast_reasoning_effort,
+                strong_reasoning_effort=nim_settings.strong_reasoning_effort,
+                progress=typer.echo,
+                stage_cache=stage_cache,
+                cache_provider="nvidia_nim",
+                final_temperature=final_temperature,
+            )
+
+            typer.echo(
+                f"A/B broad discovery: {len(chunks)} transcript chunks "
+                "(executed once for both variants)"
+            )
+            broad = await baseline_detector.discover_broad(chunks)
+            pool_fingerprint = candidate_pool_fingerprint(broad)
+
+            typer.echo("A/B baseline final review: retrieval OFF")
+            baseline_candidates = await baseline_detector.final_select(
+                broad,
+                top_k=top_k,
+            )
+
+            async with NvidiaNimEmbeddingClient(
+                embedding_settings
+            ) as embedding:
+                documents = repository.list_retrieval_documents(
+                    embedding_model=embedding.model,
+                    embedding_version=RETRIEVAL_VERSION,
+                )
+                if not documents:
+                    raise RuntimeError(
+                        "retrieval index is empty for the configured embedding model"
+                    )
+                corpus_fingerprint = retrieval_corpus_fingerprint(documents)
+
+                retrieval_detector = CandidateDetector(
+                    llm,
+                    fast_model=nim_settings.fast_model,
+                    strong_model=nim_settings.model,
+                    fast_reasoning_effort=nim_settings.fast_reasoning_effort,
+                    strong_reasoning_effort=nim_settings.strong_reasoning_effort,
+                    progress=typer.echo,
+                    stage_cache=stage_cache,
+                    cache_provider="nvidia_nim",
+                    embedding_provider=embedding,
+                    retrieval_repository=repository,
+                    retrieval_positive_k=positive_k,
+                    retrieval_negative_k=negative_k,
+                    final_temperature=final_temperature,
+                    strict_retrieval=True,
+                )
+                typer.echo("A/B retrieval final review: retrieval ON")
+                retrieval_candidates = await retrieval_detector.final_select(
+                    broad,
+                    top_k=top_k,
+                )
+
+            shared_metadata = {
+                "experiment": "retrieval-ab-v1",
+                "candidate_pool_count": len(broad),
+                "candidate_pool_fingerprint": pool_fingerprint,
+                "retrieval_version": RETRIEVAL_VERSION,
+                "retrieval_document_count": len(documents),
+                "retrieval_corpus_fingerprint": corpus_fingerprint,
+                "embedding_model": embedding_settings.model,
+                "positive_k": positive_k,
+                "negative_k": negative_k,
+                "top_k": top_k,
+                "window_minutes": window_minutes,
+                "overlap_minutes": overlap_minutes,
+                "fast_model": nim_settings.fast_model,
+                "strong_model": nim_settings.model,
+                "final_temperature": final_temperature,
+            }
+
+            baseline_run = build_run(
+                stream_id=resolved_stream_id,
+                transcript_path=str(transcript),
+                candidates=baseline_candidates,
+                metadata={
+                    **shared_metadata,
+                    "variant": "baseline",
+                    "retrieval_enabled": False,
+                },
+            )
+            retrieval_run = build_run(
+                stream_id=resolved_stream_id,
+                transcript_path=str(transcript),
+                candidates=retrieval_candidates,
+                metadata={
+                    **shared_metadata,
+                    "variant": "retrieval",
+                    "retrieval_enabled": True,
+                },
+            )
+            save_run(baseline_run, baseline_path)
+            save_run(retrieval_run, retrieval_path)
+            save_retrieval_ab_manifest(
+                RetrievalABManifest(
+                    stream_id=resolved_stream_id,
+                    transcript_path=str(transcript),
+                    baseline_run_path=str(baseline_path),
+                    retrieval_run_path=str(retrieval_path),
+                    candidate_pool_count=len(broad),
+                    candidate_pool_fingerprint=pool_fingerprint,
+                    retrieval_document_count=len(documents),
+                    retrieval_corpus_fingerprint=corpus_fingerprint,
+                    retrieval_version=RETRIEVAL_VERSION,
+                    embedding_model=embedding_settings.model,
+                    positive_k=positive_k,
+                    negative_k=negative_k,
+                    top_k=top_k,
+                    window_minutes=window_minutes,
+                    overlap_minutes=overlap_minutes,
+                    fast_model=nim_settings.fast_model,
+                    strong_model=nim_settings.model,
+                    final_temperature=final_temperature,
+                ),
+                manifest_path,
+            )
+
+            return {
+                "stream_id": resolved_stream_id,
+                "broad_candidates": len(broad),
+                "candidate_pool_fingerprint": pool_fingerprint,
+                "retrieval_documents": len(documents),
+                "retrieval_corpus_fingerprint": corpus_fingerprint,
+                "baseline_selected": len(baseline_candidates),
+                "retrieval_selected": len(retrieval_candidates),
+                "baseline_run": str(baseline_path),
+                "retrieval_run": str(retrieval_path),
+                "manifest": str(manifest_path),
+            }
+
+    try:
+        with SQLiteCanonicalRepository(database) as repository:
+            stage_cache = StageArtifactCache(
+                repository,
+                Path("data/artifacts/stages"),
+            )
+            result = asyncio.run(_run(stage_cache, repository))
+    except NvidiaNimAuthorizationError as exc:
+        typer.echo(f"NVIDIA NIM error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except NvidiaNimTimeoutError as exc:
+        typer.echo(f"NVIDIA NIM timeout: {exc}", err=True)
+        raise typer.Exit(3) from exc
+    except (
+        NvidiaEmbeddingAuthorizationError,
+        NvidiaEmbeddingRateLimitDeferred,
+        EmbeddingProviderError,
+        RuntimeError,
+    ) as exc:
+        typer.echo(f"retrieval A/B failed: {exc}", err=True)
+        raise typer.Exit(4) from exc
+
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 @app.command()
