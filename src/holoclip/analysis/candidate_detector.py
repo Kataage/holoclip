@@ -64,7 +64,16 @@ def _overlap_ratio(left: ClipCandidate, right: ClipCandidate) -> float:
 
 
 def dedupe_candidates(candidates: list[ClipCandidate]) -> list[ClipCandidate]:
-    ordered = sorted(candidates, key=lambda item: item.confidence, reverse=True)
+    ordered = sorted(
+        candidates,
+        key=lambda item: (
+            -item.confidence,
+            item.start,
+            item.end,
+            item.working_title,
+            tuple(sorted(item.source_chunk_ids)),
+        ),
+    )
     kept: list[ClipCandidate] = []
 
     for candidate in ordered:
@@ -207,19 +216,24 @@ class CandidateDetector:
             return chunk, await self._discover_chunk(chunk)
 
         tasks = [asyncio.create_task(run_one(chunk)) for chunk in chunks]
-        flattened: list[ClipCandidate] = []
+        batches_by_chunk_id: dict[str, list[ClipCandidate]] = {}
         completed = 0
 
         for task in asyncio.as_completed(tasks):
             chunk, batch = await task
             completed += 1
-            flattened.extend(batch)
+            batches_by_chunk_id[chunk.id] = batch
             self._emit(
                 f"[{completed}/{len(chunks)}] broad "
                 f"{chunk.start / 60:.1f}-{chunk.end / 60:.1f} min: "
                 f"{len(batch)} candidates"
             )
 
+        flattened = [
+            candidate
+            for chunk in chunks
+            for candidate in batches_by_chunk_id.get(chunk.id, [])
+        ]
         deduped = dedupe_candidates(flattened)
         self._emit(f"Broad discovery: {len(flattened)} raw -> {len(deduped)} deduped")
         return deduped
