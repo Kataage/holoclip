@@ -5,7 +5,11 @@ from typing import Any
 
 import pytest
 
-from holoclip.examples import AlignmentSegmentExample, HumanClipExample
+from holoclip.examples import (
+    WEAK_NEGATIVE_METHOD,
+    AlignmentSegmentExample,
+    HumanClipExample,
+)
 from holoclip.execution import StageArtifactCache
 from holoclip.learning import build_adjacent_weak_negatives, enrich_human_clip_example
 from holoclip.models import TranscriptSegment
@@ -114,6 +118,7 @@ async def test_enrich_human_clip_example_sets_structure_and_negatives() -> None:
     assert enriched.traits == ["setup_payoff", "unexpected_confession"]
     assert enriched.structure_method == "glm-structure-v1"
     assert enriched.structure_model == "strong-model"
+    assert enriched.weak_negative_method == WEAK_NEGATIVE_METHOD
     assert len(enriched.weak_negatives) == 2
 
 
