@@ -111,6 +111,7 @@ def test_coherent_anchor_gaps_count_toward_explained_coverage() -> None:
     assert quality.metrics.bridged_clip_seconds == 80
     assert quality.metrics.explained_clip_coverage_ratio == 1.0
     assert quality.metrics.explained_bridge_count == 2
+    assert quality.metrics.largest_unexplained_clip_gap == 0
     assert quality.decision is LearningQuality.TRUSTED
     assert LearningQualityReason.LOW_CLIP_COVERAGE not in quality.reasons
 
