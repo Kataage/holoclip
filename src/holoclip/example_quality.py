@@ -8,6 +8,10 @@ from pydantic import BaseModel, Field
 
 from holoclip.alignment import ALIGNMENT_METHOD, WEAK_SINGLETON_MAX_CONFIDENCE
 from holoclip.examples import HumanClipExample
+from holoclip.structure_validation import (
+    StructureWarningCode,
+    validate_editorial_structure,
+)
 
 
 class LearningQuality(StrEnum):
@@ -27,6 +31,8 @@ class LearningQualityReason(StrEnum):
     WEAK_SINGLETON_ALIGNMENT = "weak_singleton_alignment"
     NON_MONOTONIC_ALIGNMENT = "non_monotonic_alignment"
     SOURCE_HINT_DISAGREEMENT = "source_hint_disagreement"
+    STRUCTURE_INCOMPLETE = "structure_incomplete"
+    STRUCTURE_TRAIT_CONTRADICTION = "structure_trait_contradiction"
 
 
 class AlignmentQualityMetrics(BaseModel):
@@ -303,6 +309,18 @@ def evaluate_human_example_learning_quality(
     source_hint_delta = _source_hint_delta(example)
     if source_hint_delta is not None and abs(source_hint_delta) > 600.0:
         reasons.append(LearningQualityReason.SOURCE_HINT_DISAGREEMENT)
+
+    structure = validate_editorial_structure(example)
+    if any(
+        warning.code is StructureWarningCode.INCOMPLETE
+        for warning in structure.warnings
+    ):
+        reasons.append(LearningQualityReason.STRUCTURE_INCOMPLETE)
+    if any(
+        warning.code is StructureWarningCode.UNRESOLVED_SETUP_PAYOFF
+        for warning in structure.warnings
+    ):
+        reasons.append(LearningQualityReason.STRUCTURE_TRAIT_CONTRADICTION)
 
     if LearningQualityReason.LOW_ALIGNMENT_CONFIDENCE in reasons:
         decision = LearningQuality.REJECTED
