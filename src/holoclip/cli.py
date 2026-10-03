@@ -57,6 +57,7 @@ from holoclip.evaluation import (
     FeedbackRecord,
     RetrievalABManifest,
     append_feedback,
+    build_blind_ab_run,
     build_run,
     candidate_pool_fingerprint,
     compare_evaluation_metrics,
@@ -397,11 +398,12 @@ def retrieval_ab(
 
     baseline_path = output_root / "baseline" / f"{resolved_stream_id}.json"
     retrieval_path = output_root / "retrieval" / f"{resolved_stream_id}.json"
+    blind_path = output_root / "blind" / f"{resolved_stream_id}.json"
     manifest_path = output_root / "manifests" / f"{resolved_stream_id}.json"
 
     existing = [
         path
-        for path in (baseline_path, retrieval_path, manifest_path)
+        for path in (baseline_path, retrieval_path, blind_path, manifest_path)
         if path.exists()
     ]
     if existing and not overwrite:
@@ -526,14 +528,20 @@ def retrieval_ab(
                     "retrieval_enabled": True,
                 },
             )
+            blind_run = build_blind_ab_run(
+                baseline_run,
+                retrieval_run,
+            )
             save_run(baseline_run, baseline_path)
             save_run(retrieval_run, retrieval_path)
+            save_run(blind_run, blind_path)
             save_retrieval_ab_manifest(
                 RetrievalABManifest(
                     stream_id=resolved_stream_id,
                     transcript_path=str(transcript),
                     baseline_run_path=str(baseline_path),
                     retrieval_run_path=str(retrieval_path),
+                    blind_run_path=str(blind_path),
                     candidate_pool_count=len(broad),
                     candidate_pool_fingerprint=pool_fingerprint,
                     retrieval_document_count=len(documents),
@@ -562,6 +570,7 @@ def retrieval_ab(
                 "retrieval_selected": len(retrieval_candidates),
                 "baseline_run": str(baseline_path),
                 "retrieval_run": str(retrieval_path),
+                "blind_run": str(blind_path),
                 "manifest": str(manifest_path),
             }
 
