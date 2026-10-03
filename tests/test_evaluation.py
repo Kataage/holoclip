@@ -4,10 +4,12 @@ from holoclip.evaluation import (
     FeedbackRecord,
     KnownClip,
     build_blind_ab_run,
+    build_guided_only_run,
     build_retrieval_ab_diff,
     build_run,
     candidate_pool_fingerprint,
     compare_evaluation_metrics,
+    compute_guided_discovery_metrics,
     compute_metrics,
     known_clip_hit,
 )
@@ -374,3 +376,103 @@ def test_retrieval_ab_diff_reports_rank_and_retrieval_evidence() -> None:
     assert retrieval_row.weak_negative_examples == [
         {"example_id": "negative-example", "score": 0.72}
     ]
+
+
+
+def test_guided_only_run_contains_only_new_blinded_candidates() -> None:
+    baseline = [
+        candidate(10, 20, "baseline-a"),
+        candidate(30, 40, "baseline-b"),
+    ]
+    guided_new = candidate(50, 60, "guided-new")
+    guided_new.confidence = 0.91
+    guided_new.retrieval_trace = CandidateRetrievalTrace(
+        embedding_model="embed",
+        embedding_version="v2",
+        positives=[
+            CandidateRetrievalHit(
+                document_id="doc",
+                example_id="example",
+                score=0.9,
+            )
+        ],
+    )
+
+    run = build_guided_only_run(
+        stream_id="stream",
+        transcript_path="stream.json",
+        baseline_pool=baseline,
+        guided_pool=[*baseline, guided_new],
+    )
+
+    assert len(run.candidates) == 1
+    item = run.candidates[0]
+    assert item.candidate.working_title == "guided-new"
+    assert item.candidate.confidence == 0.5
+    assert item.candidate.retrieval_trace is None
+    assert item.id == build_run(
+        stream_id="stream",
+        transcript_path="stream.json",
+        candidates=[guided_new],
+    ).candidates[0].id
+    assert run.metadata == {
+        "experiment": "guided-only-blind-v1",
+        "blinded": True,
+    }
+
+
+def test_guided_discovery_metrics_reports_selector_misses() -> None:
+    guided = build_guided_only_run(
+        stream_id="stream",
+        transcript_path="stream.json",
+        baseline_pool=[],
+        guided_pool=[
+            candidate(10, 20, "accept-missed"),
+            candidate(30, 40, "maybe-selected"),
+            candidate(50, 60, "reject"),
+        ],
+    )
+    by_title = {
+        item.candidate.working_title: item
+        for item in guided.candidates
+    }
+    treatment = EvaluationRun(
+        stream_id="stream",
+        transcript_path="stream.json",
+        candidates=[
+            by_title["maybe-selected"].model_copy(update={"rank": 1})
+        ],
+    )
+    feedback = [
+        FeedbackRecord(
+            stream_id="stream",
+            candidate_id=by_title["accept-missed"].id,
+            decision=ReviewDecision.ACCEPT,
+        ),
+        FeedbackRecord(
+            stream_id="stream",
+            candidate_id=by_title["maybe-selected"].id,
+            decision=ReviewDecision.MAYBE,
+        ),
+        FeedbackRecord(
+            stream_id="stream",
+            candidate_id=by_title["reject"].id,
+            decision=ReviewDecision.REJECT,
+        ),
+    ]
+
+    metrics = compute_guided_discovery_metrics(
+        [guided],
+        [treatment],
+        feedback,
+    )
+
+    assert metrics.guided_only_candidates == 3
+    assert metrics.labeled_candidates == 3
+    assert metrics.accepted == 1
+    assert metrics.maybe == 1
+    assert metrics.rejected == 1
+    assert metrics.accept_rate == (1 / 3)
+    assert metrics.usable_rate == (2 / 3)
+    assert metrics.accepted_not_selected == 1
+    assert metrics.usable_not_selected == 1
