@@ -72,6 +72,23 @@ def test_temporal_coverage_uses_interval_union() -> None:
     assert metrics.largest_uncovered_clip_gap == 20
 
 
+def test_clip_duration_includes_unaligned_tail_in_coverage() -> None:
+    item = example_with_segments(
+        [aligned_segment(0, 80, 100, 180, anchors=6)]
+    )
+    item.clip_duration_seconds = 100
+
+    metrics = compute_alignment_quality_metrics(item)
+
+    assert metrics.clip_timeline_start == 0
+    assert metrics.clip_timeline_end == 100
+    assert metrics.clip_timeline_seconds == 100
+    assert metrics.aligned_clip_seconds == 80
+    assert metrics.clip_coverage_ratio == 0.8
+    assert metrics.uncovered_clip_seconds == 20
+    assert metrics.largest_uncovered_clip_gap == 20
+
+
 def test_continuous_current_alignment_is_trusted() -> None:
     item = example_with_segments(
         [aligned_segment(0, 60, 100, 160, anchors=6)]
