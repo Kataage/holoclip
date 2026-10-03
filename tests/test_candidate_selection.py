@@ -7,6 +7,12 @@ from holoclip.analysis.candidate_detector import (
     dedupe_candidates,
     merge_guided_candidates,
 )
+from holoclip.editorial_profile import (
+    EditorialPattern,
+    EditorialProfile,
+    LearningReadiness,
+    PatternMaturity,
+)
 from holoclip.evaluation import candidate_pool_fingerprint
 from holoclip.models import ClipCandidate, TranscriptChunk
 
@@ -16,9 +22,11 @@ class FakeLLM:
         self.response = response
         self.calls = 0
         self.kwargs: list[dict[str, object]] = []
+        self.args: list[tuple[object, ...]] = []
 
     async def chat_json(self, *args: object, **kwargs: object) -> dict[str, object]:
         self.calls += 1
+        self.args.append(tuple(args))
         self.kwargs.append(dict(kwargs))
         return self.response
 
@@ -244,3 +252,92 @@ def test_merge_guided_candidates_zero_new_keeps_baseline_unchanged() -> None:
     assert [item.model_dump() for item in merged] == [
         item.model_dump() for item in baseline
     ]
+
+
+
+def ready_profile() -> EditorialProfile:
+    return EditorialProfile(
+        model="strong",
+        corpus_fingerprint="profile-fp",
+        trusted_example_ids=[f"e{i}" for i in range(30)],
+        trusted_examples=30,
+        unique_streams=15,
+        global_principles=["Prefer a clear turn and payoff."],
+        rejection_principles=["Reject unresolved rambling."],
+        boundary_principles=["Include enough setup to understand the turn."],
+        patterns=[
+            EditorialPattern(
+                id="p1",
+                name="Contrast payoff",
+                mechanism="ordinary setup turns into a surprising payoff",
+                observable_cues=["clear turn"],
+                must_have=["payoff"],
+                anti_patterns=["no turn"],
+                support_example_ids=["e1", "e2", "e3"],
+                support_stream_ids=["s1", "s2"],
+                maturity=PatternMaturity.CORE,
+                confidence=0.9,
+            )
+        ],
+        readiness=LearningReadiness(
+            ready=True,
+            trusted_examples=30,
+            unique_streams=15,
+            core_patterns=5,
+            core_coverage_ratio=0.8,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_ready_editorial_profile_is_sent_to_broad_discovery() -> None:
+    llm = FakeLLM({"candidates": []})
+    detector = CandidateDetector(
+        llm,
+        fast_model="fast",
+        strong_model="strong",
+        editorial_profile=ready_profile(),
+    )
+    chunk = TranscriptChunk(
+        id="chunk-0000",
+        start=0,
+        end=60,
+        text="雑談から意外な展開になり最後にオチがつく",
+        segment_indices=[0],
+    )
+
+    result = await detector.discover_broad([chunk])
+
+    assert result == []
+    messages = llm.args[0][0]
+    user_prompt = messages[1]["content"]
+    assert "Learned editorial profile" in user_prompt
+    assert "Contrast payoff" in user_prompt
+    assert "Reject unresolved rambling" in user_prompt
+
+
+@pytest.mark.asyncio
+async def test_unready_editorial_profile_is_not_used() -> None:
+    profile = ready_profile().model_copy(deep=True)
+    profile.readiness = profile.readiness.model_copy(
+        update={"ready": False, "reasons": ["not enough examples"]}
+    )
+    llm = FakeLLM({"candidates": []})
+    detector = CandidateDetector(
+        llm,
+        fast_model="fast",
+        strong_model="strong",
+        editorial_profile=profile,
+    )
+    chunk = TranscriptChunk(
+        id="chunk-0000",
+        start=0,
+        end=60,
+        text="雑談",
+        segment_indices=[0],
+    )
+
+    await detector.discover_broad([chunk])
+
+    messages = llm.args[0][0]
+    assert "Learned editorial profile" not in messages[1]["content"]
