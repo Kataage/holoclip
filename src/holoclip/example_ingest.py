@@ -285,6 +285,10 @@ async def ingest_human_example_from_urls(
         ),
         clip_transcript_path=str(clip_transcript_path),
         source_transcript_path=str(source_transcript_path),
+        clip_duration_seconds=max(
+            (segment.end for segment in clip_segments),
+            default=0.0,
+        ),
         transcript_excerpt=excerpt,
         notes=(
             f"ingested via SourceProvider={type(source_provider).__name__}; "
