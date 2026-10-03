@@ -361,3 +361,60 @@ async def test_guided_discovery_adds_new_candidate_without_replacing_baseline(
     assert "positive-doc" in prompt
     assert "negative-doc" in prompt
     assert "Return only ADDITIONAL candidates" in prompt
+
+
+
+@pytest.mark.asyncio
+async def test_guided_discovery_can_be_final_ranked_without_retrieval_trace(
+    tmp_path: Path,
+) -> None:
+    guided_llm = GuidedRecordingLLM()
+    final_llm = RecordingLLM()
+    provider = FakeEmbeddingProvider()
+    chunk = TranscriptChunk(
+        id="chunk-0000",
+        start=0,
+        end=300,
+        text="長い雑談の中で複数の話題が続く",
+        segment_indices=[0],
+    )
+    baseline = candidate().model_copy(
+        update={"source_chunk_ids": ["chunk-0000"]}
+    )
+
+    with SQLiteCanonicalRepository(tmp_path / "holoclip.db") as repository:
+        repository.upsert_retrieval_document(
+            retrieval_document(
+                document_id="positive-doc",
+                kind="positive",
+                example_id="positive-example",
+                text="setup: 雑談\ndevelopment: 告白\npayoff: オチ",
+                vector=[1.0, 0.0],
+            )
+        )
+        guided_detector = CandidateDetector(
+            guided_llm,
+            fast_model="fast",
+            strong_model="strong",
+            embedding_provider=provider,
+            retrieval_repository=repository,
+            strict_retrieval=True,
+        )
+        expanded = await guided_detector.discover_guided(
+            [chunk],
+            [baseline],
+        )
+
+    baseline_selector = CandidateDetector(
+        final_llm,
+        fast_model="fast",
+        strong_model="strong",
+        final_temperature=0.0,
+    )
+    selected = await baseline_selector.final_select(expanded, top_k=1)
+
+    assert selected
+    assert selected[0].retrieval_trace is None
+    assert final_llm.messages is not None
+    assert "positive_examples" not in final_llm.messages[1]["content"]
+    assert "weak_negatives" not in final_llm.messages[1]["content"]

@@ -48,6 +48,8 @@ class RetrievalABManifest(BaseModel):
     fast_model: str
     strong_model: str
     final_temperature: float = Field(ge=0)
+    guided_discovery_enabled: bool = False
+    final_retrieval_enabled: bool = False
 
 
 class FeedbackRecord(BaseModel):

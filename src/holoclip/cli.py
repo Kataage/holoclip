@@ -521,17 +521,17 @@ def retrieval_ab(
                     len(retrieval_pool) - len(broad),
                 )
                 typer.echo(
-                    "A/B retrieval final review: "
+                    "A/B guided final review: retrieval OFF; "
                     f"{len(retrieval_pool)} candidates "
                     f"({guided_added_candidates} added by guided discovery)"
                 )
-                retrieval_candidates = await retrieval_detector.final_select(
+                retrieval_candidates = await baseline_detector.final_select(
                     retrieval_pool,
                     top_k=top_k,
                 )
 
             shared_metadata = {
-                "experiment": "retrieval-guided-ab-v2",
+                "experiment": "retrieval-guided-ab-v3",
                 "candidate_pool_count": len(broad),
                 "candidate_pool_fingerprint": pool_fingerprint,
                 "retrieval_candidate_pool_count": len(retrieval_pool),
@@ -551,6 +551,8 @@ def retrieval_ab(
                 "fast_model": nim_settings.fast_model,
                 "strong_model": nim_settings.model,
                 "final_temperature": final_temperature,
+                "guided_discovery_enabled": True,
+                "final_retrieval_enabled": False,
             }
 
             baseline_run = build_run(
@@ -561,6 +563,8 @@ def retrieval_ab(
                     **shared_metadata,
                     "variant": "baseline",
                     "retrieval_enabled": False,
+                    "guided_discovery_enabled": False,
+                    "final_retrieval_enabled": False,
                 },
             )
             retrieval_run = build_run(
@@ -571,6 +575,8 @@ def retrieval_ab(
                     **shared_metadata,
                     "variant": "retrieval",
                     "retrieval_enabled": True,
+                    "guided_discovery_enabled": True,
+                    "final_retrieval_enabled": False,
                 },
             )
             blind_run = build_blind_ab_run(
@@ -606,6 +612,8 @@ def retrieval_ab(
                     fast_model=nim_settings.fast_model,
                     strong_model=nim_settings.model,
                     final_temperature=final_temperature,
+                    guided_discovery_enabled=True,
+                    final_retrieval_enabled=False,
                 ),
                 manifest_path,
             )
