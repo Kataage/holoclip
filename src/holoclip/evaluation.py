@@ -30,6 +30,7 @@ class RetrievalABManifest(BaseModel):
     transcript_path: str
     baseline_run_path: str
     retrieval_run_path: str
+    blind_run_path: str | None = None
     candidate_pool_count: int
     candidate_pool_fingerprint: str
     retrieval_document_count: int
@@ -104,6 +105,52 @@ def build_run(
             )
             for index, candidate in enumerate(candidates)
         ],
+    )
+
+
+def build_blind_ab_run(
+    baseline: EvaluationRun,
+    retrieval: EvaluationRun,
+) -> EvaluationRun:
+    if baseline.stream_id != retrieval.stream_id:
+        raise ValueError("paired runs must have the same stream_id")
+    if baseline.transcript_path != retrieval.transcript_path:
+        raise ValueError("paired runs must have the same transcript_path")
+
+    by_id: dict[str, EvaluationCandidate] = {}
+    for run in (baseline, retrieval):
+        for item in run.candidates:
+            if item.id in by_id:
+                continue
+            candidate = item.candidate.model_copy(deep=True)
+            candidate.retrieval_trace = None
+            candidate.confidence = 0.5
+            by_id[item.id] = EvaluationCandidate(
+                id=item.id,
+                rank=1,
+                candidate=candidate,
+            )
+
+    def blind_key(item: EvaluationCandidate) -> str:
+        raw = (
+            f"retrieval-ab-blind-v1|{baseline.stream_id}|{item.id}"
+        ).encode("utf-8")
+        return hashlib.sha256(raw).hexdigest()
+
+    ordered = sorted(by_id.values(), key=blind_key)
+    candidates = [
+        item.model_copy(update={"rank": index + 1})
+        for index, item in enumerate(ordered)
+    ]
+    return EvaluationRun(
+        stream_id=baseline.stream_id,
+        transcript_path=baseline.transcript_path,
+        media_path=baseline.media_path or retrieval.media_path,
+        metadata={
+            "experiment": "retrieval-ab-blind-v1",
+            "blinded": True,
+        },
+        candidates=candidates,
     )
 
 
