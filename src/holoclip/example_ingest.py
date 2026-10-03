@@ -240,8 +240,16 @@ async def ingest_human_example_from_urls(
         ):
             raise ClipPolicyGateError(range_policy, stage="aligned_ranges")
 
+    resolved_metadata_policy = ClipPolicyEvaluation(
+        decision=PolicyDecision.ALLOW,
+        findings=[
+            finding
+            for finding in metadata_policy.findings
+            if not finding.defer_until_ranges
+        ],
+    )
     combined_policy = combine_policy_evaluations(
-        metadata_policy,
+        resolved_metadata_policy,
         range_policy,
     )
 
