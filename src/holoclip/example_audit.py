@@ -12,6 +12,8 @@ from holoclip.example_quality import (
     LearningQuality,
     LearningQualityReason,
     evaluate_human_example_learning_quality,
+    explained_clip_bridge_seconds,
+    source_hint_is_authoritative,
 )
 from holoclip.examples import (
     WEAK_NEGATIVE_METHOD,
@@ -42,6 +44,16 @@ class AlignmentAuditSegment(BaseModel):
     source_excerpt: str = ""
 
 
+class ClipGapAudit(BaseModel):
+    start: float
+    end: float
+    seconds: float
+    transcript_excerpt: str = ""
+    source_gap_seconds: float | None = None
+    source_cut_seconds: float | None = None
+    explained_bridge: bool = False
+
+
 class RetrievalAuditDocument(BaseModel):
     id: str
     kind: str
@@ -64,6 +76,7 @@ class HumanExampleAuditReport(BaseModel):
     source_start: float | None = None
     source_end: float | None = None
     alignment_segments: list[AlignmentAuditSegment] = Field(default_factory=list)
+    uncovered_clip_ranges: list[ClipGapAudit] = Field(default_factory=list)
     clip_selected_seconds: float = 0.0
     source_selected_seconds: float = 0.0
     source_bounding_seconds: float = 0.0
@@ -83,6 +96,7 @@ class HumanExampleAuditReport(BaseModel):
     source_resolution_reason: str | None = None
     source_resolution_score: float | None = None
     source_auto_detected: bool | None = None
+    source_hint_authoritative: bool | None = None
 
     setup: str = ""
     development: str = ""
