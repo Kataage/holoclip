@@ -84,6 +84,10 @@ def realign_human_clip_example(
             "alignment_total_anchors": (
                 alignment.total_anchors if alignment is not None else 0
             ),
+            "clip_duration_seconds": max(
+                (segment.end for segment in clip_segments),
+                default=0.0,
+            ),
             "alignment_segments": (
                 [
                     {

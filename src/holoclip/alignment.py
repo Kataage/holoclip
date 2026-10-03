@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from holoclip.models import TranscriptSegment
 
 
-ALIGNMENT_METHOD = "transcript-anchor-v6"
+ALIGNMENT_METHOD = "transcript-anchor-v7"
 WEAK_SINGLETON_MAX_CONFIDENCE = 0.70
 DEFAULT_MAX_ANCHORS = 36
 ENDPOINT_EXTENSION_MAX_SECONDS = 5.0
@@ -419,7 +419,32 @@ def _filter_spurious_segments(
             > following.source_end + source_order_tolerance_seconds
         )
 
-        if weak_singleton and neighbors_forward and (before_previous or after_following):
+        def trustworthy_neighbor(item: AlignmentSegment) -> bool:
+            return item.matched_anchors >= 2 or item.confidence >= 0.75
+
+        def source_contains(
+            outer: AlignmentSegment,
+            inner: AlignmentSegment,
+        ) -> bool:
+            return (
+                inner.source_start + source_order_tolerance_seconds
+                >= outer.source_start
+                and inner.source_end
+                <= outer.source_end + source_order_tolerance_seconds
+            )
+
+        redundant_overlap = (
+            trustworthy_neighbor(previous)
+            and source_contains(previous, segment)
+        ) or (
+            trustworthy_neighbor(following)
+            and source_contains(following, segment)
+        )
+
+        if weak_singleton and (
+            redundant_overlap
+            or (neighbors_forward and (before_previous or after_following))
+        ):
             continue
         kept.append(segment)
 

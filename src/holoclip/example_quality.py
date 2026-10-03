@@ -71,6 +71,7 @@ class AlignmentQualityMetrics(BaseModel):
     anchor_coverage_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
 
     weak_singleton_count: int = 0
+    weak_singleton_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
     non_monotonic_transition_count: int = 0
     largest_backward_jump_seconds: float = 0.0
 
@@ -219,8 +220,13 @@ def compute_alignment_quality_metrics(
     clip_ranges = [(item.clip_start, item.clip_end) for item in segments]
     source_ranges = [(item.source_start, item.source_end) for item in segments]
 
-    clip_timeline_start = min(start for start, _ in clip_ranges)
+    clip_timeline_start = 0.0
     clip_timeline_end = max(end for _, end in clip_ranges)
+    if example.clip_duration_seconds is not None:
+        clip_timeline_end = max(
+            clip_timeline_end,
+            example.clip_duration_seconds,
+        )
     clip_timeline_seconds = max(0.0, clip_timeline_end - clip_timeline_start)
     aligned_clip_seconds = _union_seconds(clip_ranges)
     clip_coverage_ratio = (
@@ -289,6 +295,11 @@ def compute_alignment_quality_metrics(
         if item.matched_anchors == 1
         and item.confidence < WEAK_SINGLETON_MAX_CONFIDENCE
     )
+    weak_singleton_ratio = (
+        weak_singleton_count / len(segments)
+        if segments
+        else 0.0
+    )
     non_monotonic_transition_count = 0
     largest_backward_jump_seconds = 0.0
     previous_source_end: float | None = None
@@ -336,6 +347,7 @@ def compute_alignment_quality_metrics(
         total_anchors=total_anchors,
         anchor_coverage_ratio=anchor_coverage_ratio,
         weak_singleton_count=weak_singleton_count,
+        weak_singleton_ratio=weak_singleton_ratio,
         non_monotonic_transition_count=non_monotonic_transition_count,
         largest_backward_jump_seconds=largest_backward_jump_seconds,
     )
@@ -407,8 +419,6 @@ def evaluate_human_example_learning_quality(
         if metrics.largest_unexplained_clip_gap > gap_threshold:
             reasons.append(LearningQualityReason.LARGE_UNCOVERED_CLIP_GAP)
 
-    if metrics.weak_singleton_count:
-        reasons.append(LearningQualityReason.WEAK_SINGLETON_ALIGNMENT)
     if metrics.non_monotonic_transition_count:
         reasons.append(LearningQualityReason.NON_MONOTONIC_ALIGNMENT)
 
@@ -419,6 +429,20 @@ def evaluate_human_example_learning_quality(
         and abs(source_hint_delta) > SOURCE_HINT_REVIEW_DELTA_SECONDS
     ):
         reasons.append(LearningQualityReason.SOURCE_HINT_DISAGREEMENT)
+
+    weak_singleton_is_material = (
+        metrics.weak_singleton_count > 0
+        and (
+            metrics.weak_singleton_ratio >= 0.25
+            or LearningQualityReason.MARGINAL_ALIGNMENT_CONFIDENCE in reasons
+            or LearningQualityReason.LOW_CLIP_COVERAGE in reasons
+            or LearningQualityReason.LARGE_UNCOVERED_CLIP_GAP in reasons
+            or LearningQualityReason.NON_MONOTONIC_ALIGNMENT in reasons
+            or LearningQualityReason.SOURCE_HINT_DISAGREEMENT in reasons
+        )
+    )
+    if weak_singleton_is_material:
+        reasons.append(LearningQualityReason.WEAK_SINGLETON_ALIGNMENT)
 
     structure = validate_editorial_structure(example)
     if any(
