@@ -17,7 +17,7 @@ from typing import Literal
 
 import httpx
 import typer
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from holoclip.execution import StageArtifactCache, make_input_fingerprint
 from holoclip.providers.cloud import CloudAdapters
@@ -53,6 +53,10 @@ class BenchmarkCase(BaseModel):
     duration_seconds: float | None = Field(default=None, gt=0, le=120)
     prompt: str = ""
 
+    @field_serializer("dimensions")
+    def sorted_dimensions(self, value):
+        return sorted(value)
+
     @model_validator(mode="after")
     def inputs_present(self):
         if self.task == "video" and not self.measurement_path:
@@ -72,6 +76,10 @@ class BenchmarkManifest(BaseModel):
     training_clip_ids: frozenset[str] = frozenset()
     repeats: int = Field(default=2, ge=1, le=5)
     timeout_seconds: float = Field(default=60, gt=0, le=120)
+
+    @field_serializer("training_clip_ids")
+    def sorted_training(self, value):
+        return sorted(value)
 
     @model_validator(mode="after")
     def split(self):
@@ -99,6 +107,19 @@ class Assessment(BaseModel):
     method: Literal["HUMAN_GOLD", "HUMAN_REVIEWED_TEACHER", "AUTO_WEAK_TEACHER"]
     reviewer: str = Field(min_length=1)
     gold_reference: str = Field(min_length=1)
+    # Reviewed canonical fact IDs, shared across provider/repeat wording. Score
+    # stability alone cannot prove that payoff/identity/event claims agree.
+    consistency_facts: frozenset[str] = frozenset()
+
+    @field_serializer("dimensions", "consistency_facts")
+    def sorted_sets(self, value):
+        return sorted(value)
+
+    @model_validator(mode="after")
+    def fact_ids(self):
+        if any(not f.strip() or len(f) > 256 for f in self.consistency_facts):
+            raise ValueError("Reviewed consistency facts need bounded non-empty IDs")
+        return self
 
 
 def atomic_json(path: Path, value):
@@ -367,20 +388,22 @@ def derive_qualifications(report: dict, report_sha: str) -> list[Qualification]:
                 continue
             if any(not a.dimensions <= cases[by_hash[a.result_sha256]["case_id"]].dimensions for a in gold):
                 raise CostPolicyError("Assessment claims an untested dimension")
-            covered = frozenset(d for a in gold for d in a.dimensions if sum(
-                d in b.dimensions for b in gold) >= 3)
+            covered = frozenset(d for a in gold for d in a.dimensions if len({
+                by_hash[b.result_sha256]["input_sha256"] for b in gold if d in b.dimensions}) >= 3)
             # Repeats must be genuine independently cached requests, not cloned result rows.
             repeated = {}
             for a in gold:
                 row = by_hash[a.result_sha256]
-                repeated.setdefault(row["case_id"], []).append((row["repeat"], a.quality_score))
-            consistency = sum(len({i for i, _ in values}) >= 2 and
-                max(q for _, q in values) - min(q for _, q in values) <= .1
+                repeated.setdefault(row["case_id"], []).append((row["repeat"], a.quality_score, a.consistency_facts))
+            consistency = sum(len({i for i, _, _ in values}) >= 2 and
+                all(facts for _, _, facts in values) and len({facts for _, _, facts in values}) == 1 and
+                max(q for _, q, _ in values) - min(q for _, q, _ in values) <= .1
                 for values in repeated.values()) / len(repeated)
             expected_task = {"text": "text", "audio": "asr", "embedding": "embedding"}.get(summary["mode"], "video")
             expected_cases = [c for c in manifest.cases if c.task == expected_task]
             call_ids = [request["id"] for row in rows for request in row["requests"]]
             complete = (len(gold) == len(rows) and len(rows) == len(expected_cases) * manifest.repeats
+                        and all(a.consistency_facts for a in gold)
                         and all(cases[r["case_id"]].held_out for r in rows)
                         and len({r["clip_id"] for r in rows}) >= 5
                         and all(any(req["status"] == "http_200" for req in r["requests"]) for r in rows)
@@ -397,7 +420,7 @@ def derive_qualifications(report: dict, report_sha: str) -> list[Qualification]:
                 quota_efficiency=1 / max(1, summary["requests_per_clip"]),
                 verified_free_at=min(datetime.fromisoformat(r["verified_free_at"]) for r in rows),
                 evaluated_at=report["generated_at"], covered_dimensions=covered,
-                notes=("Checksum-bound reviewed holdout; transport-only results cannot qualify",))
+                notes=("Checksum-bound reviewed holdout with semantic fact consistency; transport-only results cannot qualify",))
             if not q.clears(QualityFloor(), datetime.fromisoformat(report["generated_at"]), frozenset()):
                 q = q.model_copy(update={"qualified": False})
             output.append(q)

@@ -41,7 +41,8 @@ def report_fixture():
     assessments = [Assessment(result_sha256=make_input_fingerprint(r), capability=Capability.REASONING_STRONG,
         quality_score=.95, hallucination_rate=0, error_rate=0, critical_hallucinations=0,
         dimensions={"japanese"}, method="HUMAN_GOLD", reviewer="fixture-reviewer",
-        gold_reference="fixture reviewed teacher").model_dump(mode="json") for r in rows]
+        gold_reference="fixture reviewed teacher", consistency_facts={f"{r['case_id']}:canonical-payoff"}
+        ).model_dump(mode="json") for r in rows]
     return {"version": VERSION, "dataset_sha256": dataset, "manifest": manifest.model_dump(mode="json"),
         "input_identities": inputs, "results": rows, "assessments": assessments, "generated_at": NOW.isoformat()}
 
@@ -132,6 +133,40 @@ def test_weak_teacher_cannot_qualify():
     for a in report["assessments"]:
         a["method"] = "AUTO_WEAK_TEACHER"
     assert derive_qualifications(report, "a" * 64) == []
+
+
+def test_same_quality_scores_cannot_mask_inconsistent_semantic_facts():
+    report = report_fixture()
+    for a in report["assessments"][1::2]:
+        a["consistency_facts"] = ["opposite-payoff-or-subject"]
+    scores = derive_qualifications(report, "a" * 64)
+    assert scores and scores[0].consistency == 0 and not scores[0].qualified
+
+
+def test_old_reviewed_scores_without_fact_evidence_cannot_promote():
+    report = report_fixture()
+    for a in report["assessments"]:
+        a.pop("consistency_facts")
+    assert not any(q.qualified for q in derive_qualifications(report, "a" * 64))
+
+
+def test_dimension_repeats_do_not_count_as_distinct_gold_observations():
+    report = report_fixture()
+    special = "small_ui_event"
+    for case in report["manifest"]["cases"]:
+        case["dimensions"].append(special)
+    report["manifest"] = BenchmarkManifest.model_validate(report["manifest"]).model_dump(mode="json")
+    report["dataset_sha256"] = make_input_fingerprint({"manifest": report["manifest"], "inputs": report["input_identities"]})
+    for row in report["results"]:
+        row["dataset_sha256"] = report["dataset_sha256"]
+        row["job_id"] = make_input_fingerprint({"dataset": report["dataset_sha256"], "window": row["input_sha256"],
+            "case": row["case_id"], "entry": "groq:openai/gpt-oss-120b", "mode": "text", "repeat": row["repeat"]})
+    for index, assessment in enumerate(report["assessments"]):
+        assessment["result_sha256"] = make_input_fingerprint(report["results"][index])
+        if index < 4:  # Two distinct cases, four repeats: insufficient dimension coverage.
+            assessment["dimensions"].append(special)
+    score = derive_qualifications(report, "a" * 64)[0]
+    assert special not in score.covered_dimensions and "japanese" in score.covered_dimensions
 
 
 @pytest.mark.parametrize("change", ["missing_gold", "hallucination", "low_quality", "not_real", "single_repeat", "failure"])

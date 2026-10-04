@@ -9,6 +9,10 @@ production qualification bundle has been established yet.
 The current protocol is `holoclip-real-provider-v2`. Protocol, grounded prompt and
 cloud-response cache versions changed after live transport faults. Historical v1
 reports remain immutable diagnostics; they cannot be silently promoted under v2.
+Unordered capability/dimension/training/fact sets serialize canonically so process
+hash randomization cannot change resume/dataset IDs. Ordered frames/transcript/event
+sequences retain their order. Legacy reports whose dataset identity does not match
+the canonical manifest are rejected, never silently requalified.
 
 ## One command and resume
 
@@ -97,7 +101,12 @@ uv run holoclip providers qualify <immutable-report.json> <reviewed-assessments.
 All relevant jobs need reviewed evidence; at least 30 distinct measured inputs from
 five original clips, two actual independent repeats, quality >= .8, success >= .95,
 JSON validity >= .99, hallucination <= .02, error <= .05, consistency >= .9 and zero
-critical hallucinations. Each dimension needs three reviewed observations and the
+critical hallucinations. Reviewed assessments carry `consistency_facts`: canonical
+gold fact IDs for the response's payoff/subject/event claims, shared across wording.
+Matching scores alone do not establish semantic consistency; repeated reviewed
+fact sets must agree. Missing fact evidence rejects promotion without repeating
+cached inference. This is a reviewed evidence declaration, not a model's self-label.
+Each dimension needs three distinct measured gold inputs, without counting repeats, and the
 router checks stage-specific required dimensions again. Quality/capability/mode are
 independent: text reasoning cannot qualify grounding or OCR. Missing, changed,
 duplicated, weak, inconsistent and low-quality evidence cannot grant access.

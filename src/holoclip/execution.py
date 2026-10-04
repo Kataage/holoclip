@@ -26,13 +26,19 @@ def file_input_identity(path: Path) -> dict[str, Any]:
     }
 
 
+def _fingerprint_default(value: Any):
+    if isinstance(value, (set, frozenset)):
+        return sorted(value, key=lambda item: json.dumps(item, sort_keys=True, default=_fingerprint_default))
+    return str(value)
+
+
 def make_input_fingerprint(payload: Any) -> str:
     encoded = json.dumps(
         payload,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
-        default=str,
+        default=_fingerprint_default,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
