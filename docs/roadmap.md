@@ -1,5 +1,17 @@
 # Roadmap
 
+## Provider foundation status, October 4 2026
+
+PRs #101–#106 have merged after individual CI success: ZERO_COST_ONLY dispatch guards,
+account-scoped quota/resume state, capability/quality routing, measured visual modes,
+real-media benchmark/qualification artifacts and production protocol adapters. The
+[live smoke](provider-smoke-2026-10-04.md) is unqualified transport evidence.
+Blinded small-subset review and independent weak grades support #107; actual gold
+calibration and Japanese/Live2D/game UI/reaction/OCR qualification remain pending.
+Historical implementation checkboxes below do not certify current qualified production
+readiness. Editing Profile, RenderPlan, deterministic rendering and QA/repair remain
+separate delivery gates in #80/#81–#89.
+
 ## Phase 0 - bootstrap
 
 - [x] Repository initialized

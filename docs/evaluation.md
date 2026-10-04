@@ -2,6 +2,12 @@
 
 The central problem is ranking human-interest moments, not generating fluent explanations.
 
+Cloud-provider qualification is a separate evidence gate. See the
+[real-media provider benchmark](provider-benchmark.md) and [dated transport observations](provider-smoke-2026-10-04.md).
+Its capped blind pack/independent weak judges do not grant human-gold status or bypass
+Editorial/Editing readiness. Gold calibration, visual coverage and independent repeats
+remain pending; no real provider currently has production admission.
+
 ## Learning-first policy
 
 Existing operator feedback is preserved as future holdout/calibration evidence. It is not an input

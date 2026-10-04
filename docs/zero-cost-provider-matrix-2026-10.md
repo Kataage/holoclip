@@ -489,6 +489,10 @@ Status:
 ## 9. Recommended provider topology
 
 Do not pick one global provider stack.
+The numbered pools below identify research candidates, not vendor fallback order.
+All role suggestions require real qualification and current free/account evidence.
+See the [dated transport results](provider-smoke-2026-10-04.md): production currently
+has no qualified routes; successful text/ASR/vector responses grant no admission.
 
 ### Native video semantic understanding
 Benchmark pool:
@@ -540,13 +544,13 @@ Benchmark pool:
 5. Cerebras free model
 
 ### ASR
-Primary:
+Benchmark candidate, pending Japanese quality qualification:
 - Groq whisper-large-v3
 
 Future free candidates may be added only after Japanese held-out WER/segmentation benchmark.
 
 ### Embedding
-Primary:
+Benchmark candidate, pending retrieval-quality qualification:
 - NVIDIA nemotron-3-embed-1b
 
 Fallback embedding spaces are allowed, but never mix vectors from different spaces in one index.

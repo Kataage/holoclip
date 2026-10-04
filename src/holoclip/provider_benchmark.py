@@ -306,6 +306,9 @@ def summarize(results: list[dict]) -> list[dict]:
         # An eventual successful resume cannot erase earlier timeout/failure rate.
         operational = [h for h in histories if h["status"] != "BLOCKED_QUOTA"]
         latency = sorted(r.get("wall_seconds", r["latency_seconds"]) for r in rows)
+        http_codes = {200, 202, 400, 401, 403, 404, 410, 429, 500, 502, 503, 504} | {
+            int(r["status"].removeprefix("http_")) for r in requests
+            if r["status"].startswith("http_") and r["status"].removeprefix("http_").isdigit()}
         summary.append({"provider": provider, "model": model, "mode": mode, "jobs": len(rows),
             "success_rate": sum(h["status"] == "SUCCEEDED" for h in operational) / max(1, len(operational)),
             "eventual_completion_rate": sum(r["status"] == "SUCCEEDED" for r in rows) / len(rows),
@@ -315,7 +318,7 @@ def summarize(results: list[dict]) -> list[dict]:
             "timeouts": sum(h["status"] == "TIMEOUT" for h in histories),
             "quota_deferrals": sum(h["status"] == "BLOCKED_QUOTA" for h in histories),
             "http_counts": {str(code): sum(r["status"] == f"http_{code}" for r in requests)
-                            for code in (200, 400, 401, 403, 404, 410, 429, 503)},
+                            for code in sorted(http_codes)},
             "poll_reads": sum(len(r.get("poll_reads", [])) for r in requests),
             "requests_per_clip": len(requests) / len({r["clip_id"] for r in rows}),
             "reserved_units": units, "observed_usage": usage,
@@ -535,3 +538,41 @@ def corpus_run_command(corpus_root: Path, accounts: Path = typer.Option(...),
     """Prepare human-made corpus videos and run/resume the comparison in one invocation."""
     manifest = prepare_corpus(corpus_root, output, max_clips=max_clips, progress=typer.echo)
     run_command(manifest, accounts=accounts, env_file=env_file, output=output, only=[], wait_for_quota=wait_for_quota)
+
+
+@app.command("review-pack")
+def review_pack_command(report: Path, output: Path, max_cases: int = 30):
+    """Export a capped local blind sample; drafts never declare human review."""
+    from holoclip.benchmark_review import review_pack
+    typer.echo(json.dumps(review_pack(report, output, max_cases=max_cases)))
+
+
+@app.command("draft-grades")
+def draft_grades_command(report: Path, accounts: Path = typer.Option(...),
+                         env_file: Path | None = None, output: Path = Path("data/provider-benchmark"),
+                         wait_for_quota: bool = False):
+    """Draft independent-vendor weak grades; never automatically qualify a provider."""
+    from holoclip.benchmark_review import draft_grades, review_pack
+    raw = json.loads(accounts.read_text(encoding="utf-8"))
+    guard = CostGuard(QuotaLedger(output / "quota.db"), [AccountEvidence.model_validate(r) for r in raw])
+    review = review_pack(report, output / "weak-grades" / "review")
+    async def execute():
+        runner = BenchmarkRunner(guard, read_keys(env_file), output)
+        try:
+            path = await draft_grades(runner, report, progress=typer.echo)
+            while wait_for_quota:
+                rows = json.loads(path.read_text(encoding="utf-8"))["results"]
+                resets = [r["retry_at"] for r in rows if r["status"] == "BLOCKED_QUOTA"]
+                if not resets:
+                    break
+                while guard.clock().timestamp() < min(resets):
+                    remaining = min(resets) - guard.clock().timestamp()
+                    typer.echo(f"BLOCKED_QUOTA: weak grades saved; automatic resume in {remaining:.0f}s")
+                    await asyncio.sleep(min(60, remaining))
+                path = await draft_grades(runner, report, progress=typer.echo, resume_quota_only=True)
+            return path
+        finally:
+            await runner.aclose()
+    path = asyncio.run(execute())
+    typer.echo(json.dumps({"report_path": str(path), "report_sha256": checksum_file(path),
+                           "qualification_allowed": False, "review_html": review["review_html"]}))

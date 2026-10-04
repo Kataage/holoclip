@@ -1,0 +1,61 @@
+{
+  "assessments": 0,
+  "qualification_allowed": false,
+  "report_sha256": "fe4e89bb10029e2215872c7b315359650d18bcd5f6d50cc2976eb553b9e59c5f",
+  "results": [
+    {
+      "failures": [
+        {
+          "error_class": "MeshDeferred",
+          "judge": "nvidia:z-ai/glm-5.3-flash"
+        },
+        {
+          "error_class": "MeshDeferred",
+          "judge": "nvidia:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+        }
+      ],
+      "requests": [
+        {
+          "model": "z-ai/glm-5.3-flash",
+          "status": "http_504"
+        },
+        {
+          "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+          "status": "http_504"
+        }
+      ],
+      "status": "BLOCKED_DEPENDENCY"
+    },
+    {
+      "failures": [
+        {
+          "error_class": "MeshDeferred",
+          "judge": "nvidia:z-ai/glm-5.3-flash"
+        },
+        {
+          "error_class": "MeshDeferred",
+          "judge": "nvidia:z-ai/glm-5.3"
+        },
+        {
+          "error_class": "MeshDeferred",
+          "judge": "nvidia:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+        }
+      ],
+      "requests": [
+        {
+          "model": "z-ai/glm-5.3-flash",
+          "status": "http_504"
+        },
+        {
+          "model": "z-ai/glm-5.3",
+          "status": "http_504"
+        },
+        {
+          "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+          "status": "http_504"
+        }
+      ],
+      "status": "BLOCKED_DEPENDENCY"
+    }
+  ]
+}
