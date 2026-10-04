@@ -1420,8 +1420,8 @@ Current zero-cost provider research snapshot: `docs/zero-cost-provider-matrix-20
 - FFmpeg / ffprobe: authoritative media execution/probing layer.
 - PySceneDetect 0.7.x: scene/cut/fade observation.
 - OpenCV: feature matching, homography, tracking and geometric measurement.
-- Gemini Developer API Free Tier: capability-routed video/text vision provider; current baseline is `gemini-3.5-flash-lite`, subject to runtime free-status verification.
-- NVIDIA NIM Free Endpoints: free image-VLM/text reasoning fallback and strong/fast reasoning providers.
+- Gemini Developer API Free Tier: a candidate for video/text capabilities; admission requires current free/account proof and real per-capability benchmark qualification.
+- NVIDIA NIM Free Endpoints: candidates for image/video/text capabilities, subject to the same qualification, health and quota gates.
 - NVIDIA nemotron-3-embed-1b Free Endpoint: structural embeddings.
 - Groq Free Plan whisper-large-v3: ASR and word timing.
 - VLM-backed VideoUnderstandingProvider: semantic understanding of bounded video/shot windows, using zero-cost cloud providers only.
@@ -1429,3 +1429,17 @@ Current zero-cost provider research snapshot: `docs/zero-cost-provider-matrix-20
 - pyloudnorm: BS.1770-style loudness measurement.
 - ASS/SSA + libass: rich deterministic subtitle render representation.
 - Motion Canvas: optional deterministic advanced 2D motion-graphics backend; FFmpeg remains authoritative for final media composition/encode.
+
+## 20. Implementation evidence, October 4 2026
+
+PRs #101–#106 implement the monetary invariant, capability mesh, measured visual
+execution modes, report-bound benchmark qualification and production protocol adapters.
+See [production routing](production-provider-runtime.md),
+[benchmark workflow](provider-benchmark.md) and [live smoke evidence](provider-smoke-2026-10-04.md).
+No real provider is production-qualified yet. The old vendor candidate labels in this
+research design are hypotheses; they never set router order or establish a baseline.
+
+Automatic weak-grade collection and a small blinded shared-reference pack support #107.
+They cannot manufacture human review or turn the existing training corpus into holdout.
+Editorial Profile remains distinct from Editing Profile; measured source-to-finished
+transforms, edit induction, RenderPlan, renderer and QA/repair gates remain open.

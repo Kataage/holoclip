@@ -99,6 +99,15 @@ Production still has zero qualified routes. Required next evidence includes a sm
 reviewed original-clip holdout with Japanese/Live2D/reaction/OCR and game/small-UI/gag
 coverage, independent repeats, automated weak-teacher grading with reviewed gold,
 additional eligible free credentials, full mode A/B and measured quota efficiency.
+Independent weak-grade collection and a capped blinded review pack are now implemented;
+their real accuracy/calibration remains unproven and cannot grant qualification.
+The first independent-judge live probe attempted two visual and three text requests
+against NVIDIA; all five returned HTTP 504. It produced zero assessments and two
+`BLOCKED_DEPENDENCY` results. The [sanitized judge snapshot](evidence/weak-grade-smoke-2026-10-04.json)
+pins its immutable report SHA-256. This is a service failure, not a zero score assigned
+to Japanese semantics. The local blind pack was generated with two unreviewed training
+cases and did not mark either held out. Operational counts retain 504 and other returned
+status codes instead of silently omitting them.
 The current fusion mode deterministically combines individual-image observations;
 global evidence adjudication is not established. Editing Profile, source-to-finished
 edit learning, RenderPlan, rendering and automatic semantic QA/repair remain their

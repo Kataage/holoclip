@@ -18,11 +18,11 @@ Video editing, thumbnails and publishing are intentionally deferred until this r
 
     local media file
         -> FFmpeg audio chunks
-        -> Groq Whisper timed transcript
+        -> qualified ASR segment timestamps
         -> overlapping transcript chunks
-        -> broad discovery with the fast NIM model
+        -> broad discovery with qualified text_reasoning_fast + structured_json
         -> overlap dedupe
-        -> editorial selection with the strong NIM model
+        -> editorial selection with qualified text_reasoning_strong + structured_json
         -> measured boundary / multi-cut plan when learning is ready
         -> saved candidates and automatic evaluation artifacts
 
@@ -39,9 +39,9 @@ The autonomous flow is:
 
     human-made clips -> source alignment / unchanged quality gate
         -> deterministic full learning cards and contextual omissions
-        -> cached per-card contrast / measured beat observations (fast NIM)
-        -> bounded batch pattern induction (strong NIM)
-        -> bounded cross-batch mechanism consolidation (strong NIM)
+        -> cached per-card contrast / measured beat observations (qualified fast reasoning)
+        -> bounded batch pattern induction (qualified strong reasoning)
+        -> bounded cross-batch mechanism consolidation (qualified strong reasoning)
         -> automatic support evidence assessment
         -> persisted Editorial Profile and recomputed readiness
         -> profile-guided broad discovery / final selection / measured edit plan
@@ -115,7 +115,7 @@ uv run holoclip discover path\to\stream.mp4
 This automatically:
 
 1. extracts lightweight audio chunks with FFmpeg
-2. transcribes them with Groq Whisper
+2. transcribes them through a qualified ASR capability route
 3. writes a timed transcript under data/transcripts/
 4. runs NIM candidate discovery
 5. writes an evaluation run under data/evaluation/runs/
@@ -233,7 +233,7 @@ uv run holoclip examples-align path\to\clip.mp4 data\transcripts\source-stream.j
 
 The command:
 
-1. transcribes the clip with Groq Whisper (and caches that transcript)
+1. transcribes the clip through a qualified ASR capability route (and caches that transcript)
 2. matches multiple spoken-text anchors against the source transcript
 3. estimates the original source start/end timestamps
 4. prints confidence and a few anchor matches
@@ -339,13 +339,11 @@ structural retrieval index. Positive examples are embedded from abstract editori
 (setup, development, payoff, selection reason, traits, topics and relationship context) rather
 than clip title wording. Weak negatives are indexed separately.
 
-The current hosted embedding default is:
-
-~~~text
-nvidia/nemotron-3-embed-1b
-~~~
-
-Override it with `NVIDIA_NIM_EMBEDDING_MODEL` when needed.
+Production selects a benchmark-qualified `embedding` capability route and pins the
+`mesh:<provider>:<model>` vector-space namespace. The NVIDIA Nemotron Embed 1B endpoint
+is a diagnostic candidate; a returned vector does not qualify it. Changing the model
+requires a separate index rebuild. Vendor-specific model overrides cannot bypass
+the production router or mix vector spaces.
 
 Manual rebuild/debug commands:
 
@@ -375,7 +373,7 @@ The command:
 1. reads clip metadata with yt-dlp
 2. looks for an unambiguous original/source YouTube link in the clip description
 3. downloads the clip and original source using the training-audio profile
-4. transcribes both with the existing resumable Groq pipeline
+4. transcribes both with the existing resumable ASR capability pipeline
 5. aligns the human clip back to source timestamps
 6. writes/updates HumanClipExample
 7. extracts setup/development/payoff/selection reason and weak negatives with the strong LLM

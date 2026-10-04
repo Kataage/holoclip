@@ -105,9 +105,31 @@ duplicated, weak, inconsistent and low-quality evidence cannot grant access.
 Bundles pin the immutable assessed report hash. Loading verifies the hash and recomputes
 every score before accepting declared rows; detached JSON lists and edited scores fail.
 Local human-review declarations are an explicit evidence trust boundary, not cryptographic
-proof someone watched a video. Automated semantic grading/independent-judge collection
-is not implemented yet. This infrastructure accepts one evaluation-tooling batch; it
-must not demand manual labeling of the full corpus or invent human review.
+proof someone watched a video. Independent diagnostic judges can now draft weak grades:
+
+```powershell
+uv run --extra media holoclip providers draft-grades <immutable-report.json> `
+  --accounts data/provider-benchmark/free-accounts.json --env-file D:\AI\holoclip\.env `
+  --output data/provider-benchmark --wait-for-quota
+uv run holoclip providers review-pack <immutable-report.json> data/provider-benchmark/review `
+  --max-cases 30
+```
+
+The judge receives anonymous output and the same reference evidence, uses a different
+vendor, and retains quota/attempt/cache state. Visual judges see pinned contact sheets
+stacked without rescaling or removing tiles. No provider priority or paid fallback is
+introduced. Oversized reference/context defers. ASR/vector usefulness is not guessed
+without suitable speech/retrieval references. Reports contain `AUTO_WEAK_TEACHER` only;
+judge attempts to declare human review, invent measured IDs or claim untested dimensions
+are rejected. Weak grades never grant access, even on held-out cases.
+
+`draft-grades` also writes the local static HTML/JSON review pack in the same invocation;
+`review-pack` is an offline export when no API work is needed. The pack is capped at 30 cases, spreads samples over original
+clips, separates the provider identity key and provides one shared reference draft per case.
+Training clips remain training and every draft starts `UNREVIEWED`. This reduces full-corpus
+manual work; it does not fabricate gold or claim a calibrated grader. Gold reference review,
+semantic-grade calibration and disagreement adjudication remain open in #107. The existing
+reviewed-batch qualification path remains unchanged until those evidence gates pass.
 
 ## Contract/discovery audit, October 4 JST / October 3 UTC 2026
 
