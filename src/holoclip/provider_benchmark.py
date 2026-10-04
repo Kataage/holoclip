@@ -32,7 +32,7 @@ from holoclip.repository import SQLiteCanonicalRepository
 from holoclip.video_measurement import checksum_file, measure_window, probe_video
 from holoclip.video_semantics import MeasuredVideoWindow, VideoUnderstandingProvider
 
-VERSION = "holoclip-real-provider-v1"
+VERSION = "holoclip-real-provider-v2"
 app = typer.Typer(no_args_is_help=True)
 
 
@@ -66,7 +66,7 @@ class BenchmarkCase(BaseModel):
 
 class BenchmarkManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    version: Literal["holoclip-real-provider-v1"] = VERSION
+    version: Literal["holoclip-real-provider-v2"] = VERSION
     cases: tuple[BenchmarkCase, ...] = Field(min_length=1)
     # Enforce the split explicitly, including original clip identity across windows.
     training_clip_ids: frozenset[str] = frozenset()
@@ -192,35 +192,10 @@ class BenchmarkRunner:
             path = Path(case.media_path)
             if checksum_file(path) != case.media_sha256 or path.stat().st_size > entry.max_bytes:
                 raise CostPolicyError("ASR input checksum/limit mismatch")
-            with path.open("rb") as handle:
-                response = await self.guard.post(self.adapters.client, provider=entry.provider,
-                    model=entry.model, base_url=entry.base_url, key=self.keys[entry.provider],
-                    operation="audio/transcriptions", public=True,
-                    estimate={"requests": 1, "audio_seconds": case.duration_seconds,
-                              "uploaded_bytes": path.stat().st_size},
-                    headers={"Authorization": f"Bearer {self.keys[entry.provider]}"},
-                    data={"model": entry.model, "language": "ja", "response_format": "verbose_json"},
-                    files=[("file", (path.name, handle, "audio/wav")),
-                           ("timestamp_granularities[]", (None, "segment")),
-                           ("timestamp_granularities[]", (None, "word"))])
-            if response.status_code == 429:
-                raise QuotaBlocked()
-            response.raise_for_status()
-            output = response.json()
-            if not isinstance(output.get("segments"), list) or not isinstance(output.get("words"), list):
-                raise ValueError("ASR lacks measured segment/word timestamps")
-            return output
-        response = await self.guard.post(self.adapters.client, provider=entry.provider, model=entry.model,
-            base_url=entry.base_url, key=self.keys[entry.provider], operation="embeddings", public=True,
-            estimate={"requests": 1, "tokens": len(case.prompt.encode("utf-8"))},
-            headers={"Authorization": f"Bearer {self.keys[entry.provider]}"},
-            json={"model": entry.model, "input": [case.prompt], "input_type": "passage"})
-        if response.status_code == 429:
-            raise QuotaBlocked()
-        response.raise_for_status()
-        values = response.json()["data"][0]["embedding"]
-        if not values or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in values):
-            raise ValueError("Invalid embedding vector")
+            return await self.adapters.transcribe(route, path, seconds=case.duration_seconds,
+                                                  words=True, public=case.public_data)
+        values = (await self.adapters.embeddings(route, [case.prompt], input_type="passage",
+                                                 public=case.public_data))["vectors"][0]
         return {"dimensions": len(values), "vector": values}
 
     async def run(self, manifest: BenchmarkManifest, *, only: frozenset[str] = frozenset(), progress=None,
@@ -275,7 +250,7 @@ class BenchmarkRunner:
                 quota = isinstance(exc, QuotaBlocked) or exc.quota
                 result.update(status="BLOCKED_QUOTA" if quota else "BLOCKED_DEPENDENCY",
                     error_class=type(exc).__name__, reason=str(exc), structured_valid=False,
-                    retry_at=now.timestamp() + (exc.retry_after or (86400 if quota else 300)))
+                    retry_at=self.guard.clock().timestamp() + max(1, exc.retry_after or (86400 if quota else 300)))
             except (CostPolicyError, httpx.HTTPError, TimeoutError, ValueError, KeyError) as exc:
                 result.update(status="BLOCKED_DEPENDENCY" if isinstance(exc, CostPolicyError)
                     else "TIMEOUT" if isinstance(exc, (TimeoutError, httpx.TimeoutException))
@@ -288,6 +263,13 @@ class BenchmarkRunner:
                 request_scope.reset(token)
             result["latency_seconds"] = asyncio.get_running_loop().time() - started
             result["requests"] = self.guard.ledger.telemetry(job_id)
+            history = list((previous or {}).get("attempt_history", []))
+            history.append({"status": result["status"], "structured_valid": result["structured_valid"],
+                            "latency_seconds": result["latency_seconds"],
+                            "at": result["at"]})
+            result["attempt_history"] = history
+            result["first_started_at"] = (previous or {}).get("first_started_at", result["at"])
+            result["wall_seconds"] = max(0, (self.guard.clock() - datetime.fromisoformat(result["first_started_at"])).total_seconds())
             # Keep historical attempts for audit; latest result is the resume cursor.
             atomic_json(path.with_name(f"{job_id}-attempt-{result['attempts']}.json"), result)
             atomic_json(path, result)
@@ -320,14 +302,21 @@ def summarize(results: list[dict]) -> list[dict]:
                 units[name] = units.get(name, 0) + value
             for name, value in r["observed_usage"].items():
                 usage[name] = usage.get(name, 0) + value
-        latency = sorted(r["latency_seconds"] for r in rows)
+        histories = [h for r in rows for h in r.get("attempt_history", [{"status": r["status"], "latency_seconds": r["latency_seconds"]}])]
+        # An eventual successful resume cannot erase earlier timeout/failure rate.
+        operational = [h for h in histories if h["status"] != "BLOCKED_QUOTA"]
+        latency = sorted(r.get("wall_seconds", r["latency_seconds"]) for r in rows)
         summary.append({"provider": provider, "model": model, "mode": mode, "jobs": len(rows),
-            "success_rate": sum(r["status"] == "SUCCEEDED" for r in rows) / len(rows),
-            "json_validity": sum(r["structured_valid"] for r in rows) / len(rows),
+            "success_rate": sum(h["status"] == "SUCCEEDED" for h in operational) / max(1, len(operational)),
+            "eventual_completion_rate": sum(r["status"] == "SUCCEEDED" for r in rows) / len(rows),
+            "json_validity": sum(h.get("structured_valid", h["status"] == "SUCCEEDED")
+                                 for h in operational) / max(1, len(operational)),
             "p50_latency": statistics.median(latency), "p95_latency": latency[math.ceil(len(rows) * .95) - 1],
-            "timeouts": sum(r["status"] == "TIMEOUT" or "timeout" in r.get("reason", "") for r in rows),
+            "timeouts": sum(h["status"] == "TIMEOUT" for h in histories),
+            "quota_deferrals": sum(h["status"] == "BLOCKED_QUOTA" for h in histories),
             "http_counts": {str(code): sum(r["status"] == f"http_{code}" for r in requests)
                             for code in (200, 400, 401, 403, 404, 410, 429, 503)},
+            "poll_reads": sum(len(r.get("poll_reads", [])) for r in requests),
             "requests_per_clip": len(requests) / len({r["clip_id"] for r in rows}),
             "reserved_units": units, "observed_usage": usage,
             "quality_score": None, "clips_per_day": None,

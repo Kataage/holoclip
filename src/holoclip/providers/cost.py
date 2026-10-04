@@ -14,6 +14,7 @@ import sqlite3
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Literal
 
@@ -72,6 +73,7 @@ class FreeModel(BaseModel):
     max_images: int = 0
     max_bytes: int = 20_000_000
     max_video_seconds: float = 120
+    max_request_tokens: int | None = Field(default=None, gt=0)
     available: bool = True
 
     @property
@@ -89,6 +91,9 @@ class AccountEvidence(BaseModel):
     paid_fallback_allowed: Literal[False] = False
     verified_at: datetime
     evidence_reference: str = Field(min_length=1)
+    # Same upper bound as contract evidence; daily resets must not inherently
+    # require a new human attestation. Operators may choose a shorter interval.
+    evidence_ttl_seconds: int = Field(default=604800, ge=60, le=604800)
     # Hard internal budgets, shared by every model and process for this account.
     daily_limits: dict[str, float]
 
@@ -111,7 +116,7 @@ def free_registry() -> dict[str, FreeModel]:
                      Capability.JAPANESE_READING, Capability.RENDER_QA}
     rows: list[FreeModel] = []
 
-    def add(provider, model, base, caps, refs, *, images=0, quota=None, available=True):
+    def add(provider, model, base, caps, refs, *, images=0, quota=None, available=True, tokens=None):
         operation = "embeddings" if Capability.EMBEDDING in caps else (
             "audio/transcriptions" if Capability.ASR_SEGMENTS in caps else "chat/completions"
         )
@@ -123,6 +128,7 @@ def free_registry() -> dict[str, FreeModel]:
             cost_class="FREE_ENDPOINT" if provider == "nvidia" else "FREE_TIER",
             verified_at=verified, verification_references=tuple(refs),
             quota_snapshot=quota or {}, max_images=images, available=available,
+            max_request_tokens=tokens,
             data_use="Public workflow data only; account terms and retention must be reviewed. "
                      "Gemini Free content may be used for product improvement.",
         ))
@@ -148,10 +154,10 @@ def free_registry() -> dict[str, FreeModel]:
             ["https://console.groq.com/docs/rate-limits"],
             quota={"requests": 2000, "audio_seconds": 28800})
     add("groq", "openai/gpt-oss-120b", groq, text,
-        ["https://console.groq.com/docs/rate-limits"], quota={"requests": 1000, "tokens": 200000})
+        ["https://console.groq.com/docs/rate-limits"], quota={"requests": 1000, "tokens": 200000}, tokens=8000)
     add("groq", "qwen/qwen3.8-27b", groq, vision,
         ["https://console.groq.com/docs/vision", "https://console.groq.com/docs/rate-limits"],
-        images=3, quota={"requests": 1000, "tokens": 200000})
+        images=3, quota={"requests": 1000, "tokens": 200000}, tokens=8000)
     for model in ("gemini-3.8-flash", "gemini-3.5-flash-lite"):
         add("gemini", model, "https://generativelanguage.googleapis.com/v1beta",
             vision | {Capability.VIDEO_NATIVE}, ["https://ai.google.dev/gemini-api/docs/pricing"],
@@ -165,6 +171,45 @@ def free_registry() -> dict[str, FreeModel]:
     # Dynamic free-model/Cloudflare account paths are added by verified discovery;
     # HF credits and SambaNova payment-required paths have no automatic entry.
     return {row.identity: row for row in rows}
+
+
+def reset_delay(headers, now: datetime) -> float | None:
+    value = headers.get("retry-after")
+    if value:
+        try:
+            return max(1, float(value))
+        except ValueError:
+            try:
+                date = parsedate_to_datetime(value)
+                if date.tzinfo:
+                    return max(1, (date - now).total_seconds())
+            except (TypeError, ValueError):
+                pass
+    delays = []
+    for name in ("x-ratelimit-reset-tokens", "x-ratelimit-reset-requests"):
+        duration = headers.get(name, "")
+        parts = re.findall(r"(\d+(?:\.\d+)?)(ms|s|m|h|d)", duration)
+        if parts and "".join(a + b for a, b in parts) == duration:
+            delays.append(sum(float(n) * {"ms": .001, "s": 1, "m": 60, "h": 3600, "d": 86400}[u]
+                              for n, u in parts))
+    return max(1, max(delays)) if delays else None
+
+
+def quota_error_metadata(response) -> dict:
+    """Only typed quota numbers/dimensions, never error prose or account IDs."""
+    try:
+        error = response.json().get("error", {})
+        message = error.get("message", "")
+    except (ValueError, AttributeError):
+        return {}
+    if not isinstance(message, str):
+        return {}
+    dimension = next((d for d in ("TPM", "TPD", "RPM", "RPD", "ASH", "ASD") if f"({d})" in message), None)
+    values = {name.lower(): float(value) for name, value in re.findall(
+        r"\b(Limit|Used|Requested):\s*(\d+(?:\.\d+)?)", message)}
+    too_large = dimension == "TPM" and values.get("requested", 0) > values.get("limit", float("inf"))
+    return {"dimension": dimension, "request_too_large": too_large,
+            "numbers": values} if dimension else {}
 
 
 class QuotaLedger:
@@ -184,6 +229,7 @@ class QuotaLedger:
                        "model TEXT, at TEXT, estimate TEXT, status TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS request_observations (request_id INTEGER PRIMARY KEY, "
                        "scope TEXT, usage TEXT, rate_headers TEXT)")
+            db.execute("CREATE TABLE IF NOT EXISTS request_errors (request_id INTEGER PRIMARY KEY, metadata TEXT)")
 
     def connect(self):
         return sqlite3.connect(self.path, timeout=30)
@@ -232,15 +278,44 @@ class QuotaLedger:
         with self.connect() as db:
             db.execute("UPDATE request_observations SET usage=?,rate_headers=? WHERE request_id=?",
                        (json.dumps(usage), json.dumps(headers), request_id))
+            db.execute("INSERT OR REPLACE INTO request_errors VALUES (?,?)",
+                       (request_id, json.dumps(quota_error_metadata(response))))
 
     def telemetry(self, scope: str) -> list[dict]:
         with self.connect() as db:
             rows = db.execute("SELECT r.id,r.account,r.model,r.at,r.estimate,r.status,o.usage,o.rate_headers "
                               "FROM requests r JOIN request_observations o ON o.request_id=r.id "
                               "WHERE o.scope=? ORDER BY r.id", (scope,)).fetchall()
+            has_polls = db.execute("SELECT name FROM sqlite_master WHERE name='poll_reads'").fetchone()
+            polls = {r[0]: db.execute("SELECT at,status FROM poll_reads WHERE reservation_id=?", (r[0],)).fetchall()
+                     for r in rows} if has_polls else {}
+            errors = {r[0]: db.execute("SELECT metadata FROM request_errors WHERE request_id=?", (r[0],)).fetchone()
+                      for r in rows}
         return [{"id": r[0], "account": r[1], "model": r[2], "at": r[3],
                  "reserved_units": json.loads(r[4]), "status": r[5],
+                 "poll_reads": [{"at": at, "status": status} for at, status in polls.get(r[0], [])],
+                 "error_metadata": json.loads(errors[r[0]][0]) if errors[r[0]] else {},
                  "observed_usage": json.loads(r[6]), "rate_headers": json.loads(r[7])} for r in rows]
+
+    def reconcile_rate_resets(self, now: datetime):
+        """Repair only old unknown-429 24h blocks using retained server reset proof.
+
+        No reservation is refunded. An explicit Retry-After or daily budget is
+        never shortened. The original response remains available in telemetry.
+        """
+        with self.connect() as db:
+            for account, until in db.execute("SELECT account,until FROM blocks").fetchall():
+                row = db.execute("SELECT r.at,o.rate_headers FROM requests r JOIN request_observations o "
+                    "ON o.request_id=r.id WHERE r.account=? AND r.status='http_429' ORDER BY r.id DESC LIMIT 1",
+                    (account,)).fetchone()
+                if not row:
+                    continue
+                at = datetime.fromisoformat(row[0])
+                headers = json.loads(row[1])
+                delay = reset_delay(headers, at)
+                if (not headers.get("retry-after") and delay is not None and delay < 86400 and
+                    86400 <= until - at.timestamp() < 86460):
+                    db.execute("UPDATE blocks SET until=? WHERE account=?", (at.timestamp() + delay, account))
 
     def finish(self, request_id: int, status: str):
         with self.connect() as db:
@@ -268,7 +343,7 @@ class CostGuard:
                 base = f"https://api.cloudflare.com/client/v4/accounts/{account.account_id}/ai/run"
                 entry = FreeModel.model_validate(template | {"provider": "cloudflare", "model": model,
                     "base_url": base, "operations": {model}, "max_images": 1,
-                    "quota_snapshot": {"neurons": 10000},
+                    "quota_snapshot": {"neurons": 10000}, "max_request_tokens": None,
                     "verification_references": (
                         "https://developers.cloudflare.com/workers-ai/platform/pricing/",
                         "https://developers.cloudflare.com/workers-ai/models/llama-3.2-11b-vision-instruct/"),
@@ -303,7 +378,8 @@ class CostGuard:
             raise CostPolicyError("Only public workflow data is eligible")
         account = next((a for a in self.accounts if a.provider == provider and
                         a.credential_sha256 == credential_fingerprint(key)), None)
-        if account is None or not _fresh(account.verified_at, self.clock(), timedelta(hours=24)):
+        if account is None or not _fresh(account.verified_at, self.clock(),
+                                         timedelta(seconds=account.evidence_ttl_seconds)):
             raise CostPolicyError("Missing/stale credential-bound free account evidence")
         account = AccountEvidence.model_validate(account.model_dump())
         return entry, account
@@ -336,10 +412,8 @@ class CostGuard:
         self.ledger.observe(reservation, response)
         if 300 <= response.status_code < 400:
             raise CostPolicyError("Provider redirect rejected before following another endpoint")
-        if response.status_code == 429:
-            try:
-                retry = float(response.headers["Retry-After"])
-            except (ValueError, KeyError):
-                retry = None
+        if response.status_code == 429 and not quota_error_metadata(response).get("request_too_large"):
+            retry = reset_delay(response.headers, self.clock())
             self.ledger.block(account_key, self.clock(), retry)
+        response.extensions["holoclip_reservation_id"] = reservation
         return response

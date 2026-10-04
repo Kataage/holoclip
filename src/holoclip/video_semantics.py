@@ -83,6 +83,24 @@ class VisualTargetProvider(Protocol):
     def locate(self, window: MeasuredVideoWindow, semantic_target: str) -> list[dict]: ...
 
 
+def visual_prompt(window, selected, mode):
+    context = {"window_id": window.id,
+        "frames": [{"id": f.id, "shot_id": f.shot_id} for f in selected],
+        "transcript": window.transcript, "measured_events": window.measured_events,
+        "mode": mode.value}
+    return (
+        "Inspect public Japanese Hololive footage and return only a JSON object matching "
+        "this schema: {window_id, events:[{kind,description,evidence_ids:[supplied IDs],"
+        "focus_candidates:[semantic subject descriptions],read_text:string|null,"
+        "confidence:0..1,uncertainty:string|null}],unknowns:[string]}. "
+        "Describe key event/payoff, important subject, avatar/facial reaction, game/UI, "
+        "small UI event, visual gag, object and source-switch meaning when supported. "
+        "Read Japanese on-screen text faithfully; uncertainty is allowed. Use measured IDs. "
+        "Never return timestamps, crop coordinates, bounding boxes or tracking paths. "
+        "Contact-sheet tile labels are measurement IDs, not scene text.\n" +
+        json.dumps(context, ensure_ascii=False))
+
+
 class VideoUnderstandingProvider:
     def __init__(self, router: CapabilityRouter, adapters: CloudAdapters):
         self.router = router
@@ -100,7 +118,7 @@ class VideoUnderstandingProvider:
         contract = StageContract(stage="provider_benchmark_video" if diagnostic_identity else "video_semantics",
             alternatives=alternatives, dimensions=dimensions, public_data=public_data,
             quota_estimate={"requests": 1}, timeout_seconds=120)
-        payload = {"measurement": window.model_dump(mode="json"), "prompt_version": "grounded-video-v1",
+        payload = {"measurement": window.model_dump(mode="json"), "prompt_version": "grounded-video-v2",
                    "benchmark_run_id": benchmark_run_id}
         if diagnostic_identity:
             payload.update(diagnostic_identity=diagnostic_identity, diagnostic_mode=diagnostic_mode)
@@ -116,6 +134,12 @@ class VideoUnderstandingProvider:
                     groups.append(([f for f in frames if f.id in ids], [Path(p)], None))
             else:
                 width = max(1, route.entry.max_images)
+                # Published Free TPM is also a per-request ceiling. Split all
+                # measured frames into fitting units; never drop frames/context.
+                if route.entry.max_request_tokens:
+                    while width > 1 and (len(visual_prompt(window, frames[:width], route.mode).encode("utf-8"))
+                        + 2048 + width * 2048 > route.entry.max_request_tokens):
+                        width -= 1
                 if route.mode == ExecutionMode.FUSION:
                     width = 1  # Inspect individual images then fuse supported observations deterministically.
                 groups = [(frames[i:i + width], [Path(f.locator) for f in frames[i:i + width]], None)
@@ -124,21 +148,7 @@ class VideoUnderstandingProvider:
                 raise ValueError("Execution mode has no measured visual input")
             events, unknowns = [], []
             for selected, images, video in groups:
-                context = {"window_id": window.id,
-                    "frames": [{"id": f.id, "shot_id": f.shot_id} for f in selected],
-                    "transcript": window.transcript, "measured_events": window.measured_events,
-                    "mode": route.mode.value}
-                prompt = (
-                    "Inspect public Japanese Hololive footage and return only a JSON object matching "
-                    "this schema: {window_id, events:[{kind,description,evidence_ids:[supplied IDs],"
-                    "focus_candidates:[semantic subject descriptions],read_text:string|null,"
-                    "confidence:0..1,uncertainty:string|null}],unknowns:[string]}. "
-                    "Describe key event/payoff, important subject, avatar/facial reaction, game/UI, "
-                    "small UI event, visual gag, object and source-switch meaning when supported. "
-                    "Read Japanese on-screen text faithfully; uncertainty is allowed. Use measured IDs. "
-                    "Never return timestamps, crop coordinates, bounding boxes or tracking paths. "
-                    "Contact-sheet tile labels are measurement IDs, not scene text.\n" +
-                    json.dumps(context, ensure_ascii=False))
+                prompt = visual_prompt(window, selected, route.mode)
                 output = await self.adapters.call_json(route, prompt, images=images, video=video,
                     public=contract.public_data, cache_identity={"window": window.media_sha256,
                         "benchmark_run_id": benchmark_run_id,

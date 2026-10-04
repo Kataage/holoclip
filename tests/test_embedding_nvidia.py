@@ -41,4 +41,4 @@ async def test_embedding_client_uses_passage_and_query_input_types() -> None:
     assert seen[0]["input_type"] == "passage"
     assert seen[1]["input_type"] == "query"
     assert all(item["model"] == "nvidia/nemotron-3-embed-1b" for item in seen)
-    assert all(item["truncate"] == "END" for item in seen)
+    assert all(item["truncate"] == "NONE" for item in seen)
