@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from holoclip.execution import make_input_fingerprint
 from holoclip.provider_benchmark import (
@@ -107,6 +107,10 @@ class WeakGrade(BaseModel):
     evidence_ids: frozenset[str] = Field(min_length=1)
     explanation: str = Field(min_length=1)
     uncertainties: tuple[str, ...]
+
+    @field_serializer("dimensions", "evidence_ids")
+    def sorted_sets(self, value):
+        return sorted(value)
 
 
 def comparison_sheet(window, output: Path) -> Path:

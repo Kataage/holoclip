@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Literal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 # Isolated job attribution also works when callers run independent stages concurrently.
 request_scope: ContextVar[str] = ContextVar("holoclip_request_scope", default="")
@@ -75,6 +75,10 @@ class FreeModel(BaseModel):
     max_video_seconds: float = 120
     max_request_tokens: int | None = Field(default=None, gt=0)
     available: bool = True
+
+    @field_serializer("operations", "capabilities")
+    def sorted_sets(self, value):
+        return sorted(value)
 
     @property
     def identity(self) -> str:

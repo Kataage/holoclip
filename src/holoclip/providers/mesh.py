@@ -9,7 +9,7 @@ from enum import StrEnum
 from pathlib import Path
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from holoclip.execution import StageArtifactCache, StageStatus, make_input_fingerprint
 from holoclip.providers.cost import Capability, CostGuard, CostPolicyError, FreeModel, QuotaBlocked
@@ -76,6 +76,10 @@ class Qualification(BaseModel):
     covered_dimensions: frozenset[str]
     notes: tuple[str, ...] = ()
 
+    @field_serializer("covered_dimensions")
+    def sorted_dimensions(self, value):
+        return sorted(value)
+
     def clears(self, floor: QualityFloor, now: datetime, dimensions: frozenset[str]) -> bool:
         return (
             self.qualified and self.real_media and self.held_out and
@@ -97,6 +101,10 @@ class ModeRequirement(BaseModel):
     mode: ExecutionMode
     required: frozenset[Capability] = Field(min_length=1)
 
+    @field_serializer("required")
+    def sorted_required(self, value):
+        return sorted(value)
+
 
 class StageContract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -109,6 +117,10 @@ class StageContract(BaseModel):
     quota_estimate: dict[str, float]
     timeout_seconds: float = Field(default=60, gt=0, le=120)
     second_opinion_required: bool = False
+
+    @field_serializer("optional", "dimensions")
+    def sorted_sets(self, value):
+        return sorted(value)
 
 
 class Route(BaseModel):
@@ -351,6 +363,10 @@ class Opinion(BaseModel):
     decision: str
     confidence: float = Field(ge=0, le=1)
     evidence_ids: frozenset[str]
+
+    @field_serializer("evidence_ids")
+    def sorted_evidence(self, value):
+        return sorted(value)
 
 
 def reconcile_opinions(first: Opinion, second: Opinion | None) -> dict:
