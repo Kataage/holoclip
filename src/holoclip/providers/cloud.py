@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import base64
 import json
+import asyncio
+import re
 from pathlib import Path
 
 import httpx
 
 from holoclip.execution import StageArtifactCache, make_input_fingerprint
-from holoclip.providers.cost import CostGuard, CostPolicyError, QuotaBlocked
+from holoclip.providers.cost import CostGuard, CostPolicyError, QuotaBlocked, reset_delay, quota_error_metadata
 from holoclip.providers.mesh import Route
 
 
@@ -41,6 +43,10 @@ class CloudAdapters:
         self.client = client or httpx.AsyncClient(timeout=60, follow_redirects=False)
         self.owns_client = client is None
         self.cache = cache
+        with guard.ledger.connect() as db:
+            db.execute("CREATE TABLE IF NOT EXISTS pending_responses (fingerprint TEXT PRIMARY KEY, "
+                       "identity TEXT, request_id TEXT, reservation_id INTEGER)")
+            db.execute("CREATE TABLE IF NOT EXISTS poll_reads (reservation_id INTEGER, at TEXT, status INTEGER)")
 
     async def aclose(self):
         if self.owns_client:
@@ -77,7 +83,11 @@ class CloudAdapters:
             estimate["tokens"] += seconds * 2048
         if uploaded:
             estimate["uploaded_bytes"] = uploaded
+        if entry.max_request_tokens is not None and estimate["tokens"] > entry.max_request_tokens:
+            raise CostPolicyError("Input cannot fit verified free per-request token budget; no truncation allowed")
         headers = {"Authorization": f"Bearer {key}"}
+        if entry.provider == "nvidia":
+            headers["NVCF-POLL-SECONDS"] = "5"
         if entry.provider == "gemini":
             headers = {"x-goog-api-key": key}
             parts = [{"text": prompt}] + [{"inline_data": {"mime_type": mime,
@@ -113,21 +123,37 @@ class CloudAdapters:
                                               "prompt": prompt, "media": media,
                                               "measurement": cache_identity, "max_tokens": max_tokens})
         args = dict(stage="provider_response", subject_type="inference_unit", subject_id=fingerprint,
-                    input_fingerprint=fingerprint, stage_version="cloud-v1", provider=entry.provider,
+                    input_fingerprint=fingerprint, stage_version="cloud-v2", provider=entry.provider,
                     model=entry.model, prompt_version="cloud-json-v1")
         cached = self.cache.reusable_json(**args) if self.cache else None
         if cached is not None:
             return cached
         run = self.cache.start(**args) if self.cache else None
         try:
-            response = await self.guard.post(self.client, provider=entry.provider, model=entry.model,
-                base_url=entry.base_url, key=key, operation=operation, estimate=estimate,
-                public=public, headers=headers, json=body)
+            with self.guard.ledger.connect() as db:
+                pending = db.execute("SELECT identity,request_id,reservation_id FROM pending_responses "
+                                     "WHERE fingerprint=?", (fingerprint,)).fetchone()
+            if pending:
+                if pending[0] != entry.identity:
+                    raise CostPolicyError("Pending request belongs to a different model")
+                response = await self.poll(route, pending[1], pending[2], public=public)
+            else:
+                response = await self.guard.post(self.client, provider=entry.provider, model=entry.model,
+                    base_url=entry.base_url, key=key, operation=operation, estimate=estimate,
+                    public=public, headers=headers, json=body)
+                if response.status_code == 202:
+                    request_id = response.headers.get("nvcf-reqid", "")
+                    if entry.provider != "nvidia" or not re.fullmatch(r"[a-fA-F0-9-]{36}", request_id):
+                        raise CostPolicyError("No verified asynchronous status request ID")
+                    reservation = response.extensions["holoclip_reservation_id"]
+                    with self.guard.ledger.connect() as db:
+                        db.execute("INSERT OR REPLACE INTO pending_responses VALUES (?,?,?,?)",
+                                   (fingerprint, entry.identity, request_id, reservation))
+                    response = await self.poll(route, request_id, reservation, public=public)
             if response.status_code == 429:
-                try:
-                    delay = float(response.headers["Retry-After"])
-                except (KeyError, ValueError):
-                    delay = None
+                if quota_error_metadata(response).get("request_too_large"):
+                    raise CostPolicyError("Request exceeds actual Free TPM ceiling; waiting or paid upgrade cannot repair this unit")
+                delay = reset_delay(response.headers, self.guard.clock())
                 raise QuotaBlocked(delay)
             response.raise_for_status()
             raw = response.json()
@@ -149,7 +175,36 @@ class CloudAdapters:
             raise
         if run:
             self.cache.succeed_json(run, output, kind="provider_structured_response")
+        with self.guard.ledger.connect() as db:
+            db.execute("DELETE FROM pending_responses WHERE fingerprint=?", (fingerprint,))
         return output
+
+    async def poll(self, route, request_id, reservation, *, public=False):
+        # Official NIM status endpoint, same verified host. Never follow Location
+        # or invoke a function/partner endpoint. GET resumes one accepted POST.
+        from uuid import UUID
+        entry = route.entry
+        if entry.provider != "nvidia" or str(UUID(request_id)) != request_id.lower():
+            raise CostPolicyError("Invalid asynchronous request ID")
+        while True:
+            self.guard.authorize(entry.provider, entry.model, entry.base_url,
+                                 self.keys.get(entry.provider, ""), public=public)
+            response = await self.client.get(entry.base_url + "/status/" + request_id,
+                headers={"Authorization": f"Bearer {self.keys[entry.provider]}", "NVCF-POLL-SECONDS": "5"},
+                follow_redirects=False)
+            with self.guard.ledger.connect() as db:
+                db.execute("INSERT INTO poll_reads VALUES (?,?,?)",
+                           (reservation, self.guard.clock().isoformat(), response.status_code))
+            if 300 <= response.status_code < 400:
+                raise CostPolicyError("Asynchronous result redirect rejected")
+            if response.status_code in {404, 410}:
+                raise CostPolicyError("Accepted request expired; do not deprecate model from a status lookup")
+            if response.status_code != 202:
+                if response.status_code == 200:
+                    self.guard.ledger.finish(reservation, "http_200")
+                    self.guard.ledger.observe(reservation, response)
+                return response
+            await asyncio.sleep(1)
 
     async def discover_models(self, entry) -> tuple[set[str], bool]:
         self.guard.model(entry.provider, entry.model, entry.base_url)
@@ -170,6 +225,7 @@ class CloudAdapters:
         import asyncio
         from holoclip.providers.mesh import MeshState, ProviderState
         found = {}
+        self.guard.ledger.reconcile_rate_resets(self.guard.clock())
         state = MeshState(self.guard)
         for provider in sorted(providers or {e.provider for e in self.guard.registry.values()}):
             entries = [e for e in self.guard.registry.values() if e.provider == provider and e.available]
@@ -197,16 +253,22 @@ class CloudAdapters:
             public=public, estimate={"requests": 1, "tokens": sum(len(t.encode("utf-8")) for t in texts)},
             headers={"Authorization": f"Bearer {self.keys.get(entry.provider, '')}"},
             json={"model": entry.model, "input": texts, "input_type": input_type,
-                  "encoding_format": "float", "truncate": "END"})
+                  "encoding_format": "float", "truncate": "NONE"})
         if response.status_code == 429:
             raise QuotaBlocked()
         response.raise_for_status()
-        rows = sorted(response.json()["data"], key=lambda r: r["index"])
+        raw = response.json()
+        rows = raw.get("data") if isinstance(raw, dict) else None
+        if not isinstance(rows, list) or any(not isinstance(r, dict) or
+                type(r.get("index")) is not int for r in rows):
+            raise ValueError("Invalid embedding response envelope/index")
+        rows = sorted(rows, key=lambda r: r["index"])
         if [r["index"] for r in rows] != list(range(len(texts))):
             raise ValueError("Embedding output count/index mismatch")
         import math
-        vectors = [r["embedding"] for r in rows]
-        if not vectors or any(not v or not all(isinstance(x, (int, float)) and math.isfinite(x) for x in v)
+        vectors = [r.get("embedding") for r in rows]
+        if not vectors or any(not isinstance(v, list) or not v or
+                              not all(type(x) in (int, float) and math.isfinite(x) for x in v)
                               for v in vectors) or len({len(v) for v in vectors}) != 1:
             raise ValueError("Invalid embedding vectors")
         return {"vectors": vectors}
@@ -231,10 +293,14 @@ class CloudAdapters:
             raise QuotaBlocked()
         response.raise_for_status()
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid ASR response envelope")
         for field in (["segments", "words"] if words else ["segments"]):
             rows = payload.get(field)
             if not isinstance(rows, list):
                 raise ValueError("ASR lacks requested timestamp granularity")
-            if any(not 0 <= row["start"] <= row["end"] <= seconds + .5 for row in rows):
+            if any(not isinstance(row, dict) or type(row.get("start")) not in (int, float) or
+                   type(row.get("end")) not in (int, float) or
+                   not 0 <= row["start"] <= row["end"] <= seconds + .5 for row in rows):
                 raise ValueError("ASR timestamps exceed measured media duration")
         return payload

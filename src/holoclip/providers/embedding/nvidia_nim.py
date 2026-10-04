@@ -87,7 +87,7 @@ class NvidiaNimEmbeddingClient:
                 "model": self.settings.model,
                 "input_type": input_type,
                 "encoding_format": "float",
-                "truncate": "END",
+                "truncate": "NONE",
             }
 
             for attempt in range(self.settings.max_retries + 1):

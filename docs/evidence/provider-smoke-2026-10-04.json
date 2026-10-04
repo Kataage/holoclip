@@ -1,0 +1,1106 @@
+{
+  "acceptance_status": "NOT_QUALIFIED",
+  "clip_id": "77e729a8a3a9a368",
+  "clips_per_day": null,
+  "cost_evidence_scope": "Guarded approved free endpoints with user Free-plan attestation and published billing contract; account dashboard/invoice not inspected",
+  "cost_policy": "ZERO_COST_ONLY",
+  "evidence_version": "holoclip-live-transport-smoke-2026-10-04-v1",
+  "fault_tests_are_not_live_qualification": true,
+  "held_out": false,
+  "independent_repeats": 1,
+  "initial_smoke": {
+    "generated_at": "2026-10-03T23:30:11.324322+00:00",
+    "inference_attempts": 19,
+    "jobs": 47,
+    "protocol": "holoclip-real-provider-v1",
+    "report_sha256": "f38c5d2f74d47fe58bc061314145112d7d3d73fe2ff6ab95a8fb83f37de6b52f",
+    "results": [
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 40.016,
+        "http_statuses": [
+          "uncertain"
+        ],
+        "inference_attempts": 1,
+        "mode": "native_video",
+        "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "TIMEOUT"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "native_video",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "gemini",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "native_video",
+        "model": "nvidia/cosmos3-nano-reasoner",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "native_video",
+        "model": "gemini-3.8-flash",
+        "provider": "gemini",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 40.031,
+        "http_statuses": [
+          "uncertain"
+        ],
+        "inference_attempts": 1,
+        "mode": "contact_sheet",
+        "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "TIMEOUT"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "contact_sheet",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "gemini",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "contact_sheet",
+        "model": "mistral-medium-3-5",
+        "provider": "mistral",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 3.375,
+        "http_statuses": [
+          "http_200",
+          "http_429"
+        ],
+        "inference_attempts": 2,
+        "mode": "contact_sheet",
+        "model": "qwen/qwen3.8-27b",
+        "provider": "groq",
+        "quality_qualified": false,
+        "status": "BLOCKED_QUOTA"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "contact_sheet",
+        "model": "mistral-small-2603",
+        "provider": "mistral",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 40.031,
+        "http_statuses": [
+          "uncertain"
+        ],
+        "inference_attempts": 1,
+        "mode": "contact_sheet",
+        "model": "z-ai/glm-5.3-flash",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "TIMEOUT"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "contact_sheet",
+        "model": "nvidia/cosmos3-nano-reasoner",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "contact_sheet",
+        "model": "meta/llama-3.2-90b-vision-instruct",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "contact_sheet",
+        "model": "gemini-3.8-flash",
+        "provider": "gemini",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 30.453,
+        "http_statuses": [
+          "http_200"
+        ],
+        "inference_attempts": 1,
+        "mode": "text",
+        "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "SUCCEEDED"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "text",
+        "model": "qwen-3.8-27b",
+        "provider": "cerebras",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "text",
+        "model": "gpt-oss-120b",
+        "provider": "cerebras",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "text",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "gemini",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "text",
+        "model": "mistral-medium-3-5",
+        "provider": "mistral",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.515,
+        "http_statuses": [
+          "http_200"
+        ],
+        "inference_attempts": 1,
+        "mode": "text",
+        "model": "qwen/qwen3.8-27b",
+        "provider": "groq",
+        "quality_qualified": false,
+        "status": "SUCCEEDED"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "text",
+        "model": "mistral-small-2603",
+        "provider": "mistral",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 40.016,
+        "http_statuses": [
+          "uncertain"
+        ],
+        "inference_attempts": 1,
+        "mode": "text",
+        "model": "z-ai/glm-5.3-flash",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "TIMEOUT"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "text",
+        "model": "nvidia/cosmos3-nano-reasoner",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "text",
+        "model": "meta/llama-3.2-90b-vision-instruct",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "text",
+        "model": "gemini-3.8-flash",
+        "provider": "gemini",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 40.016,
+        "http_statuses": [
+          "uncertain"
+        ],
+        "inference_attempts": 1,
+        "mode": "text",
+        "model": "z-ai/glm-5.3",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "TIMEOUT"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 2.406,
+        "http_statuses": [
+          "http_200"
+        ],
+        "inference_attempts": 1,
+        "mode": "text",
+        "model": "openai/gpt-oss-120b",
+        "provider": "groq",
+        "quality_qualified": false,
+        "status": "SUCCEEDED"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.86,
+        "http_statuses": [
+          "http_200"
+        ],
+        "inference_attempts": 1,
+        "mode": "audio",
+        "model": "whisper-large-v3-turbo",
+        "provider": "groq",
+        "quality_qualified": false,
+        "status": "SUCCEEDED"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.922,
+        "http_statuses": [
+          "http_200"
+        ],
+        "inference_attempts": 1,
+        "mode": "audio",
+        "model": "whisper-large-v3",
+        "provider": "groq",
+        "quality_qualified": false,
+        "status": "SUCCEEDED"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.594,
+        "http_statuses": [
+          "http_200"
+        ],
+        "inference_attempts": 1,
+        "mode": "embedding",
+        "model": "nvidia/nemotron-3-embed-1b",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "SUCCEEDED"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 40.031,
+        "http_statuses": [
+          "uncertain"
+        ],
+        "inference_attempts": 1,
+        "mode": "shot_aware_multiframe",
+        "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "TIMEOUT"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "shot_aware_multiframe",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "gemini",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "shot_aware_multiframe",
+        "model": "mistral-medium-3-5",
+        "provider": "mistral",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 4.516,
+        "http_statuses": [
+          "http_200",
+          "http_429"
+        ],
+        "inference_attempts": 2,
+        "mode": "shot_aware_multiframe",
+        "model": "qwen/qwen3.8-27b",
+        "provider": "groq",
+        "quality_qualified": false,
+        "status": "BLOCKED_QUOTA"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "shot_aware_multiframe",
+        "model": "mistral-small-2603",
+        "provider": "mistral",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 40.032,
+        "http_statuses": [
+          "uncertain"
+        ],
+        "inference_attempts": 1,
+        "mode": "shot_aware_multiframe",
+        "model": "z-ai/glm-5.3-flash",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "TIMEOUT"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "shot_aware_multiframe",
+        "model": "nvidia/cosmos3-nano-reasoner",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "shot_aware_multiframe",
+        "model": "meta/llama-3.2-90b-vision-instruct",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "shot_aware_multiframe",
+        "model": "gemini-3.8-flash",
+        "provider": "gemini",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 14.61,
+        "http_statuses": [
+          "http_200"
+        ],
+        "inference_attempts": 1,
+        "mode": "evidence_fusion",
+        "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "evidence_fusion",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "gemini",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "evidence_fusion",
+        "model": "mistral-medium-3-5",
+        "provider": "mistral",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.234,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "evidence_fusion",
+        "model": "qwen/qwen3.8-27b",
+        "provider": "groq",
+        "quality_qualified": false,
+        "status": "BLOCKED_QUOTA"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "evidence_fusion",
+        "model": "mistral-small-2603",
+        "provider": "mistral",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 40.031,
+        "http_statuses": [
+          "uncertain"
+        ],
+        "inference_attempts": 1,
+        "mode": "evidence_fusion",
+        "model": "z-ai/glm-5.3-flash",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "TIMEOUT"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "evidence_fusion",
+        "model": "nvidia/cosmos3-nano-reasoner",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "evidence_fusion",
+        "model": "meta/llama-3.2-90b-vision-instruct",
+        "provider": "nvidia",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      },
+      {
+        "attempt_history": [],
+        "attempt_latency_seconds": 0.0,
+        "http_statuses": [],
+        "inference_attempts": 0,
+        "mode": "evidence_fusion",
+        "model": "gemini-3.8-flash",
+        "provider": "gemini",
+        "quality_qualified": false,
+        "status": "BLOCKED_DEPENDENCY"
+      }
+    ]
+  },
+  "ledger_snapshot": {
+    "inference_attempts": 50,
+    "statuses": {
+      "http_200": 17,
+      "http_429": 24,
+      "http_503": 1,
+      "uncertain": 8
+    }
+  },
+  "native_v2_probe": {
+    "error_class": "HTTPStatusError",
+    "http_statuses": [
+      "http_503"
+    ],
+    "inference_attempts": 1,
+    "poll_reads": 0,
+    "status": "FAILED"
+  },
+  "paid_fallback_allowed": false,
+  "production_routes": 0,
+  "quality_score": null,
+  "qwen_v2_snapshot": {
+    "generated_at": "2026-10-04T00:16:27.479184+00:00",
+    "internal_daily_token_budget": 120000,
+    "protocol": "holoclip-real-provider-v2",
+    "quota_reset_at": "2026-10-05T00:00:00+00:00",
+    "report_sha256": "2e63e02d4bd83f70ce0d9507114ca6e6619f98256f361d2164f3b039c7cc0e54",
+    "reserved_today_tokens": 119951,
+    "results": [
+      {
+        "attempt_history": [
+          {
+            "at": "2026-10-04T00:07:44.236789+00:00",
+            "latency_seconds": 2.7030000000086147,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:08:09.528645+00:00",
+            "latency_seconds": 0.10999999998603016,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:08:11.969028+00:00",
+            "latency_seconds": 2.202999999979511,
+            "status": "SUCCEEDED",
+            "structured_valid": true
+          }
+        ],
+        "attempt_latency_seconds": 2.203,
+        "http_statuses": [
+          "http_200",
+          "http_429",
+          "http_200"
+        ],
+        "inference_attempts": 3,
+        "mode": "contact_sheet",
+        "model": "qwen/qwen3.8-27b",
+        "provider": "groq",
+        "quality_qualified": false,
+        "status": "SUCCEEDED"
+      },
+      {
+        "attempt_history": [
+          {
+            "at": "2026-10-04T00:07:46.944359+00:00",
+            "latency_seconds": 0.01600000000325963,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:08:14.183114+00:00",
+            "latency_seconds": 0.1879999999946449,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:08:57.469266+00:00",
+            "latency_seconds": 0.28099999998812564,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:50.564060+00:00",
+            "latency_seconds": 0.1879999999946449,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:51.821365+00:00",
+            "latency_seconds": 0.1879999999946449,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:53.348516+00:00",
+            "latency_seconds": 0.1870000000053551,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:54.597356+00:00",
+            "latency_seconds": 0.1870000000053551,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:55.849210+00:00",
+            "latency_seconds": 0.1870000000053551,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:57.092656+00:00",
+            "latency_seconds": 0.1870000000053551,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:58.664420+00:00",
+            "latency_seconds": 0.6719999999913853,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:59.897161+00:00",
+            "latency_seconds": 0.015000000013969839,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:00.405781+00:00",
+            "latency_seconds": 0.1879999999946449,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:01.632197+00:00",
+            "latency_seconds": 0.28100000001722947,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:02.867941+00:00",
+            "latency_seconds": 0.01600000000325963,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:04.824534+00:00",
+            "latency_seconds": 0.01600000000325963,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:05.416539+00:00",
+            "latency_seconds": 0.1870000000053551,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:06.660696+00:00",
+            "latency_seconds": 0.2029999999795109,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:07.896695+00:00",
+            "latency_seconds": 0.1870000000053551,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:09.082228+00:00",
+            "latency_seconds": 0.1879999999946449,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:10.333872+00:00",
+            "latency_seconds": 0.5,
+            "status": "SUCCEEDED",
+            "structured_valid": true
+          }
+        ],
+        "attempt_latency_seconds": 0.5,
+        "http_statuses": [
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_429",
+          "http_200"
+        ],
+        "inference_attempts": 16,
+        "mode": "text",
+        "model": "qwen/qwen3.8-27b",
+        "provider": "groq",
+        "quality_qualified": false,
+        "status": "SUCCEEDED"
+      },
+      {
+        "attempt_history": [
+          {
+            "at": "2026-10-04T00:07:46.971483+00:00",
+            "latency_seconds": 0.2029999999795109,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:08:14.382008+00:00",
+            "latency_seconds": 0.14100000000325963,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:08:57.758243+00:00",
+            "latency_seconds": 0.17199999999138527,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:50.833845+00:00",
+            "latency_seconds": 0.15599999998812564,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:52.030905+00:00",
+            "latency_seconds": 0.1409999999741558,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:53.552430+00:00",
+            "latency_seconds": 0.15600000001722947,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:54.804700+00:00",
+            "latency_seconds": 0.14000000001396984,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:56.052435+00:00",
+            "latency_seconds": 0.1720000000204891,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:57.303197+00:00",
+            "latency_seconds": 0.14000000001396984,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:59.342525+00:00",
+            "latency_seconds": 0.15599999998812564,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:00.613002+00:00",
+            "latency_seconds": 0.15700000000651926,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:01.922090+00:00",
+            "latency_seconds": 0.14000000001396984,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:02.901983+00:00",
+            "latency_seconds": 1.4689999999827705,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:04.934496+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:05.620822+00:00",
+            "latency_seconds": 0.14100000000325963,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:06.874453+00:00",
+            "latency_seconds": 0.20300000000861473,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:08.109133+00:00",
+            "latency_seconds": 0.15700000000651926,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:09.281993+00:00",
+            "latency_seconds": 0.1409999999741558,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:10.850749+00:00",
+            "latency_seconds": 4.717999999993481,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:15:03.956399+00:00",
+            "latency_seconds": 0.1879999999946449,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:15:08.366666+00:00",
+            "latency_seconds": 4.032000000006519,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:15:41.657958+00:00",
+            "latency_seconds": 4.015999999974156,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:16:24.994554+00:00",
+            "latency_seconds": 0.25,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          }
+        ],
+        "attempt_latency_seconds": 0.25,
+        "http_statuses": [
+          "http_429",
+          "http_200",
+          "http_429",
+          "http_200",
+          "http_429",
+          "http_200",
+          "http_429"
+        ],
+        "inference_attempts": 7,
+        "mode": "shot_aware_multiframe",
+        "model": "qwen/qwen3.8-27b",
+        "provider": "groq",
+        "quality_qualified": false,
+        "status": "BLOCKED_QUOTA"
+      },
+      {
+        "attempt_history": [
+          {
+            "at": "2026-10-04T00:07:47.186628+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:08:14.528683+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:08:57.941958+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:51.009240+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:52.190354+00:00",
+            "latency_seconds": 0.14100000000325963,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:53.724596+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:54.957985+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:56.228652+00:00",
+            "latency_seconds": 0.139999999984866,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:57.458506+00:00",
+            "latency_seconds": 0.14100000000325963,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:11:59.517392+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:00.803866+00:00",
+            "latency_seconds": 0.14000000001396984,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:02.086741+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:04.392263+00:00",
+            "latency_seconds": 0.17100000000209548,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:05.780585+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:07.098700+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:08.468925+00:00",
+            "latency_seconds": 0.21799999999348074,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:09.447269+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:12:15.582589+00:00",
+            "latency_seconds": 0.20300000000861473,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:15:12.411355+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:15:45.688040+00:00",
+            "latency_seconds": 0.125,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          },
+          {
+            "at": "2026-10-04T00:16:25.255550+00:00",
+            "latency_seconds": 2.2030000000086147,
+            "status": "BLOCKED_QUOTA",
+            "structured_valid": false
+          }
+        ],
+        "attempt_latency_seconds": 2.203,
+        "http_statuses": [
+          "http_200"
+        ],
+        "inference_attempts": 1,
+        "mode": "evidence_fusion",
+        "model": "qwen/qwen3.8-27b",
+        "provider": "groq",
+        "quality_qualified": false,
+        "status": "BLOCKED_QUOTA"
+      }
+    ]
+  },
+  "source_url": "https://www.youtube.com/watch?v=GnnCl92qJ_M",
+  "training_corpus": true,
+  "unproven": [
+    "Japanese/Live2D/reaction/OCR semantic quality",
+    "game/small UI/visual gag holdout",
+    "native versus multi-image versus contact-sheet quality A/B",
+    "independent consistency repeats",
+    "real successful NVIDIA 202 poll",
+    "per-capability production qualification",
+    "editing/render end-to-end QA"
+  ],
+  "window": {
+    "contact_sheets": 2,
+    "extraction_version": "ffprobe-pyscenedetect-frames-v2",
+    "id": "window_607e4e7c44b24bc595aa",
+    "measured_frames": 10,
+    "source_end": 20.0,
+    "source_start": 0.0,
+    "video_bytes": 17757220,
+    "video_sha256": "7d4921e2c5ef2dbb1b9a1c51db804cf30624875ce3056c0626433f313cce1e04"
+  }
+}

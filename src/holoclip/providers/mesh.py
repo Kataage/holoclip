@@ -191,14 +191,13 @@ class CapabilityRouter:
             for alternative in contract.alternatives:
                 if not alternative.required <= entry.capabilities:
                     continue
-                if any(self.state.state(f"{entry.identity}/{alternative.mode}/{cap}") ==
-                       ProviderState.DISQUALIFIED_QUALITY for cap in alternative.required):
-                    continue
                 scores = []
                 for cap in alternative.required:
                     rows = [q for q in self.qualifications if q.provider == entry.provider and
                             q.model == entry.model and q.capability == cap and q.mode == alternative.mode
-                            and q.clears(contract.floor, now, contract.dimensions)]
+                            and q.clears(contract.floor, now, contract.dimensions) and
+                            self.state.state(f"{entry.identity}/{alternative.mode}/{cap}/{q.report_sha256}") !=
+                            ProviderState.DISQUALIFIED_QUALITY]
                     if not rows:
                         break
                     scores.append(max(rows, key=lambda q: q.evaluated_at))
@@ -292,7 +291,8 @@ class CapabilityRouter:
             except ValueError:
                 requirement = next(a for a in contract.alternatives if a.mode == route.mode)
                 for cap in requirement.required:
-                    self.state.record(f"{route.entry.identity}/{route.mode}/{cap}",
+                    report_sha = next((q.report_sha256 for q in route.qualification if q.capability == cap), "diagnostic")
+                    self.state.record(f"{route.entry.identity}/{route.mode}/{cap}/{report_sha}",
                                       ProviderState.DISQUALIFIED_QUALITY, mode=route.mode)
                 reasons.append(f"{route.entry.identity}: invalid output/policy")
                 continue
@@ -302,6 +302,7 @@ class CapabilityRouter:
                 "provider": route.entry.provider, "model": route.entry.model,
                 "mode": route.mode.value, "verified_free_at": route.entry.verified_at.isoformat(),
                 "benchmark_versions": sorted({q.benchmark_version for q in route.qualification}),
+                "qualification_reports": sorted({q.report_sha256 for q in route.qualification}),
                 "input_fingerprint": fingerprint, "latency_seconds": elapsed,
                 "diagnostic_only": diagnostic,
             }}

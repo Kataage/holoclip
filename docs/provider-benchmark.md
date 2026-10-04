@@ -6,6 +6,10 @@ It also compares transcript reasoning, ASR segment/word timestamps and embedding
 A successful HTTP response never grants production qualification. No real-media
 production qualification bundle has been established yet.
 
+The current protocol is `holoclip-real-provider-v2`. Protocol, grounded prompt and
+cloud-response cache versions changed after live transport faults. Historical v1
+reports remain immutable diagnostics; they cannot be silently promoted under v2.
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
@@ -48,12 +52,29 @@ resume cursor and immutable attempt files. Reports preserve original clip identi
 source provenance, measurement/file/frame/sheet hashes, protocol/input/dataset
 fingerprints, exact model/mode, repeat number, parsed responses, state/error,
 wall-clock p50/p95, success/JSON rates, 429/403/503 counts and requests per clip.
+Attempt history retains timeout and malformed-output failures after eventual success.
+`eventual_completion_rate` is separate from operational attempt success/JSON validity;
+quota deferrals are counted separately, and wall latency includes quota waiting.
 
 Per-job HTTP telemetry records reserved units, numeric provider-reported usage and
 selected rate/reset headers. It excludes credentials, arbitrary headers and response
 content. Reservations are estimates, not provider billing meters. A complete successful
 model list marks missing IDs deprecated; partial/error/auth lists cannot. Model-list
 presence never overrides pricing or quality evidence.
+
+NVIDIA 202 acceptance persists its request ID and original quota reservation in
+SQLite. Resumption polls only the verified same-host NIM `/v1/status/{requestId}`
+endpoint, without issuing a second inference POST. GET polls are counted separately;
+redirects and expired request IDs block rather than invoke a partner endpoint. This
+behavior is fault-tested. The live native-video probe returned 503, so it does not
+establish a real successful asynchronous video response. See the
+[dated live smoke evidence](provider-smoke-2026-10-04.md).
+
+Groq Free request token ceilings constrain frame batch width, not frame coverage.
+All measured frames and full transcript/event context are retained, with smaller
+requests when necessary. Oversized text/context blocks without truncation. This
+execution change requires its own quality benchmark before production admission.
+ASR and embedding benchmarks now use the same validated transports as production.
 
 Quality and `clips_per_day` remain `null` without real qualified workloads and measured
 effective account limits. Published daily maxima, unknown NVIDIA quotas and estimated

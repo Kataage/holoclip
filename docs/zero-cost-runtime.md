@@ -8,8 +8,10 @@ are account-scoped and atomic across processes; all models share the account bud
 429 persists a block, and StageRun records `blocked_quota`. Successful upstream
 artifacts remain reusable. Re-run after reset without deleting the ledger/cache.
 
-Public model evidence expires after seven days. Account evidence expires after
-24 hours and is bound to SHA-256 of the API credential. No request or model-list
+Public model and account evidence expire within seven days; operators can shorten
+account validity with `evidence_ttl_seconds`. This allows a next-day quota resume
+within the original attestation's validity, without renewing it from an API response.
+Evidence binds to SHA-256 of the API credential. No request or model-list
 response refreshes free evidence. Official pricing and billing-disabled entitlement
 are distinct checks. See the dated audit for the external account trust boundary.
 
@@ -44,6 +46,13 @@ by the provider's rate gates and 429/reset state. External usage can consume quo
 the ledger is a conservative local scheduler, not an authoritative provider meter.
 
 Default ledger: `data/providers/quota.db`; override via `HOLOCLIP_QUOTA_LEDGER`.
-Do not share credentials across paid and free projects. The next capability-mesh
-gate will additionally require real, per-capability benchmark qualification before
+Do not share credentials across paid and free projects. The capability-mesh
+gate additionally requires real, per-capability benchmark qualification before
 production selection. Free metadata alone never establishes editing quality.
+
+`Retry-After` seconds/dates and known rate-reset duration headers schedule quota
+resumption. Only numeric quota error metadata is retained; provider error prose and
+organization identifiers are excluded. A request larger than the Free per-minute
+ceiling is a dependency block, not a promise that tomorrow's quota will make it fit.
+Measured frame batches retain every frame and full transcript context. Inputs are
+never truncated to fit; NVIDIA embeddings explicitly use `truncate=NONE`.
