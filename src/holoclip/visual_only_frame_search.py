@@ -45,12 +45,12 @@ def _sample(frames: list, count: int) -> list:
 def _side_frames(frames: list, interval: list[float], side: str) -> list:
     if side == "left":
         candidates = sorted(
-            (f for t, f in frames if interval[0] - 4 <= t <= interval[0] - .10),
+            ((t, f) for t, f in frames if interval[0] - 4 <= t <= interval[0] - .10),
             key=lambda f: f[0], reverse=True,
         )
     else:
         candidates = sorted(
-            (f for t, f in frames if interval[1] + .10 <= t <= interval[1] + 4),
+            ((t, f) for t, f in frames if interval[1] + .10 <= t <= interval[1] + 4),
             key=lambda f: f[0],
         )
     chosen = []
