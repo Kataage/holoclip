@@ -27,6 +27,7 @@ from holoclip.bounded_source_evidence import measure_reserved_source_pairs
 from holoclip.provider_benchmark import atomic_json
 
 VERSION = "holdout-real-media-run-audit-v1"
+MULTI_BATCH_VERSION = "holdout-real-media-multi-batch-audit-v1"
 
 
 @dataclass(frozen=True)
@@ -210,9 +211,15 @@ def summarize_observed_evidence(
     }
 
 
-def _select_batch(state: CorpusGrowthState, root: Path, max_clips: int) -> tuple[list, int]:
+def _select_batch(
+    state: CorpusGrowthState, root: Path, max_clips: int,
+    *, exclude_clip_ids: frozenset[str] = frozenset(),
+) -> tuple[list, int]:
     """Prioritize still-unmeasured clip records; never use cache for qualification."""
-    candidates = _candidates(state)
+    candidates = [
+        item for item in _candidates(state)
+        if human_clip_identity(item.clip_url) not in exclude_clip_ids
+    ]
     last = root / STAGES[-1].report
     completed = {}
     if last.is_file():
@@ -258,6 +265,7 @@ def _run_reserved_holdout_e2e_unlocked(
     provider, *, store: Path, state_path: Path, root: Path,
     policy_rules: list, max_clips: int = 3,
     preflight_only: bool = False, progress=None, runners=None,
+    exclude_clip_ids: frozenset[str] = frozenset(),
 ) -> dict:
     """Single bounded call on *real* local media; checkpoint all stage outcomes."""
     if not 1 <= max_clips <= 20:
@@ -303,7 +311,9 @@ def _run_reserved_holdout_e2e_unlocked(
         return output
 
     try:
-        batch, remaining = _select_batch(state, root, max_clips)
+        batch, remaining = _select_batch(
+            state, root, max_clips, exclude_clip_ids=exclude_clip_ids,
+        )
     except (ValueError, OSError):
         output["status"] = "BLOCKED_INVALID_PRIOR_CHECKPOINT"
         save()
@@ -418,5 +428,166 @@ def run_reserved_holdout_e2e(
             preflight_only=preflight_only, progress=progress,
             runners=runners,
         )
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def run_all_reserved_holdout_batches(
+    provider, *, store: Path, state_path: Path, root: Path,
+    policy_rules: list, max_clips: int = 3, max_batches: int = 8,
+    progress=None, runners=None,
+) -> dict:
+    """One bounded invocation over distinct reserved clips; fail-stop on bad evidence.
+
+    This is NOT a production qualification, event-level test, or automatic
+    retries of failed reservations. It drives the same nine guarded stage
+    functions for each selected batch, never evaluating the same clip twice
+    in one invocation, even when all clips were previously cached.
+    """
+    if not 1 <= max_clips <= 20 or not 1 <= max_batches <= 12:
+        raise ValueError("Batch size 1..20 and invocation budget 1..12 required")
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "holdout-e2e-all-batches.json"
+    lock = root / ".holdout-e2e.lock"
+    try:
+        handle = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return {
+            "version": MULTI_BATCH_VERSION, "status": "BLOCKED_CONCURRENT_RUN",
+            "real_media_run_completed": False, "ready": False,
+            "production_ready": False, "qualification_allowed": False,
+            "report_path": str(path),
+        }
+
+    result = {
+        "version": MULTI_BATCH_VERSION, "status": "RUNNING",
+        "report_path": str(path), "real_media_run_completed": False,
+        "ready": False, "production_ready": False, "qualification_allowed": False,
+        "event_split_verified": False, "reviewed_gold_available": False,
+        "benchmark_held_out": False, "frame_accurate_cuts_verified": False,
+        "dense_output_source_map_verified": False,
+        "max_clips_per_batch": max_clips, "max_batches": max_batches,
+        "batches": [], "processed_clip_ids": [], "processed_clips": 0,
+        "remaining_clips": 0,
+        "observed_totals": {
+            "clips_with_unique_original_audio_matches": 0,
+            "sampled_source_finished_frame_links": 0,
+            "multimodal_cut_candidates": 0,
+            "local_time_map_candidate_segments": 0,
+            "candidate_coverage_seconds": 0.,
+        },
+        "editor_cut_precision": None, "editor_cut_recall": None,
+        "native_timestamp_error_seconds": None, "event_holdout_accuracy": None,
+    }
+
+    def save() -> None:
+        atomic_json(path, result)
+
+    try:
+        os.close(handle)
+        if not state_path.is_file():
+            result["status"] = "BLOCKED_MISSING_RESERVATION_STATE"
+            save()
+            return result
+        initial_state = state_path.read_bytes()
+        reservation_hash = hashlib.sha256(initial_state).hexdigest()
+        state = CorpusGrowthState.model_validate_json(initial_state)
+        candidates = _candidates(state)
+        all_ids = {human_clip_identity(c.clip_url) for c in candidates}
+        result["reserved_clips"] = len(candidates)
+        result["remaining_clips"] = len(candidates)
+        if not candidates:
+            result["status"] = "BLOCKED_NO_RESERVED_CLIPS"
+            save()
+            return result
+        if len(all_ids) != len(candidates):
+            result["status"] = "BLOCKED_AMBIGUOUS_RESERVATION"
+            save()
+            return result
+
+        seen: set[str] = set()
+        for number in range(1, max_batches + 1):
+            if len(seen) == len(all_ids):
+                break
+            if (not state_path.is_file()
+                    or hashlib.sha256(state_path.read_bytes()).hexdigest() != reservation_hash):
+                result["status"] = "BLOCKED_CHANGED_RESERVATION_STATE"
+                save()
+                return result
+            if progress:
+                progress(f"reserved media batch {number}/{max_batches}")
+            try:
+                batch = _run_reserved_holdout_e2e_unlocked(
+                    provider, store=store, state_path=state_path,
+                    root=root, policy_rules=policy_rules, max_clips=max_clips,
+                    progress=progress, runners=runners,
+                    exclude_clip_ids=frozenset(seen),
+                )
+            except Exception as exc:
+                # No remote/auth-bearing stderr or exception message persisted.
+                result["status"] = "STAGE_FAILED"
+                result["error_class"] = type(exc).__name__
+                result["failed_batch"] = number
+                save()
+                return result
+
+            selected = batch.get("selected_clip_ids", [])
+            # Never report success for a duplicate, unreserved or empty batch.
+            if (not isinstance(selected, list) or not selected
+                    or len(selected) != len(set(selected))
+                    or set(selected) & seen or not set(selected) <= all_ids):
+                result["status"] = "BLOCKED_INVALID_BATCH_SELECTION"
+                result["failed_batch"] = number
+                save()
+                return result
+            summary = batch.get("observations", {})
+            item = {
+                "number": number, "status": batch["status"],
+                "selected_clip_ids": selected,
+                "completed_stage_count": len(batch.get("stages", [])),
+                "blocked_stage": batch.get("blocked_stage"),
+                "stage_status_counts": summary.get("stage_status_counts", {}),
+                "observations": {
+                    k: summary.get(k, 0) for k in result["observed_totals"]
+                },
+            }
+            result["batches"].append(item)
+            if batch["status"] not in (
+                "UNREVIEWED_MEASUREMENTS_COMPLETE",
+                "SIMULATED_STAGE_TEST_COMPLETE",
+            ):
+                result["status"] = "BLOCKED_BATCH"
+                result["failed_batch"] = number
+                result["blocked_stage"] = batch.get("blocked_stage")
+                result["blocked_batch_status"] = batch["status"]
+                save()
+                return result
+            if summary.get("all_nine_stages_measured_clips") != len(selected):
+                result["status"] = "BLOCKED_BATCH_INCOMPLETE"
+                result["failed_batch"] = number
+                save()
+                return result
+            seen.update(selected)
+            result["processed_clip_ids"] = sorted(seen)
+            result["processed_clips"] = len(seen)
+            result["remaining_clips"] = len(all_ids - seen)
+            for key in result["observed_totals"]:
+                result["observed_totals"][key] += item["observations"][key]
+            # Persist after every completed batch, not only at invocation exit.
+            save()
+
+        if len(seen) != len(all_ids):
+            result["status"] = "BOUNDED_BATCH_LIMIT_REACHED"
+        elif (not state_path.is_file()
+              or hashlib.sha256(state_path.read_bytes()).hexdigest() != reservation_hash):
+            result["status"] = "BLOCKED_CHANGED_RESERVATION_STATE"
+        else:
+            result["status"] = (
+                "UNREVIEWED_ALL_BATCHES_COMPLETE" if runners is None
+                else "SIMULATED_ALL_BATCHES_COMPLETE"
+            )
+            result["real_media_run_completed"] = runners is None
+        save()
+        return result
     finally:
         lock.unlink(missing_ok=True)

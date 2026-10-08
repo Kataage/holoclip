@@ -756,6 +756,43 @@ known boundary times are never promoted to human reviewer gold.
 Real Hololive stream capture with BGM, repeated scenes, multi-source
 editing and actual editor intent still require independent evaluation.
 
+## Increment 17: bounded unattended multi-batch reserved real-media trial (#133)
+
+Single-batch `examples-validate-holdout-e2e --max-clips 3` is intentionally
+limited, but repeated manual commands are inconsistent with the goal of
+autonomously testing all locally reserved source/clip evidence.
+The command now accepts `--all-batches --max-clips 3 --max-batches 8`.
+A single invocation processes up to 8 sequential three-clip batches,
+with a bounded `--max-batches` limit of 1..12. Clip selection for each
+batch excludes all clips already attempted in the same invocation even
+when previously cached; no clip may be counted twice. All existing
+holdout corpus learning/event split, SHA integrity, source/clip policy,
+rights, upper media-length, FFmpeg and proof checks remain per stage.
+
+One per-root exclusive lock is held throughout the complete multi-batch
+execution. Each finished batch is atomically checkpointed into a
+separate `holdout-e2e-all-batches.json` alongside the per-batch
+`holdout-e2e-audit.json`. The aggregate retains **per-batch** stage
+statuses, selected clip identities, observed-only frame correspondences,
+candidate acoustic cuts and partial local mapping coverage; it reports
+remaining reservations. Any blocked or quarantined stage stops the
+whole invocation before starting another batch, preserving the failed
+batch and reason. Exhausting the configured invocation budget reports
+`BOUNDED_BATCH_LIMIT_REACHED`, never fake successful completion.
+
+The outer controller checks the original durable reservation state
+against its SHA before each batch, while the nine-stage inner controller
+checks the same state before each stage and on exit. Neither the
+training data nor the durable holdout reservation state is modified.
+All quality figures requiring genuine independent human gold remain
+null; every production, event-heldout, frame-accurate and gold flag
+stays false. Synthetic injected stage-runner tests cannot claim that
+actual media was processed.
+
+This allows unattended *trial execution*, not unattended **publication**
+or ready-route promotion. Real edited Hololive media still must be
+available locally, and any empirical failure must be investigated.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
