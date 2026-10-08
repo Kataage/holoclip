@@ -26,11 +26,19 @@ def _fingerprint(pairs: list[dict], *, max_frames: int, time_tolerance: float) -
     values = {
         "version": VERSION, "method": VISUAL_VERSION, "max_frames": max_frames,
         "time_tolerance": time_tolerance,
-        "pairs": [{key: pair.get(key) for key in (
-            "source_start", "source_end", "clip_start", "clip_end",
-            "source_video_sha256", "source_window_sha256",
-            "finished_window_sha256", "source_measurement", "finished_measurement",
-        )} for pair in pairs],
+        "pairs": [
+            {
+                **{key: pair.get(key) for key in (
+                    "source_start", "source_end", "clip_start", "clip_end",
+                    "source_video_sha256", "source_window_sha256",
+                    "finished_window_sha256", "source_measurement", "finished_measurement",
+                )},
+                # The measured input window's frame sampling/checksums are part of
+                # the editing evidence identity, not only the bounded video bytes.
+                "source_manifest_sha256": checksum_file(Path(pair["source_measurement"])),
+                "finished_manifest_sha256": checksum_file(Path(pair["finished_measurement"])),
+            } for pair in pairs
+        ],
     }
     return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
 
