@@ -1304,6 +1304,46 @@ small source sections are probed; there is **no source truth,
 exact native PTS, precision/recall, editorial gold, or
 production-ready route**, and `ready=false` remains unchanged.
 
+## Increment 32: persistent two-sided independent visual corroboration (#148)
+
+Previously `source_visual_pending` stored only the most recent short
+source-video probe. Every cycle then erased the prior matched images and
+the completed clip itself was always sampled near the center, so
+multiple original matches could not demonstrate independent output
+contexts. A bounded, persistent `source_visual_ledger.py` now
+retains up to 32 *unreviewed* source/finished matched-window events
+with source stream identity, exact sampled 12s original and finished
+requested ranges, media SHA256s and checked local image-frame times.
+
+The worker automatically rotates through up to six *nonoverlapping*
+finished-clip sample windows across unattended cycles, while preserving
+the original source breadth-first sampling and fair candidate rotation.
+An outstanding one-shot weak original-video match pins the same
+finished-clip sampling interval until the follow-up is consumed,
+preserving the SHA-bound hint from #147. No second full-original
+download is introduced; each run remains bounded.
+
+Only three or more distinct temporally consistent image correspondences
+may enter the ledger. Two-frame weak matches, synthetic diagnostics
+without real frame timestamps, missing checksums, repeated exact
+source/finished ranges, or changed underlying media cannot increment
+verified event counts. The **independent two-sided window count**
+greedily includes a new match only if both its finished clip section
+and original source section do not overlap any already counted match
+for that candidate. Different original candidates with visual
+support remain `UNKNOWN_DIFFERENT_CANDIDATES_SHARE_VISUAL_EVIDENCE`,
+not a winner. Two independent sampled video sections on one candidate
+earn only `UNREVIEWED_TWO_SIDED_DIVERSE_VISUAL_HYPOTHESIS`.
+
+Persisted ledger versions, owner IDs, candidate IDs, sample ranges,
+SHA256 and timestamps, no-gold flags, aggregate counts and summary
+are revalidated **before video network acquisition**; stale or
+promoted evidence is blocked. Because native unmodified original-video
+PTS and human-reviewed source/event gold do not yet exist, no
+source identity, source time-map, clipping truth, training/holdout
+assignment, precision/recall, or production readiness is asserted.
+The production router remains `ready=false`.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
