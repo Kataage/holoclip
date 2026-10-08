@@ -5,7 +5,9 @@ human reference. Failure at any stage aborts instead of silently skipping.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -120,15 +122,25 @@ def _kwargs(stage: str, *, store: Path, state: Path, root: Path,
     return args
 
 
-def summarize_observed_evidence(root: Path, expected_ids: set[str]) -> dict:
-    """Report coverage and failure modes, not ground-truth accuracy."""
+def summarize_observed_evidence(
+    root: Path, expected_ids: set[str], *, completed_stages: set[str] | None = None,
+) -> dict:
+    """Report only stages executed in this invocation, never stale downstream data."""
+    included = {s.name for s in STAGES} if completed_stages is None else completed_stages
     reports = {}
     per_clip = {clip_id: {} for clip_id in sorted(expected_ids)}
     stage_counts = {}
     for stage in STAGES:
+        if stage.name not in included:
+            stage_counts[stage.name] = {"NOT_EXECUTED_THIS_RUN": len(expected_ids)}
+            for clip_id in expected_ids:
+                per_clip[clip_id][stage.name] = "NOT_EXECUTED_THIS_RUN"
+            continue
         path = root / stage.report
         if not path.is_file():
             stage_counts[stage.name] = {"missing_report": len(expected_ids)}
+            for clip_id in expected_ids:
+                per_clip[clip_id][stage.name] = "missing_report"
             continue
         data = json.loads(path.read_text(encoding="utf-8"))
         if data.get("version") != stage.version or any(
@@ -149,7 +161,8 @@ def summarize_observed_evidence(root: Path, expected_ids: set[str]) -> dict:
 
     fully_processed = [
         clip_id for clip_id, stages in per_clip.items()
-        if all(stages.get(s.name) == s.success for s in STAGES)
+        if len(included) == len(STAGES)
+        and all(stages.get(s.name) == s.success for s in STAGES)
     ]
     matched = 0
     visual_pairs = 0
@@ -197,6 +210,50 @@ def summarize_observed_evidence(root: Path, expected_ids: set[str]) -> dict:
     }
 
 
+def _select_batch(state: CorpusGrowthState, root: Path, max_clips: int) -> tuple[list, int]:
+    """Prioritize still-unmeasured clip records; never use cache for qualification."""
+    candidates = _candidates(state)
+    last = root / STAGES[-1].report
+    completed = {}
+    if last.is_file():
+        raw = json.loads(last.read_text(encoding="utf-8"))
+        if (raw.get("version") == STAGES[-1].version
+                and raw.get("qualification_allowed") is False
+                and raw.get("reviewed_gold_available") is False
+                and raw.get("event_split_verified") is False):
+            completed = raw.get("records", {})
+    ranked = sorted(
+        enumerate(candidates), key=lambda pair: (
+            completed.get(human_clip_identity(pair[1].clip_url), {}).get("status")
+                == STAGES[-1].success,
+            pair[0],
+        ),
+    )
+    selected = [item for _, item in ranked[:max_clips]]
+    remaining = max(0, len(candidates) - len(selected))
+    return selected, remaining
+
+
+def _batch_state(state: CorpusGrowthState, selected: list) -> CorpusGrowthState:
+    """Project only selected reserved clips, retaining *all* nonholdout learning history.
+
+    Crucially, durable holdout_stream_ids and queued-learning items stay intact;
+    this is an ephemeral execution view, not a mutation of the corpus state.
+    """
+    selected_ids = {human_clip_identity(item.clip_url) for item in selected}
+    if len(selected_ids) != len(selected):
+        raise ValueError("Ambiguous duplicate reserved clip ID")
+    subset = state.model_copy(deep=True)
+    subset.items = {
+        key: item for key, item in subset.items.items()
+        if item.status != "holdout_reserved"
+        or human_clip_identity(item.clip_url) in selected_ids
+    }
+    if len(_candidates(subset)) != len(selected):
+        raise ValueError("Reserved batch projection is incomplete")
+    return subset
+
+
 def run_reserved_holdout_e2e(
     provider, *, store: Path, state_path: Path, root: Path,
     policy_rules: list, max_clips: int = 3,
@@ -225,7 +282,8 @@ def run_reserved_holdout_e2e(
         output["status"] = "BLOCKED_MISSING_RESERVATION_STATE"
         save()
         return output
-    state = CorpusGrowthState.model_validate_json(state_path.read_text(encoding="utf-8"))
+    state_bytes = state_path.read_bytes()
+    state = CorpusGrowthState.model_validate_json(state_bytes)
     candidates = _candidates(state)
     inventory = holdout_inventory(store, state_path)
     output["reserved_clips"] = len(candidates)
@@ -238,9 +296,16 @@ def run_reserved_holdout_e2e(
         output["conflicted_streams_count"] = len(inventory["conflicted_streams"])
         save()
         return output
-    if len(candidates) > max_clips:
-        output["status"] = "BLOCKED_RESERVATION_BATCH_BUDGET"
-        output["required_max_clips"] = len(candidates)
+
+    batch, remaining = _select_batch(state, root, max_clips)
+    output["selected_clips"] = len(batch)
+    output["remaining_clips_after_batch"] = remaining
+    selected_ids = [human_clip_identity(item.clip_url) for item in batch]
+    output["selected_clip_ids"] = selected_ids
+    try:
+        projected = _batch_state(state, batch)
+    except ValueError:
+        output["status"] = "BLOCKED_AMBIGUOUS_RESERVATION"
         save()
         return output
     output["status"] = "PREFLIGHT_ONLY_NO_MEDIA_EXECUTED" if preflight_only else "RUNNING"
@@ -248,39 +313,72 @@ def run_reserved_holdout_e2e(
     if preflight_only:
         return output
 
-    ids = {human_clip_identity(x.clip_url) for x in candidates}
-    for stage in STAGES:
-        if progress:
-            progress(f"reserved media trial: {stage.name}")
-        fn = runners.get(stage.name) if runners is not None else stage.execute
-        if not callable(fn):
-            raise ValueError("Missing stage runner: " + stage.name)
-        try:
-            fn(provider, **_kwargs(stage.name, store=store, state=state_path,
-                                   root=root, rules=policy_rules,
-                                   max_clips=max_clips, progress=progress))
-            metrics = summarize_observed_evidence(root, ids)
-            counts = metrics["stage_status_counts"].get(stage.name, {})
-            step = {"stage": stage.name, "counts": counts, "report": stage.report}
-            output["stages"].append(step)
-            output["observations"] = metrics
-            if counts.get(stage.success, 0) != len(ids) or sum(counts.values()) != len(ids):
-                output["status"] = "BLOCKED_UPSTREAM_STAGE"
+    # Prevent concurrent executions from overwriting a shared stage checkpoint
+    # or the projected state file. Never delete a lock owned by another run.
+    lock = root / ".holdout-e2e.lock"
+    try:
+        fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        output["status"] = "BLOCKED_CONCURRENT_RUN"
+        save()
+        return output
+
+    try:
+        os.close(fd)
+        batch_path = root / "holdout-e2e-batch-state.json"
+        atomic_json(batch_path, projected.model_dump(mode="json"))
+        original_sha = hashlib.sha256(state_bytes).hexdigest()
+        ids = set(selected_ids)
+        completed = set()
+        for stage in STAGES:
+            if progress:
+                progress(f"reserved media trial: {stage.name}")
+            fn = runners.get(stage.name) if runners is not None else stage.execute
+            if not callable(fn):
+                output["status"] = "BLOCKED_INVALID_RUNNER"
                 output["blocked_stage"] = stage.name
                 save()
                 return output
-        except Exception as exc:
-            # Never persist auth-bearing stderr, remote metadata, or URLs.
-            output["status"] = "STAGE_FAILED"
-            output["blocked_stage"] = stage.name
-            output["error_class"] = type(exc).__name__
+            try:
+                # If a reservation changes while FFmpeg is running, abort
+                # instead of continuing with a stale holdout source assignment.
+                if (not state_path.is_file()
+                        or hashlib.sha256(state_path.read_bytes()).hexdigest() != original_sha):
+                    output["status"] = "BLOCKED_CHANGED_RESERVATION_STATE"
+                    output["blocked_stage"] = stage.name
+                    save()
+                    return output
+                fn(provider, **_kwargs(
+                    stage.name, store=store, state=batch_path, root=root,
+                    rules=policy_rules, max_clips=len(batch), progress=progress,
+                ))
+                completed.add(stage.name)
+                metrics = summarize_observed_evidence(
+                    root, ids, completed_stages=completed,
+                )
+                counts = metrics["stage_status_counts"].get(stage.name, {})
+                step = {"stage": stage.name, "counts": counts, "report": stage.report}
+                output["stages"].append(step)
+                output["observations"] = metrics
+                if counts.get(stage.success, 0) != len(ids):
+                    output["status"] = "BLOCKED_UPSTREAM_STAGE"
+                    output["blocked_stage"] = stage.name
+                    save()
+                    return output
+            except Exception as exc:
+                # Never persist raw metadata, stderr, API tokens or remote URLs.
+                output["status"] = "STAGE_FAILED"
+                output["blocked_stage"] = stage.name
+                output["error_class"] = type(exc).__name__
+                save()
+                return output
             save()
-            return output
+        output["real_media_run_completed"] = runners is None
+        output["status"] = (
+            "UNREVIEWED_MEASUREMENTS_COMPLETE" if runners is None
+            else "SIMULATED_STAGE_TEST_COMPLETE"
+        )
         save()
-    output["real_media_run_completed"] = runners is None
-    output["status"] = (
-        "UNREVIEWED_MEASUREMENTS_COMPLETE" if runners is None
-        else "SIMULATED_STAGE_TEST_COMPLETE"
-    )
-    save()
-    return output
+        return output
+    finally:
+        lock.unlink(missing_ok=True)
