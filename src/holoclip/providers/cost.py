@@ -492,8 +492,8 @@ class CostGuard:
                 raise CostPolicyError("Unexpected Google API key header on non-Gemini request")
             headers["authorization"] = f"Bearer {key}"
         kwargs["headers"] = headers
-        if client.auth is not None:
-            raise CostPolicyError("Implicit HTTP client authentication is forbidden")
+        if client.auth is not None or kwargs.get("auth") is not None:
+            raise CostPolicyError("Implicit or per-request HTTP authentication override is forbidden")
         limits = dict(account.daily_limits)
         for unit, maximum in entry.quota_snapshot.items():
             limits[unit] = min(limits.get(unit, maximum), maximum * 0.8)
