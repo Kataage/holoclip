@@ -64,6 +64,10 @@ uv run --extra media holoclip examples-validate-holdout-e2e --preflight-only
 uv run --extra media holoclip examples-validate-holdout-e2e --max-clips 3
 # Autonomous bounded multi-batch validation, for reserved real clip/source evidence:
 uv run --extra media holoclip examples-validate-holdout-e2e --all-batches --max-clips 3 --max-batches 8
+# After interruption or reaching a finite batch budget, replay all previously
+# successful reserved-video batches with full nine-stage validation, then
+# continue up to the NEW total max-batches budget:
+uv run --extra media holoclip examples-validate-holdout-e2e --all-batches --resume-checkpoint --max-clips 3 --max-batches 12
 # Optional: examine other reserved clips even when one original audio cannot
 # be uniquely matched. Other failures (policy, identity, media, exceptions)
 # ALWAYS stop. Bounded to one clip per batch, up to 12 clips per invocation.
