@@ -11,7 +11,7 @@ from holoclip.source_visual_assessment import (
 from holoclip.source_visual_ledger import checked_ledger
 from test_source_candidate_visual import Provider, make_state, verify
 from test_source_visual_ledger import (
-    AID, BID, CID, HASH_A, HASH_B, add, strong,
+    AID, BID, CID, add, strong,
 )
 
 
