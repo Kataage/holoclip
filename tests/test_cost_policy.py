@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from holoclip.providers.cost import (
-    AccountEvidence, CostGuard, CostPolicyError, FreeModel, QuotaBlocked, QuotaLedger,
+    AccountEvidence, CostGuard, CostPolicyError, FreeModel, FreeModelReverification, QuotaBlocked, QuotaLedger,
     credential_fingerprint, free_registry,
 )
 
@@ -31,6 +31,40 @@ def test_paid_or_local_model_is_not_representable(mutation):
     raw = next(iter(free_registry().values())).model_dump()
     with pytest.raises(ValidationError):
         FreeModel.model_validate(raw | mutation)
+
+
+def test_reverification_refreshes_only_known_official_free_model_evidence(tmp_path):
+    guard = guard_at(tmp_path / "quota.db", clock=lambda: NOW + timedelta(days=9))
+    entry = guard.registry["nvidia:z-ai/glm-5.3"]
+    with pytest.raises(CostPolicyError, match="FREE_STATUS_STALE"):
+        guard.model(entry.provider, entry.model, entry.base_url)
+    proof = FreeModelReverification(provider=entry.provider, model=entry.model,
+        verified_at=NOW + timedelta(days=9), official_reference=entry.verification_references[0],
+        reviewed_by="free-pricing-review", confirmed_no_charge=True)
+    guard.apply_free_reverification([proof])
+    updated = guard.model(entry.provider, entry.model, entry.base_url)
+    assert updated.verified_at == proof.verified_at
+    assert updated.base_url == entry.base_url
+    assert updated.operations == entry.operations
+    assert updated.capabilities == entry.capabilities
+    assert updated.free_status_evidence == proof.official_reference
+
+
+@pytest.mark.parametrize("change", [
+    {"official_reference": "https://paid.example.invalid"},
+    {"model": "paid/unregistered"},
+    {"verified_at": NOW + timedelta(days=10)},
+])
+def test_unverified_free_refresh_cannot_override_whitelist(tmp_path, change):
+    guard = guard_at(tmp_path / "quota.db", clock=lambda: NOW + timedelta(days=9))
+    entry = guard.registry["nvidia:z-ai/glm-5.3"]
+    original = entry.verified_at
+    proof = FreeModelReverification(provider=entry.provider, model=entry.model,
+        verified_at=NOW + timedelta(days=9), official_reference=entry.verification_references[0],
+        reviewed_by="free-pricing-review", confirmed_no_charge=True)
+    with pytest.raises(CostPolicyError):
+        guard.apply_free_reverification([proof.model_copy(update=change)])
+    assert guard.registry[entry.identity].verified_at == original
 
 
 @pytest.mark.parametrize("mutation", [{"billing_enabled": True}, {"plan": "PAID"}])
