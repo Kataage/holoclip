@@ -244,6 +244,56 @@ No source-pair manifest is a production `BenchmarkManifest` and
 `frame_accurate_cuts_verified=false`, `event_split_verified=false`
 and `reviewed_gold_available=false` remain mandatory.
 
+## Increment 5: visually measured zoom/reframe candidates (#121)
+
+`examples-inspect-visual-edits` consumes only **previously measured source and
+finished video pairs** (#120) with verified source-section, decoded-frame,
+contact-sheet, finished-video, source-audio and reservation evidence.
+No video or AI model is downloaded at this stage; OpenCV ORB and RANSAC run
+locally as deterministic *computer vision*, not local model inference.
+
+```powershell
+uv run --extra media holoclip examples-grow-corpus --discover-only
+uv run --extra media holoclip examples-prepare-holdout
+uv run --extra media holoclip examples-align-holdout
+uv run --extra media holoclip examples-measure-source-pairs
+uv run --extra media holoclip examples-inspect-visual-edits
+```
+
+The inspector pairs sparse measured frames using local bounded PTS proximity
+only as a **candidate filter**. It estimates a similarity-affine model from
+cross-checked ORB matches with RANSAC, rejecting low-inlier, poorly distributed,
+non-unique or implausible transforms. It may report measured, bounded
+`identity_like`, `zoom_candidate`, `reframe_candidate`,
+`zoom_reframe_candidate` or `other_affine_candidate` observations with actual
+source+finished frame IDs, PTS, candidate correspondence margin, inlier counts,
+coverage, geometric residual, scale and normalized visual center.
+
+Critically:
+- A sparse match establishes **candidate geometry for those images only**,
+  not the reason a human editor chose a shot.
+- If there is no convincing match, repeated imagery or too many frames to
+  examine without silent truncation, output is **UNKNOWN**, not absence.
+- Two independently decoded source/finished windows have distinct local PTS
+  origins; their apparent proximity is not an absolute time truth.
+- The measured sampling cannot certify cut frame, clip speed, frozen segment,
+  overlay/subtitle presence or multi-POV equivalence. OCR, subtitle effects
+  and composition remain separate dimensions under #83–#89.
+- Training set contamination, source/clip current policy, range restrictions,
+  source identity and every referenced media/frame/sheet byte are checked
+  before output reuse. A changed measured input invalidates its cache key.
+- Result stays outside production and Editorial Profile, with
+  `qualification_allowed=false`, `benchmark_held_out=false`,
+  `frame_accurate_cuts_verified=false`, `event_split_verified=false`,
+  `reviewed_gold_available=false`.
+
+Output: `data/provider-benchmark/holdout/visual_edits/holdout-visual-observations.json`.
+No true held-out semantic gold is created. The next stage should assess
+actual performance on diverse public source-to-finished videos, add dense
+piecewise temporal mapping around detected discontinuities, and begin stable
+subtitle/overlay detection. Fixture-only green CI does not establish that
+those downstream semantics are accurate.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
