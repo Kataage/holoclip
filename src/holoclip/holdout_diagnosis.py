@@ -77,6 +77,7 @@ def _records_from_audit(audit: dict, reserved: set[str]) -> tuple[list, str]:
         raise ValueError("Unsupported holdout audit schema")
 
     seen: set[str] = set()
+    deferred_audio: list[str] = []
     cleaned = []
     for expected_number, row in enumerate(rows, start=1):
         if not isinstance(row, dict) or row.get("number") != expected_number:
@@ -105,11 +106,29 @@ def _records_from_audit(audit: dict, reserved: set[str]) -> tuple[list, str]:
                         for stage in STAGES
                     )):
                 raise ValueError("A complete run lacks all expected stage successes")
+        defer = row.get("deferred_insufficient_audio", False)
+        if type(defer) is not bool:
+            raise ValueError("Invalid audio deferral marker")
+        if defer:
+            if (version != MULTI_BATCH_VERSION or len(selected) != 1
+                    or current != "BLOCKED_UPSTREAM_STAGE"
+                    or blocked != "original_audio"
+                    or stage_counts.get("original_audio") not in (
+                        {"INSUFFICIENT_AUDIO": 1},
+                        {"INSUFFICIENT_UNIQUE_ANCHORS": 1},
+                    )):
+                raise ValueError("Audio deferral bypassed a safety condition")
+            deferred_audio.append(selected[0])
         cleaned.append({
             "number": expected_number, "status": current,
             "selected_clip_ids": selected, "stage_status_counts": stage_counts,
             "blocked_stage": blocked, "completed_stage_count": stage_number,
+            "deferred_insufficient_audio": defer,
         })
+    if version == MULTI_BATCH_VERSION:
+        if (audit.get("deferred_audio_clip_ids", []) != sorted(deferred_audio)
+                or audit.get("deferred_audio_clips", 0) != len(deferred_audio)):
+            raise ValueError("Cumulative deferral list is not stage-grounded")
     return cleaned, version
 
 
@@ -165,6 +184,7 @@ def diagnose_holdout_e2e(
         "event_holdout_accuracy": None,
         "reserved_clips": 0, "attempted_clips": 0,
         "unattempted_clip_ids": [], "batches": [],
+        "deferred_audio_clip_ids": [], "deferred_audio_clips": 0,
         "stage_status_totals": {}, "first_blocker": None,
         "next_action": "RESTORE_DURABLE_RESERVATION_STATE",
     }
@@ -268,6 +288,11 @@ def diagnose_holdout_e2e(
         })
     result["attempted_clips"] = len(seen)
     result["unattempted_clip_ids"] = sorted(reserved - seen)
+    result["deferred_audio_clip_ids"] = sorted(
+        row["selected_clip_ids"][0] for row in rows
+        if row["deferred_insufficient_audio"]
+    )
+    result["deferred_audio_clips"] = len(result["deferred_audio_clip_ids"])
     result["stage_status_totals"] = {
         key: dict(values) for key, values in counts.items() if values
     }
@@ -276,9 +301,24 @@ def diagnose_holdout_e2e(
     simulated = (
         audit.get("real_media_run_completed") is not True
         or any(row["status"] == "SIMULATED_STAGE_TEST_COMPLETE" for row in rows)
-        or result["audit_status"] == "SIMULATED_ALL_BATCHES_COMPLETE"
+        or result["audit_status"] in (
+            "SIMULATED_ALL_BATCHES_COMPLETE",
+            "SIMULATED_INSUFFICIENT_AUDIO_RECORDED",
+        )
     )
-    if first_blocker:
+    result["simulated_only"] = simulated
+    if (result["audit_status"] == "BOUNDED_BATCH_LIMIT_REACHED"
+            and result["deferred_audio_clips"]):
+        result["status"] = "TRIAL_INCOMPLETE_BATCH_BUDGET"
+        result["next_action"] = "INCREASE_FINITE_BATCH_BUDGET_AND_RERUN"
+    elif (result["deferred_audio_clips"]
+          and result["audit_status"] in (
+              "UNREVIEWED_INSUFFICIENT_AUDIO_RECORDED",
+              "SIMULATED_INSUFFICIENT_AUDIO_RECORDED",
+          )):
+        result["status"] = "TRIAL_PARTIAL_WITH_AUDIO_GAPS"
+        result["next_action"] = "CHECK_ORIGINAL_AUDIO_CORRESPONDENCE"
+    elif first_blocker:
         result["status"] = "TRIAL_BLOCKED_REVIEW_STAGE"
         result["next_action"] = first_blocker["diagnostic_action"]
     elif result["audit_status"] == "BOUNDED_BATCH_LIMIT_REACHED":
