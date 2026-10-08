@@ -14,6 +14,7 @@ from typing import Callable
 from holoclip.video_measurement import checksum_file
 
 VERSION = "audio-band-anchor-v1"
+MATCH_SAMPLING_VERSION = "bounded-eight-second-anchor-coverage-v2"
 RATE = 4000
 HOP = 0.25
 SAMPLES = int(RATE * HOP)
@@ -109,7 +110,13 @@ def match_features(clip, source, *, anchor_seconds=6.0, max_anchors=24,
     if width < 12 or clip.shape[0] < width or source.shape[0] < width:
         return {"status": "INSUFFICIENT_AUDIO", "anchors": [], "ranges": [],
                 "unresolved": ["audio shorter than minimum verified anchor"]}
-    count = min(max_anchors, max(1, math.ceil(clip.shape[0] / (20 / HOP))))
+    # Sparse 20-second sampling can entirely miss short edited passages:
+    # on a 44-second two-part clip, three starts include one straddling
+    # the edit, leaving only two valid matches (below our >=3 floor).
+    # Sample ~8 seconds apart instead, still bounded by max_anchors.
+    # Preserve the 6-second independent per-fragment correlation test;
+    # this only improves observational coverage, not acceptance thresholds.
+    count = min(max_anchors, max(4, math.ceil(clip.shape[0] * HOP / 8.)))
     starts = np.unique(np.rint(np.linspace(0, clip.shape[0] - width, count)).astype(int))
     n = source.shape[0]
     fft_size = 1 << (n + width - 2).bit_length()
@@ -185,4 +192,5 @@ def measured_audio_alignment(clip_media: Path, source_media: Path, cache_root: P
     result = match_features(clip_features, source_features)
     return {**result, "clip_media_sha256": checksum_file(clip_media),
             "source_media_sha256": checksum_file(source_media),
-            "fingerprint_version": VERSION}
+            "fingerprint_version": VERSION,
+            "match_sampling_version": MATCH_SAMPLING_VERSION}

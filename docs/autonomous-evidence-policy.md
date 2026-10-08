@@ -692,6 +692,38 @@ The entire batch remains unreviewed and unqualified. These protections
 do not certify editor accuracy, source/native frame PTS, completed source
 mapping, event-level holdout independence or production model readiness.
 
+## Increment 15: scripted audio/video jump and BGM fixture (#131)
+
+The prior real-FFmpeg nine-stage integration scenario contained one continuous
+45-second source excerpt and could not exercise even a known edit jump.
+An additional *fully offline* test now actually decodes, trims and concatenates
+the source intervals 9–31s and 44–66s into a 44-second finished video
+with a deliberately scripted join at finished t=22s. A second variant adds
+quiet continuous background music. Both feed the **real nine-stage**
+source/audio/video/PTS/ORB/clock/partial-map functions.
+
+The first execution revealed a real failure: a 44-second two-piece edit had
+only three 6-second audio anchor sample starts, one straddled the cut,
+and `PARTIAL_AUDIO_MATCH` was refused despite two independently
+matching original sections. The **candidate sampling frequency** is now
+increased to ~8-second cadence (still capped at 24), while the
+individual 6-second acoustic fragment requirement, correlation >=0.79,
+uniqueness margin >=0.065 and three-independent-anchor minimum remain
+unchanged. A `match_sampling_version` on the saved record forces previous
+20-second-cadence alignments to be recomputed on unchanged media rather
+than silently reused; later source-video and mapping checkpoints recheck
+their input provenance. This change increases observational coverage,
+not evidence validity or production qualification.
+
+The known edit script is test-only synthetic ground truth: checks can require
+an acoustic candidate interval to **contain the scripted cut**, and that
+all observed source intervals remain bounded. No such generated test fact
+is allowed into the Hololive corpus, provider qualifications, or reviewer
+gold. A passing test validates decoder and candidate-bracketing integration
+for only those controlled conditions. It does not evaluate independent real
+human-edited clips, noisy stream speech, overlays or the quality of
+editorial selection and cannot switch any production readiness flag.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished

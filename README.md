@@ -96,6 +96,13 @@ execution is **not** production acceptance. The Git repository includes
 example metadata but does **not** include the user's locally downloaded
 real source/video files or completed private holdout checkpoints.
 
+The offline FFmpeg integration suite also covers a real re-encoded
+**two-piece** source↔finished edit (original 9–31s followed by 44–66s)
+with a known scripted cut at edited t=22s, with and without quiet BGM.
+That controlled test must keep edit-cut hypotheses and timing-map outputs
+non-promotable; it is **not** evidence about real human-edited Hololive
+videos or production acceptance.
+
 After gathering grounded original↔finished frame and cut evidence,
 create a **strictly diagnostic** partial output/source time map. Short
 interval candidates must be supported by independently unique audio

@@ -49,6 +49,20 @@ def test_multiple_audio_cuts_preserved_as_separate_approximate_ranges():
     assert result["unresolved"]
 
 
+def test_short_two_piece_edit_keeps_at_least_three_independent_unique_anchors():
+    # 44 seconds, two 22-second observed pieces. Old 20s sampling tested
+    # 0,19,38s only; middle fragment straddled the cut and blocked E2E.
+    source = _features(800, seed=29)
+    cut = np.concatenate([source[36:124], source[176:264]], axis=0)
+    evidence = match_features(cut, source)
+    assert evidence["status"] == "PARTIAL_AUDIO_MATCH"
+    assert len(evidence["anchors"]) >= 3
+    assert len(evidence["ranges"]) == 2
+    assert evidence["source_monotonic"] is True
+    assert evidence["ranges"][0]["source_start"] == pytest.approx(9., abs=.25)
+    assert evidence["ranges"][1]["source_start"] == pytest.approx(44., abs=1.)
+
+
 def test_repeated_source_event_and_unrelated_clip_cannot_establish_unique_match():
     source = _features(500)
     duplicated = np.concatenate([source, source], axis=0)
@@ -154,6 +168,32 @@ def test_unattended_source_audio_and_checksum_bound_resume(tmp_path):
         "PARTIAL_AUDIO_MATCH": 1
     }
     assert provider.calls == 3  # source provider rechecks/caches; matcher itself is reused
+
+
+def test_sparse_old_audio_match_cache_is_recomputed_without_reusing_old_evidence(tmp_path):
+    provider, store, state, prepared, _ = _pipeline(tmp_path)
+    observed = []
+
+    def record_match(*args):
+        observed.append(True)
+        return _fake_audio_align(*args)
+
+    first = _run_pipeline(provider, store, state, prepared, align=record_match)
+    assert first["counts"] == {"PARTIAL_AUDIO_MATCH": 1}
+    assert len(observed) == 1
+    path = prepared / "audio" / "holdout-audio-alignment.json"
+    content = json.loads(path.read_text(encoding="utf-8"))
+    saved = next(iter(content["records"].values()))
+    saved["match_sampling_version"] = "20-second-sparse"
+    path.write_text(json.dumps(content), encoding="utf-8")
+
+    second = _run_pipeline(provider, store, state, prepared, align=record_match)
+    assert second["counts"] == {"PARTIAL_AUDIO_MATCH": 1}
+    assert len(observed) == 2
+    saved = next(iter(json.loads(path.read_text(encoding="utf-8"))["records"].values()))
+    assert saved["match_sampling_version"] == "bounded-eight-second-anchor-coverage-v2"
+    _run_pipeline(provider, store, state, prepared, align=record_match)
+    assert len(observed) == 2
 
 
 def test_learning_conflict_prevents_even_metadata_probe(tmp_path):
