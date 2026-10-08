@@ -41,6 +41,18 @@ uv run --extra media holoclip examples-prepare-holdout --max-clips 3
 uv run --extra media holoclip examples-align-holdout --max-clips 3
 ```
 
+The next optional holdout diagnostic can narrow acoustic edit transitions
+to **conservative candidate time brackets**, not exact cut frames:
+
+```powershell
+uv run --extra media holoclip examples-refine-cut-candidates
+```
+
+The command uses earlier source-audio and measured source/finished video
+evidence, without additional downloads or paid AI inference. Acoustic
+silence, ambiguous matches, visual-only edits and unavailable absolute
+source timestamps remain explicit unknowns.
+
 Source-vs-finished visual geometry can now be inspected after bounded
 source-pair preparation without a cloud AI key, user-authored labels or
 manually selected frame IDs:
