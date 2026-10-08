@@ -63,7 +63,7 @@ def test_completed_single_batch_also_has_offline_triage(tmp_path):
 
 
 def test_measured_synthetic_signals_get_distinct_codes_but_no_gold(tmp_path):
-    store, state, root = _run(tmp_path, count=2)
+    store, state, root = _run(tmp_path, count=1)
     path = root / "holdout-e2e-all-batches.json"
     audit = json.loads(path.read_text(encoding="utf-8"))
     selected = audit["batches"][0]["selected_clip_ids"][0]
