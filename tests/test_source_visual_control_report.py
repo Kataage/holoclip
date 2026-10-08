@@ -1,5 +1,4 @@
 """Only actual bounded acquired measured-video constructed controls count."""
-import json
 
 import pytest
 
