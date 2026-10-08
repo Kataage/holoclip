@@ -11,6 +11,7 @@ import shutil
 import pytest
 
 from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
+from holoclip.examples import human_clip_identity
 from holoclip.holdout_e2e_trial import run_reserved_holdout_e2e
 from holoclip.scripted_cut_metrics import score_scripted_cut_report, REFERENCE_VERSION
 from test_holdout_real_ffmpeg_chain import (
@@ -90,7 +91,7 @@ def test_three_actual_ffmpeg_edits_keep_three_source_islands_and_both_cut_bracke
     synthetic_score = score_scripted_cut_report({
         "version": REFERENCE_VERSION,
         "reference_kind": "SCRIPTED_FFMPEG_ONLY",
-        "clip_id": CLIP_URL.split("v=")[-1],
+        "clip_id": human_clip_identity(CLIP_URL),
         "duration_seconds": 48.,
         "cut_seconds": list(KNOWN_BOUNDARIES),
     }, acoustic_report)
