@@ -224,6 +224,56 @@ class CapabilityRouter:
             max(q.p95_latency for q in r.qualification), r.entry.identity, r.mode.value,
         ))
 
+    def _cached_production_route_valid(self, cached: dict, contract: StageContract,
+                                       exclude_vendors: frozenset[str]) -> bool:
+        """A historical artifact does not carry perpetual production permission.
+
+        Recheck the *current* contract, paid-path guard, provider health and
+        benchmark qualifications before returning a successful cached result.
+        Diagnostic evidence is handled separately and never promoted here.
+        """
+        if not isinstance(cached, dict) or not isinstance(cached.get("output"), dict):
+            return False
+        provenance = cached.get("provenance")
+        if not isinstance(provenance, dict) or provenance.get("diagnostic_only") is not False:
+            return False
+
+        def eligible(proof: dict, *, other_vendor: str | None = None) -> bool:
+            if not isinstance(proof, dict):
+                return False
+            if proof.get("diagnostic_only") is not False:
+                return False
+            for route in self.candidates(contract, exclude_vendors=exclude_vendors):
+                if other_vendor is not None and route.entry.provider == other_vendor:
+                    continue
+                if (route.entry.provider != proof.get("provider") or
+                    route.entry.model != proof.get("model") or
+                    route.mode.value != proof.get("mode") or
+                    route.entry.verified_at.isoformat() != proof.get("verified_free_at")):
+                    continue
+                if (sorted({q.report_sha256 for q in route.qualification}) ==
+                        proof.get("qualification_reports") and
+                    sorted({q.benchmark_version for q in route.qualification}) ==
+                        proof.get("benchmark_versions")):
+                    return True
+            return False
+
+        if not eligible(provenance):
+            return False
+        if contract.second_opinion_required:
+            second = cached.get("second_opinion")
+            consensus = cached.get("consensus")
+            if not isinstance(consensus, dict):
+                return False
+            if second is not None and (
+                not isinstance(second, dict) or
+                not eligible(second.get("provenance"), other_vendor=provenance["provider"])
+            ):
+                return False
+            if second is None and cached["output"].get("aggressive_edit_allowed") is not False:
+                return False
+        return True
+
     async def run(self, contract: StageContract, payload: dict,
                   invoke: Callable[[Route, dict], Awaitable[dict]], *, exclude_vendors=frozenset(),
                   validate: Callable[[dict], dict] | None = None, diagnostic=False) -> dict:
@@ -237,8 +287,11 @@ class CapabilityRouter:
                     input_fingerprint=fingerprint, stage_version="mesh-v1", provider="capability_mesh",
                     model="router-v1", prompt_version=payload.get("prompt_version", "v1"))
         cached = self.cache.reusable_json(**args) if self.cache else None
-        if cached is not None:
+        if cached is not None and (diagnostic or
+                                   self._cached_production_route_valid(cached, contract, exclude_vendors)):
             return cached
+        # Old observation artifacts stay on disk for audit; they are never
+        # promoted after free entitlement/model/benchmark qualification expires.
         run = self.cache.start(**args) if self.cache else None
         routes = self.candidates(contract, exclude_vendors=exclude_vendors)
         # Benchmark bootstrap relaxes only quality qualification; cost/data checks remain mandatory.
