@@ -168,6 +168,24 @@ provider qualification manifest or authorization to set
 `held_out=true`. See
 [autonomous evidence policy](autonomous-evidence-policy.md).
 
+## Safe reserved clip batching and current-invocation audit (#129)
+
+`examples-validate-holdout-e2e --max-clips 3` now selects the first
+bounded batch of as-yet-unprocessed reserved clips instead of stopping
+if the full reservation corpus has more than three clips. Re-running
+advances to later reserved clips. The complete original reservation and
+learning corpus remain immutable; a local projected state is passed to
+all downstream stage workers to guarantee identical batch membership.
+An exclusive run lock, original reservation SHA drift guard and separate
+preflight audit prevent concurrent/mixed/stale evidence.
+
+Crucially, the reported `all_nine_stages_measured_clips` and partial
+map candidate coverage count only the stages *actually invoked in the
+current batch*. A previously successful downstream report may still
+exist on disk after current upstream failure, but it is explicitly
+`NOT_EXECUTED_THIS_RUN` and not scored. All real quality metrics
+remain null without independent reviewer ground truth.
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.

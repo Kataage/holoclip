@@ -657,6 +657,41 @@ command must run against the user's existing reserved sources and local
 download cache in a permitted, network-connected Windows environment.
 Do not report acceptance rates or unseen clip precision without that run.
 
+## Increment 13: safe multi-batch execution and isolated run reports (#129)
+
+Real reserved holdout lists commonly exceed `--max-clips 3`. The previous
+single-command implementation refused *any* work when there were more
+reservations than the per-run budget. Instead, successive invocations now
+select bounded batches prioritizing source clips with no completed final
+stage, while preserving every original holdout reservation and all
+nonreserved queued/training history. A temporary projected state under
+the holdout output root feeds existing stage processors, so their own
+`max_clips` prioritization cannot silently switch clip identities
+between stages. The original state is never rewritten or relabeled.
+
+Batch size, selected clip IDs, total reservations and remaining queue
+length are reported. Duplicate original clip reservations block the run
+rather than merging potentially different source identities. Exclusive
+local lock acquisition occurs *before any report/checkpoint mutation*;
+two overlapping invocations cannot overwrite stage artifacts. A crash
+may leave a lock; this is an intentional fail-closed condition, and the
+operator must investigate the process before removing it. Original
+reservation file SHA-256 is checked before every stage and after the last
+stage, rejecting changes during processing.
+
+The audit now masks reports for stages **not executed in the current
+invocation**, even when old successful downstream reports remain on disk.
+The completed-stage and frame/candidate coverage counts cannot be
+inflated by previously cached later-stage observations after a new
+upstream failure. Preflight uses a separate
+`holdout-e2e-preflight.json`, preserving the most recent full-run
+`holdout-e2e-audit.json`; cached stage artifacts still receive the
+underlying pipelines' current SHA/policy/split rechecks on reuse.
+
+The entire batch remains unreviewed and unqualified. These protections
+do not certify editor accuracy, source/native frame PTS, completed source
+mapping, event-level holdout independence or production model readiness.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
