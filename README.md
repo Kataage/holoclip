@@ -210,6 +210,27 @@ Previously measured v1 cut/source-side/time-map cache chains do not
 qualify as v2 measurements; rerun the already documented bounded holdout
 command to recompute them with current provenance guards.
 
+Unresolved source shortlists now flow into an **automatic bounded visual
+verification worker** during ordinary `examples-grow-corpus` cycles.
+`uv run holoclip examples-verify-source-visual` also runs it separately
+for diagnosis. It refreshes public/ended status and source-range
+policy, samples at most two proposed originals per pending clip,
+and requests only 12-second beginning/middle/end sections from each
+candidate original plus one short finished-clip section. The range
+fetcher never falls back to full-original acquisition. CPU ORB/RANSAC
+matches at least three distinct, time-advancing image pairs within
+one bounded original source section; repeated, static and ambiguous
+matches remain UNKNOWN. Media SHA256, requested range and per-candidate
+diagnostics are saved to the persistent corpus scout state.
+
+Even a unique sampled match is `VISUAL_SEQUENCE_CORROBORATED_NOT_SOURCE_GOLD`.
+The original source may occur outside sampled windows or multiple
+streams may legitimately share footage. No sparse visual match is
+promoted to source identity, exact stream timestamps, training,
+holdout, editorial gold or `ready=true`. A missed match does not
+rule out the candidate, and `source_visual_pending` remains an
+automatic work item, not a demand for user-uploaded data.
+
 The autonomous public human-clip corpus discovery now performs a
 **bounded public-source candidate scout** when an editor omits a source
 link or lists multiple equally plausible original streams. It queries
