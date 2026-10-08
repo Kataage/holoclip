@@ -875,6 +875,10 @@ by each stage. All successfully rechecked old batches consume the same
 finite batch count; later new reservations are processed only after
 every historical batch is revalidated.
 
+Current rights-policy fingerprints are also recorded on **single-batch**
+audits and checked by standalone/automatic offline diagnosis; policy drift
+or missing legacy policy digests blocks its claims about a current trial.
+
 Every new cumulative run records the exact original reservation SHA-256,
 ordered policy-rules SHA-256, stage schema SHA-256 and real-vs-simulated
 execution mode. Replay rejects changed rights/policy, source reservations,
