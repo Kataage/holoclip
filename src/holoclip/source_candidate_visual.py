@@ -261,6 +261,8 @@ def verify_pending_source_visual(
                 or scout.get("status") != "UNVERIFIED_PUBLIC_SOURCE_SHORTLIST"
                 or not isinstance(scout.get("candidate_sources"), list)
                 or not 1 <= len(scout["candidate_sources"]) <= 4
+                or type(scout.get("visual_candidate_round", 0)) is not int
+                or scout.get("visual_candidate_round", 0) < 0
                 or item.source_url is not None or item.source_stream_id is not None
                 or human_clip_identity(item.clip_url) in learned_clips):
             finish("BLOCKED_UNVERIFIED_SOURCE_QUEUE")
