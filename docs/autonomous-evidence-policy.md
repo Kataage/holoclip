@@ -220,7 +220,10 @@ section or absent range-aware SourceProvider fails closed. Normal source-video
 downloads are NEVER substituted.
 
 For up to 3 original source groups per clip, FFprobe/FFmpeg/PySceneDetect
-measure separate source and corresponding finished-video windows. Both
+measure separate source and corresponding finished-video windows. The
+range-aware yt-dlp provider stores a SHA-256 and source/time identity sidecar
+in each isolated section directory; a missing or damaged sidecar/media is
+reacquired instead of silently reused. Both
 measurement manifests, section byte hashes, audio hashes, requested absolute
 start/end, sampled-frame manifests and explicit uncertainty are persisted
 atomically under
