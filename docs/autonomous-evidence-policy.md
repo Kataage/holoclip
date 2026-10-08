@@ -190,6 +190,57 @@ Safety and scope:
 measured; independent cross-stream/same-event leakage checks; finer cut
 localization from bounded video/audio; and calibrated independent semantic gold.
 
+## Increment 4: bounded original-video and finished-edit paired measurements (#120)
+
+After `examples-align-holdout` has produced sufficiently unique audio anchors,
+`examples-measure-source-pairs` requests **only 5–120-second sections** of the
+original video with yt-dlp `--download-sections` and FFmpeg; it NEVER falls
+back to downloading an entire original livestream. The new source-adapter
+contract `acquire_video_range` is explicitly different from ordinary
+`acquire(EDITING_VIDEO)`. Keyframe forcing is used when available but does not
+prove the original absolute frame PTS; yt-dlp section timestamps remain
+**requested time offsets**, not a definitive cut map. See
+[yt-dlp's documented section flag](https://github.com/yt-dlp/yt-dlp#download-options).
+
+```powershell
+uv run --extra media holoclip examples-grow-corpus --discover-only
+uv run --extra media holoclip examples-prepare-holdout --max-clips 3
+uv run --extra media holoclip examples-align-holdout --max-clips 3
+uv run --extra media holoclip examples-measure-source-pairs --max-clips 3 --max-ranges 3
+```
+
+The bounded stage independently verifies, **before network download**, the
+historical learning/holdout split, canonical clip/source identities, finished
+video and frame/sheet checksums, original audio checksum and anchor uniqueness.
+It then re-checks public/ended status and both LEARN policies, **including
+range-scoped restrictions on padded original source sections**, before video
+acquisition. Any ambiguous source, revoked policy, corrupted media, weak
+anchor, mismatched section identity, missing audio, oversized/implausibly long
+section or absent range-aware SourceProvider fails closed. Normal source-video
+downloads are NEVER substituted.
+
+For up to 3 original source groups per clip, FFprobe/FFmpeg/PySceneDetect
+measure separate source and corresponding finished-video windows. Both
+measurement manifests, section byte hashes, audio hashes, requested absolute
+start/end, sampled-frame manifests and explicit uncertainty are persisted
+atomically under
+`data/provider-benchmark/holdout/source_pairs/holdout-source-pairs.json`.
+A repeat run verifies every referenced byte before reusing an artifact.
+The default per-clip bound is three sources windows, each 5–120 seconds;
+the original-section file ceiling is 256 MiB, checked after downloading.
+A source provider that downloads a full archive despite a section request
+is rejected by measured duration; this is a validity/safety check, not
+a guarantee of network bandwidth consumed by every remote extractor.
+
+**Not established:** video-local zero versus requested original-stream absolute
+timestamp, frame-accurate cut transition, crop/zoom delta, subtitles/BGM,
+multi-POV event independence, or independently reviewed semantic gold.
+Those require separate measured refinement and holdout validation.
+No source-pair manifest is a production `BenchmarkManifest` and
+`qualification_allowed=false`, `benchmark_held_out=false`,
+`frame_accurate_cuts_verified=false`, `event_split_verified=false`
+and `reviewed_gold_available=false` remain mandatory.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
