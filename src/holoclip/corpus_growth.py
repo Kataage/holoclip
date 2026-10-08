@@ -172,9 +172,17 @@ async def grow_corpus(
                     provider, clip, explicit_candidates=candidates,
                     policy_rules=policy_rules,
                 )
-                item.status, item.reason = (
-                    "review", "source identity unverified; saved automatic candidate shortlist"
-                )
+                if item.source_scout["candidate_sources"]:
+                    # Reserved for a future autonomous visual-verification
+                    # worker. Never queue for learning or holdout directly.
+                    item.status, item.reason = (
+                        "source_visual_pending",
+                        "unverified original candidate images require cross-check",
+                    )
+                else:
+                    item.status, item.reason = (
+                        "review", "no independently verified source discovered",
+                    )
                 continue
             item.source_scout = None
             source = provider.probe(chosen.url)
