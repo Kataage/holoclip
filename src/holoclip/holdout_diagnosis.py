@@ -29,6 +29,10 @@ _FALSE_FLAGS = (
 
 
 def _fixed_status(value: object) -> str:
+    # The legacy stage-summary report uses this one lower-case literal.
+    # Normalize only the known constant; never reflect arbitrary provider text.
+    if value == "missing_report":
+        return "MISSING_REPORT"
     if not isinstance(value, str) or not _SAFE_STATUS.fullmatch(value):
         raise ValueError("Invalid status code in evidence report")
     return value
@@ -125,7 +129,9 @@ def _classify_blocker(stage: str | None, statuses: dict) -> str:
         "QUARANTINED_ACQUIRED_SOURCE_IDENTITY", "QUARANTINED_ACQUIRED_IDENTITY",
     )):
         return "REVERIFY_SOURCE_IDENTITY"
-    if any("MEASUREMENT" in x or "UNVERIFIED" in x for x in codes):
+    if "MISSING_REPORT" in codes or any(
+        "MEASUREMENT" in x or "UNVERIFIED" in x for x in codes
+    ):
         return "VERIFY_PINNED_MEDIA_AND_REPORT_CHECKSUMS"
     if "RETRYABLE_FAILURE" in codes or "STAGE_FAILED" in codes:
         return "INSPECT_LOCAL_MEDIA_FAILURE_AND_RETRY_ONCE"
