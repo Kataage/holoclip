@@ -19,6 +19,7 @@ from holoclip.holdout_e2e_trial import (
 from holoclip.holdout_preparation import _candidates
 from holoclip.holdout_reservations import holdout_inventory
 from holoclip.provider_benchmark import atomic_json
+from holoclip.real_cut_triage import diagnose_saved_real_cut_observations
 
 DIAGNOSIS_VERSION = "holdout-real-media-offline-diagnosis-v1"
 STAGE_NAMES = {s.name for s in STAGES}
@@ -77,6 +78,8 @@ def _records_from_audit(audit: dict, reserved: set[str]) -> tuple[list, str]:
         }] if audit.get("selected_clip_ids") else []
     else:
         raise ValueError("Unsupported holdout audit schema")
+
+    result["cut_signal_triage"] = cut_triage
 
     seen: set[str] = set()
     deferred_audio: list[str] = []
@@ -188,6 +191,7 @@ def diagnose_holdout_e2e(
         "unattempted_clip_ids": [], "batches": [],
         "deferred_audio_clip_ids": [], "deferred_audio_clips": 0,
         "stage_status_totals": {}, "first_blocker": None,
+        "cut_signal_triage": {"status": "NOT_AVAILABLE"},
         "next_action": "RESTORE_DURABLE_RESERVATION_STATE",
     }
 
@@ -270,6 +274,9 @@ def diagnose_holdout_e2e(
                 return result
             result["policy_verification"] = "MATCHED_CURRENT_RULES"
         rows, _ = _records_from_audit(audit, reserved)
+        cut_triage = diagnose_saved_real_cut_observations(
+            audit, rows, multi_batch=audit.get("version") == MULTI_BATCH_VERSION,
+        )
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         result["status"] = "BLOCKED_INVALID_AUDIT"
         result["next_action"] = "INSPECT_AND_REBUILD_INVALID_AUDIT"
