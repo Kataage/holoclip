@@ -82,6 +82,13 @@ def describe_real_cut_observations(
                 "UNKNOWN_SAMPLING_BUDGET", "UNKNOWN_NO_SUPPORTED_RANGES",
             }):
         return result
+    # Exhausted budget / missing unique anchors is *not* an observed
+    # zero-cut clip. Preserve unknown counts as null until audio was supported.
+    if refinement["status"] != "AUDIO_SUPPORTED_INTERVALS":
+        result["status"] = "UNKNOWN_ACOUSTIC_SUPPORT"
+        result["measurement_status"] = refinement["status"]
+        result["clip_id"] = cut_row.get("clip_id")
+        return result
     changes = refinement.get("transitions")
     if not isinstance(changes, list) or len(changes) > MAX_TRANSITIONS:
         raise ValueError("Malformed or excessive acoustic transitions")
