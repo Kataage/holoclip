@@ -6,6 +6,14 @@ It also compares transcript reasoning, ASR segment/word timestamps and embedding
 A successful HTTP response never grants production qualification. No real-media
 production qualification bundle has been established yet.
 
+**Unattended evidence policy:** [autonomous evidence and learning](autonomous-evidence-policy.md).
+The operator is not expected to prepare gold cases or clip URLs. The corpus-growth
+queue reserves source-stream-disjoint metadata for future held-out acquisition,
+with an immutable split and leakage quarantine. These *reservations* are not
+measured `held_out=true` cases or independently reviewed gold. Full automatic
+source/event holdout finalization and calibrated independent gold are still
+acceptance work in #107/#99; no synthetic human-review claims are permitted.
+
 The current protocol is `holoclip-real-provider-v2`. Protocol, grounded prompt and
 cloud-response cache versions changed after live transport faults. Historical v1
 reports remain immutable diagnostics; they cannot be silently promoted under v2.

@@ -30,6 +30,21 @@ Production AI access uses capability-based, quality-qualified routing with a per
 quota ledger and bounded stage timeouts. Missing qualified/free routes stop processing
 with preserved artifacts. See [production provider setup](docs/production-provider-runtime.md).
 
+## Unattended data and evaluation policy
+
+Holoclip discovers public human-made clips without requiring the operator to
+supply training URLs. New source streams are automatically reserved for later
+holdout evaluation **before** learning ingestion; clips from the same source
+stream cannot be split across train and reserved holdout. The status can be
+inspected offline with `uv run holoclip examples-holdout-status`.
+
+Reservations are not reviewed gold and cannot enable production inference.
+The source/event-leakage checks, real-media gold calibration and full autonomous
+evaluation remain under development. See
+[autonomous evidence policy](docs/autonomous-evidence-policy.md). If the
+evidence is uncertain, Holoclip blocks rather than asking the operator to
+fabricate labels or lowering the quality floor.
+
 ## Corpus editorial learning
 
 Holoclip now learns an explicit corpus-level editorial model from trusted aligned human-made clips.

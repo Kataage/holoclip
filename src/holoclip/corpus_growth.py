@@ -12,6 +12,7 @@ from holoclip.clip_policy import PolicyDecision, PolicyOperation, evaluate_sourc
 from holoclip.editorial_profile import _atomic_json
 from holoclip.example_ingest import ClipPolicyGateError, SourceResolutionError
 from holoclip.example_quality import LearningQuality, evaluate_human_example_learning_quality
+from holoclip.holdout_reservations import should_reserve_holdout
 from holoclip.examples import (
     HumanClipExample,
     load_human_clip_store,
@@ -39,6 +40,8 @@ class CorpusGrowthState(BaseModel):
     version: str = "autonomous-corpus-growth-v1"
     cursors: dict[str, int] = Field(default_factory=dict)
     items: dict[str, CorpusGrowthItem] = Field(default_factory=dict)
+    # Source-stream reservations are durable; no split may be retroactively relabeled.
+    holdout_stream_ids: list[str] = Field(default_factory=list)
     search_errors: list[str] = Field(default_factory=list)
 
 
@@ -83,6 +86,26 @@ async def grow_corpus(
         _atomic_json(state_path, state.model_dump(mode="json"))
 
     examples = load_human_clip_store(store)
+    # Preserve every legacy corpus stream as training, including review-only examples.
+    # Queued learning items also claim their streams to prevent cross-clip leakage.
+    learning_streams = {x.stream_id for x in examples if x.stream_id}
+    learning_streams.update(
+        x.source_stream_id for x in state.items.values()
+        if x.source_stream_id and x.status in {
+            "queued", "trusted", "review", "policy_review", "rejected", "duplicate",
+        }
+    )
+    reserved_streams = set(state.holdout_stream_ids)
+    reserved_streams.update(
+        x.source_stream_id for x in state.items.values()
+        if x.status in {"holdout_reserved", "split_conflict"} and x.source_stream_id
+    )
+    state.holdout_stream_ids = sorted(reserved_streams)
+    for existing in state.items.values():
+        if (existing.status == "holdout_reserved"
+                and existing.source_stream_id in learning_streams):
+            existing.status = "split_conflict"
+            existing.reason = "source stream already exists in learning corpus"
     known = {x.id for x in examples}
     known_videos = {human_clip_identity(x.clip_url) for x in examples}
     queries = discovery_queries(examples)
@@ -166,8 +189,30 @@ async def grow_corpus(
                     "source metadata policy requires quarantine",
                 )
                 continue
-            item.status, item.reason = "queued", None
-            resolved += 1
+            stream_id = item.source_stream_id
+            if not stream_id:
+                item.status, item.reason = "review", "source stream identity missing"
+                continue
+            if stream_id in reserved_streams and stream_id in learning_streams:
+                item.status, item.reason = (
+                    "split_conflict", "source stream is in both learning and holdout"
+                )
+            elif stream_id in reserved_streams:
+                item.status, item.reason = "holdout_reserved", None
+                resolved += 1
+            elif stream_id in learning_streams:
+                item.status, item.reason = "queued", None
+                resolved += 1
+            elif learning_streams and should_reserve_holdout(stream_id):
+                # Reserve before acquisition/enrichment, not after seeing model answers.
+                reserved_streams.add(stream_id)
+                state.holdout_stream_ids = sorted(reserved_streams)
+                item.status, item.reason = "holdout_reserved", None
+                resolved += 1
+            else:
+                learning_streams.add(stream_id)
+                item.status, item.reason = "queued", None
+                resolved += 1
         except Exception as exc:
             item.status, item.reason = "retryable", f"{type(exc).__name__}: {exc}"
         finally:
@@ -243,6 +288,11 @@ async def grow_corpus(
         "target_trusted": target_trusted,
         "target_streams": target_streams,
         "queue_counts": dict(Counter(x.status for x in state.items.values())),
+        "holdout_reserved_streams": len(reserved_streams),
+        "holdout_reserved_clips": sum(
+            x.status == "holdout_reserved" for x in state.items.values()
+        ),
+        "split_conflicts": sorted(reserved_streams & learning_streams),
         "search_errors": state.search_errors,
         "state_path": str(state_path),
     }
