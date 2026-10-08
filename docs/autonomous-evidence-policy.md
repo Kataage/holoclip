@@ -1417,6 +1417,48 @@ tests rather than actual Hololive editorial precision/recall.
 `reviewed_gold_available=false`, and production `ready=false`
 remain mandatory.
 
+## Increment 35: measured acquired-video constructed controls (#151)
+
+A key missing bridge between synthetic code fixtures and independently
+reviewed Hololive editor gold is direct measurement of the matching
+engine on **actually acquired bounded public video**. During an
+existing `source_visual_pending` cycle, and only when the provider
+is the real `YtDlpSourceProvider`, the worker performs one limited
+self-supervised control check on already acquired, policy-allowed
+original video windows (no additional source download). Saved
+re-encoded source video bytes and up to four saved decoded source
+frames must match their SHA256 checksums before testing. The first
+constructed example JPEG-recompresses those *actual video frames*
+with a tiny generated corner overlay (known provenance-based
+correspondence). The second reverses temporal frame order while
+preserving ascending clock labels (known constructed timing decoy).
+Both go through the full ORB plus independent DCT temporal checker.
+
+Constructed controls test whether the code detects known aligned
+frames and rejects a known reordered sequence *on the measured
+acquisition*. These are synthetic transformations of real-acquired
+content, not independent original-video identity labels and **cannot
+estimate editing precision/recall**, real original-source false
+positive rate, or human cut accuracy. Highly repetitive scenes or
+unavailable decoders result in explicit UNKNOWN, not artificial
+failures. The source video is not certified as an official Hololive
+livestream solely by yt-dlp availability.
+
+Results are saved as a bounded and source-SHA-deduplicated
+`real_video_control_history` and prevalidated for ownership,
+content hashes, no-gold fields and no fabricated numeric editor
+accuracy before further media download. A new zero-preparation CLI
+`examples-source-controls-report` summarizes real acquired-video
+control sample counts, constructed JPEG positive detection fraction
+and constructed reversed-order decoy rejection fraction. If no real
+provider observations exist, the report says UNKNOWN, measured
+sample count zero and fractions NULL. `editor_cut_precision`,
+`editor_cut_recall` and
+`real_source_match_false_positive_rate` remain NULL in ALL
+cases; reviewed gold, source identity, event split and route readiness
+remain false. The pytest synthetic MP4s are regression checks, not
+the qualifying real-stream measurement itself.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
