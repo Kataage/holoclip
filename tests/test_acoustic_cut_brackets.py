@@ -165,7 +165,7 @@ def test_every_section_tail_is_sampled_even_with_stride_remainder():
     clip = np.concatenate((source[80:180], source[600:700]), axis=0)
     result = refine_acoustic_cut_brackets(
         clip, source, [_segment(0., 25., 20.),
-                       _segment(25., 25., 125.)],
+                       _segment(25., 25., 150.)],
         max_points=26,
     )
     assert result["status"] == "AUDIO_SUPPORTED_INTERVALS"
