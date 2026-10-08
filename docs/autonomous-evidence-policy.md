@@ -825,6 +825,43 @@ supply independent editor cut-frame precision/recall, event isolation,
 native source frame PTS or a full OutputSourceTimeMap. No model route is
 marked production-ready or reviewed-gold.
 
+## Increment 19: narrowly isolated audio insufficiency without unsafe bypass (#135)
+
+A three-clip batch halts all later work when one finished clip has too
+little independently unique audio to locate in its original. The
+`--continue-on-insufficient-audio` **opt-in** for
+`examples-validate-holdout-e2e --all-batches` now isolates source trials
+to **one reserved clip per bounded batch** (`--max-batches` remains
+1..12). The original strict default remains unchanged. Only measured
+`INSUFFICIENT_AUDIO` and `INSUFFICIENT_UNIQUE_ANCHORS` reported
+specifically by the verified `original_audio` stage are deferred.
+This allows the next distinct reserved clip to be checked without
+rerunning earlier selected clips, fabrication of matches or
+unbounded retry.
+
+Nothing is skipped for `QUARANTINED_POLICY`, source identity changes,
+rights restrictions, split conflicts, `RETRYABLE_FAILURE`, corrupted
+reports, inconsistent per-clip status counts or absent evidence:
+these continue to block the whole invocation. Deferred audio failures
+are only marked in a **separate diagnostic/aggregate report**; the
+durable corpus reservation/learning history is not modified. The
+cumulative audit retains `deferred_audio_clip_ids`,
+`attempted_clip_ids`, successfully processed IDs, honest remaining
+unattempted clip counts, and per-batch blocked stages. The media audit
+never claims `UNREVIEWED_ALL_BATCHES_COMPLETE` when any clip is
+deferred: it ends as `UNREVIEWED_INSUFFICIENT_AUDIO_RECORDED` (or
+`SIMULATED_INSUFFICIENT_AUDIO_RECORDED` with injected test runners).
+Failing to reach all reserved clips within the finite batch budget
+still reports `BOUNDED_BATCH_LIMIT_REACHED`.
+
+Offline diagnosis validates that every declared deferred clip has
+exactly one selected ID, a real `original_audio` blocking stage
+and exactly one unambiguous approved insufficiency status; it rejects
+forged policy deferral. It reports incomplete/simulated evidence,
+never promotes reviewer gold, production approval, native source PTS,
+dense maps or cut-frame accuracy. For real Hololive accuracy, the
+operator must still run the bounded trial on authorized local media.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
