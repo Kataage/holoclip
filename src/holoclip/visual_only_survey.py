@@ -92,7 +92,6 @@ def survey_finished_visual_changes(
         "frame_accurate_cuts_verified": False,
         "qualification_allowed": False,
     }
-    seen = set()
     peaks = []
     try:
         for start, end in windows:
@@ -118,10 +117,11 @@ def survey_finished_visual_changes(
                     raise ValueError("Unbounded visual peak time interval")
                 # Deduplicate overlap caused by neighbouring survey windows
                 # using approximate temporal intervals, not native frame PTS.
-                key = (round(span[0], 2), round(span[1], 2))
-                if key in seen:
+                midpoint = (span[0] + span[1]) / 2.
+                if any(abs(midpoint - (
+                        p["time_bracket_seconds"][0] + p["time_bracket_seconds"][1]
+                    ) / 2.) <= .25 for p in peaks):
                     continue
-                seen.add(key)
                 if len(peaks) >= MAX_PEAKS:
                     result["status"] = "UNKNOWN_VISUAL_PEAK_BUDGET"
                     return result
