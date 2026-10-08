@@ -25,6 +25,9 @@ from holoclip.holdout_source_clock_pipeline import calibrate_reserved_section_cl
 from holoclip.holdout_visual_pipeline import inspect_reserved_visual_edits
 from holoclip.bounded_source_evidence import measure_reserved_source_pairs
 from holoclip.provider_benchmark import atomic_json
+from holoclip.real_cut_observations import (
+    aggregate_real_cut_observations, describe_real_cut_observations,
+)
 
 VERSION = "holdout-real-media-run-audit-v1"
 MULTI_BATCH_VERSION = "holdout-real-media-multi-batch-audit-v1"
@@ -192,7 +195,29 @@ def summarize_observed_evidence(
         elif maps.get(clip_id, {}).get("status") == "MEASURED_UNREVIEWED_PARTIAL_MAP":
             unknown_maps += 1
 
+    # Descriptive real-video diagnostics from *this invocation's* stages only.
+    # Never score human-editor precision/recall against model-built evidence.
+    real_cut_rows = {}
+    cut_records = reports.get("acoustic_cut_brackets", {}).get("records", {})
+    side_records = reports.get("two_sided_cut_evidence", {}).get("records", {})
+    for clip_id in sorted(expected_ids):
+        if per_clip[clip_id].get("acoustic_cut_brackets") != (
+            "MEASURED_UNREVIEWED_CUT_BRACKETS"
+        ):
+            continue
+        side_row = (
+            side_records.get(clip_id)
+            if per_clip[clip_id].get("two_sided_cut_evidence")
+            == "MEASURED_UNREVIEWED_CUT_SIDE_EVIDENCE"
+            else None
+        )
+        real_cut_rows[clip_id] = describe_real_cut_observations(
+            cut_records.get(clip_id, {}), side_row,
+        )
+
     return {
+        "real_cut_observations": real_cut_rows,
+        "real_cut_observation_totals": aggregate_real_cut_observations(real_cut_rows),
         "stage_status_counts": stage_counts,
         "per_clip_stage_status": per_clip,
         "all_nine_stages_measured_clips": len(fully_processed),
