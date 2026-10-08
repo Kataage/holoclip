@@ -47,6 +47,16 @@ construction. Insufficient/ambiguous anchors remain unknown. This output is
 and cannot be promoted to `held_out=true` benchmark cases. Consult
 [autonomous evidence policy](autonomous-evidence-policy.md).
 
+## Grounded visual comparison input (still unreviewed)
+
+The new `examples-measure-source-pairs` stage consumes saved and hash-checked
+finished-video observations and source-audio anchors, downloads bounded
+original-video sections and measures paired source/finished frames. It
+does **not** download full original stream video, create human gold, verify
+absolute seek-time frames, or certify multi-POV held-out independence.
+The work is tracked in the [autonomous evidence policy](autonomous-evidence-policy.md).
+The output is diagnostic and must not be fed directly into `providers qualify`.
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.

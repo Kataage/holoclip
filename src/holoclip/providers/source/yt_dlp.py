@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import math
 import re
 import shutil
 import subprocess
@@ -11,6 +13,7 @@ from pydantic import BaseModel
 
 from holoclip.providers.source.base import (
     AcquiredSource,
+    AcquiredVideoRange,
     AcquisitionProfile,
     SourceCandidate,
     SourceMetadata,
@@ -539,6 +542,104 @@ class YtDlpSourceProvider:
         if not candidates:
             return None
         return sorted(candidates)[0]
+
+    def acquire_video_range(
+        self,
+        url: str,
+        output_root: Path,
+        *,
+        start: float,
+        end: float,
+    ) -> AcquiredVideoRange:
+        """Download *only* an original-stream bounded time section with yt-dlp/FFmpeg.
+
+        Never falls back to full-stream acquisition. Downstream must verify measured
+        duration/bytes and not mistake the requested seek time for observed PTS.
+        """
+        if (not math.isfinite(start) or not math.isfinite(end)
+                or start < 0 or not 5 <= end - start <= 120):
+            raise ValueError("Source video section must be finite and 5..120 seconds")
+        metadata = self.probe(url)
+        if metadata.duration is not None and end > metadata.duration + 0.25:
+            raise ValueError("Requested video section exceeds source duration")
+        identity = hashlib.sha256(
+            f"yt-section-v1:{metadata.external_id}:{start:.3f}:{end:.3f}".encode("utf-8")
+        ).hexdigest()[:24]
+        directory = (
+            output_root / _safe_component(metadata.external_id)
+            / "editing_video_sections" / identity
+        )
+        directory.mkdir(parents=True, exist_ok=True)
+        # Cache entries are proof-carrying: do not reuse just because a path
+        # exists. A partial/corrupt section must not be mistaken for a valid
+        # bounded original-video acquisition.
+        evidence_path = directory / "section-integrity.json"
+        existing = self._existing_media(directory)
+
+        def sha256_file(path: Path) -> str:
+            digest = hashlib.sha256()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            return digest.hexdigest()
+
+        identity_record = {
+            "version": "yt-range-cache-v1",
+            "source_id": metadata.external_id,
+            "source_url": url,
+            "requested_start": round(start, 3),
+            "requested_end": round(end, 3),
+        }
+        if existing is not None:
+            verified = False
+            if not existing.is_symlink() and evidence_path.is_file():
+                try:
+                    saved = json.loads(evidence_path.read_text(encoding="utf-8"))
+                    verified = (all(saved.get(k) == v for k, v in identity_record.items())
+                                and saved.get("filename") == existing.name
+                                and existing.stat().st_size <= 256 * 1024 * 1024
+                                and saved.get("sha256") == sha256_file(existing))
+                except (OSError, ValueError, TypeError):
+                    verified = False
+            if verified:
+                return AcquiredVideoRange(
+                    metadata=metadata, media_path=existing, requested_start=start,
+                    requested_end=end, reused=True,
+                )
+            # Only remove the narrowly namespaced cached section on disk;
+            # never remove user-provided video media or global download caches.
+            existing.unlink()
+            evidence_path.unlink(missing_ok=True)
+        # --download-sections requires yt-dlp's FFmpeg downloader. Fail if
+        # sections are unsupported; never retry via ordinary acquire().
+        args = [
+            "--no-playlist", "--continue", "--no-overwrites", "--no-progress",
+            "--format", "bv*+ba/b",
+            "--download-sections", f"*{start:.3f}-{end:.3f}",
+            "--force-keyframes-at-cuts", "--merge-output-format", "mkv",
+            "--paths", str(directory), "--output", "media.%(ext)s",
+            "--print", "after_move:filepath", url,
+        ]
+        completed = self._run_yt_dlp(args, label="yt-dlp bounded source video")
+        paths = [Path(line.strip()) for line in completed.stdout.splitlines() if line.strip()]
+        media = next((p for p in reversed(paths) if p.is_file()
+                      and p.parent.resolve() == directory.resolve()), None)
+        if media is None:
+            media = self._existing_media(directory)
+        if media is None:
+            raise YtDlpError("Bounded source video acquisition returned no media")
+        # Reject a skipped section or an unexpected huge result. Never regard
+        # this alone as proof that the requested absolute start is frame-accurate.
+        if media.stat().st_size > 256 * 1024 * 1024:
+            raise YtDlpError("Bounded video exceeds the 256 MiB safety ceiling")
+        evidence = {**identity_record, "filename": media.name, "sha256": sha256_file(media)}
+        temporary = evidence_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(evidence, sort_keys=True), encoding="utf-8")
+        temporary.replace(evidence_path)
+        return AcquiredVideoRange(
+            metadata=metadata, media_path=media, requested_start=start,
+            requested_end=end, reused=False,
+        )
 
     def acquire(
         self,

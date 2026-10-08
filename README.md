@@ -41,6 +41,19 @@ uv run --extra media holoclip examples-prepare-holdout --max-clips 3
 uv run --extra media holoclip examples-align-holdout --max-clips 3
 ```
 
+After audio anchors have been established, the optional
+`examples-measure-source-pairs` stage requests only the identified bounded
+original-video sections and saves checksum-verified frame/shot evidence paired
+with measured finished-clip windows:
+
+```powershell
+uv run --extra media holoclip examples-measure-source-pairs --max-clips 3
+```
+
+Unverified absolute seek offsets, exact cuts, visual edit semantics and semantic
+gold remain explicit unknowns. The paired measurements cannot promote a
+production AI route.
+
 `examples-align-holdout` downloads original-stream **audio**, rechecks
 rights/source identity, then records unique FFT-matched audio anchors and
 approximate clip-to-source ranges. It rejects ambiguous matches; it does

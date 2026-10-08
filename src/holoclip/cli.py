@@ -23,6 +23,7 @@ from holoclip.corpus_growth import grow_corpus
 from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
+from holoclip.bounded_source_evidence import measure_reserved_source_pairs
 from holoclip.editorial_planning import plan_candidate_boundaries
 from holoclip.editorial_evaluation import run_editorial_ab
 from holoclip.example_batch import (
@@ -670,6 +671,29 @@ def evaluation_leak_check(
     )
     if report.suspected_overlap:
         raise typer.Exit(5)
+
+
+@app.command("examples-measure-source-pairs")
+def examples_measure_source_pairs(
+    store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
+    state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
+    prepared_root: Path = typer.Option(Path("data/provider-benchmark/holdout")),
+    audio_root: Path = typer.Option(Path("data/provider-benchmark/holdout")),
+    output: Path = typer.Option(Path("data/provider-benchmark/holdout/source_pairs")),
+    policy_file: Path = typer.Option(Path("data/policy/clip_rules.jsonl")),
+    max_clips: int = typer.Option(3, min=1, max=20),
+    max_ranges: int = typer.Option(3, min=1, max=5),
+    padding_seconds: float = typer.Option(3.0, min=2, max=10),
+) -> None:
+    """Measure bounded original/finished video pairs; does not verify gold or exact cuts."""
+    provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
+    result = measure_reserved_source_pairs(
+        provider, store=store, state_path=state, prepared_root=prepared_root,
+        audio_root=audio_root, output=output, policy_rules=load_policy_rules(policy_file),
+        max_clips=max_clips, max_ranges=max_ranges, padding_seconds=padding_seconds,
+        progress=typer.echo,
+    )
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 @app.command("examples-align-holdout")
