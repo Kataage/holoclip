@@ -114,9 +114,9 @@ def test_nonpublic_candidate_and_same_video_rejected_and_budgets_honored():
 async def test_growth_saves_shortlist_without_assigning_unknown_source(tmp_path):
     provider = Provider()
     def search(query, *, limit, offset):
-        return [provider.clip] if "切り抜き" in query else [
-            provider.clip, meta(SOURCE_A, duration=7300.)
-        ]
+        if "元配信" in query or "配信アーカイブ" in query:
+            return [provider.clip, meta(SOURCE_A, duration=7300.)]
+        return [provider.clip]
     # Normal corpus search discovers the human clip; scout searches a
     # different phrasing and sees the plausible ORIGINAL. Neither assigns it.
     provider.search_public_clips = search
