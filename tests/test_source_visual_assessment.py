@@ -77,6 +77,27 @@ def test_nonindependent_replays_do_not_upgrade_diverse_hypothesis():
     assert result["status"] == "UNREVIEWED_SINGLE_CONTEXT_ORIGINAL_HYPOTHESIS"
 
 
+def test_same_finished_scene_matching_two_originals_remains_ambiguous():
+    ledger, _ = add()
+    # A different original can exhibit identical finished footage.
+    # Both matches are genuine positive hypotheses, not a winner.
+    ledger, added = add(
+        ledger, source_id=BID, clip_start=0., source_start=650.,
+        source_sha="f"*64,
+    )
+    assert added is True
+    result = assess(ledger)
+    assert result["status"] == "UNKNOWN_COMPETING_VISUAL_ORIGINALS"
+    assert result["candidate_ids_with_positive_evidence"] == [AID, BID]
+    assert result["candidate_observations"][0][
+        "independent_two_sided_window_lower_bound"
+    ] == 1
+    assert result["candidate_observations"][1][
+        "independent_two_sided_window_lower_bound"
+    ] == 1
+    assert result["source_candidate_selected"] is False
+
+
 def test_independent_two_sided_windows_upgrade_hypothesis_not_source_gold():
     ledger, _ = add()
     ledger, _ = add(
