@@ -138,6 +138,19 @@ evidence**, not proof of editing causality, timestamp-perfect source PTS,
 independently held-out semantic labels or promotion to production routing.
 See [autonomous evidence policy](autonomous-evidence-policy.md).
 
+## Evidence-constrained partial output/source map
+
+The optional `examples-build-partial-time-map` stage uses only real
+sampled source↔finished image links backed by independent audio anchors
+from the reserved/unreviewed evidence chain. It proposes short **local**
+source/output timing pairs, with explicit unknown intervals everywhere
+else. A local candidate is not a verified time interpolation; it cannot
+bridge observed cut brackets or missing audio, become `HUMAN_GOLD`,
+form `held_out=true` benchmark cases or qualify production readiness.
+It requires current LEARN policy, split, immutable media and evidence
+fingerprint checks before every re-run. See
+[autonomous evidence policy](autonomous-evidence-policy.md).
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
