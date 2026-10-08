@@ -436,17 +436,20 @@ def run_reserved_holdout_e2e(
 def run_all_reserved_holdout_batches(
     provider, *, store: Path, state_path: Path, root: Path,
     policy_rules: list, max_clips: int = 3, max_batches: int = 8,
-    progress=None, runners=None,
+    progress=None, runners=None, continue_on_insufficient_audio: bool = False,
 ) -> dict:
-    """One bounded invocation over distinct reserved clips; fail-stop on bad evidence.
+    """Bounded source trials; optionally defer insufficient-audio clips.
 
-    This is NOT a production qualification, event-level test, or automatic
-    retries of failed reservations. It drives the same nine guarded stage
-    functions for each selected batch, never evaluating the same clip twice
-    in one invocation, even when all clips were previously cached.
+    Conservative continuation is opt-in and forces single-clip batches.
+    All policy, integrity, ambiguity, systemic or exception failures still
+    stop immediately. A deferred clip remains an unverified failure, never
+    measured as nine successful stages or granted production rights.
     """
     if not 1 <= max_clips <= 20 or not 1 <= max_batches <= 12:
         raise ValueError("Batch size 1..20 and invocation budget 1..12 required")
+    # Single-clip batches are necessary to avoid re-running and double-
+    # counting all other selected clips after one audio-insufficient item.
+    effective_max_clips = 1 if continue_on_insufficient_audio else max_clips
     root.mkdir(parents=True, exist_ok=True)
     path = root / "holdout-e2e-all-batches.json"
     lock = root / ".holdout-e2e.lock"
@@ -467,8 +470,12 @@ def run_all_reserved_holdout_batches(
         "event_split_verified": False, "reviewed_gold_available": False,
         "benchmark_held_out": False, "frame_accurate_cuts_verified": False,
         "dense_output_source_map_verified": False,
-        "max_clips_per_batch": max_clips, "max_batches": max_batches,
+        "configured_max_clips": max_clips,
+        "max_clips_per_batch": effective_max_clips, "max_batches": max_batches,
+        "continue_on_insufficient_audio": continue_on_insufficient_audio,
         "batches": [], "processed_clip_ids": [], "processed_clips": 0,
+        "deferred_audio_clip_ids": [], "deferred_audio_clips": 0,
+        "attempted_clip_ids": [], "attempted_clips": 0,
         "remaining_clips": 0,
         "observed_totals": {
             "clips_with_unique_original_audio_matches": 0,
@@ -508,8 +515,10 @@ def run_all_reserved_holdout_batches(
             return result
 
         seen: set[str] = set()
+        deferred_audio: set[str] = set()
+        attempted: set[str] = set()
         for number in range(1, max_batches + 1):
-            if len(seen) == len(all_ids):
+            if len(seen | deferred_audio) == len(all_ids):
                 break
             if (not state_path.is_file()
                     or hashlib.sha256(state_path.read_bytes()).hexdigest() != reservation_hash):
@@ -521,9 +530,10 @@ def run_all_reserved_holdout_batches(
             try:
                 batch = _run_reserved_holdout_e2e_unlocked(
                     provider, store=store, state_path=state_path,
-                    root=root, policy_rules=policy_rules, max_clips=max_clips,
+                    root=root, policy_rules=policy_rules,
+                    max_clips=effective_max_clips,
                     progress=progress, runners=runners,
-                    exclude_clip_ids=frozenset(seen),
+                    exclude_clip_ids=frozenset(seen | deferred_audio),
                 )
             except Exception as exc:
                 # No remote/auth-bearing stderr or exception message persisted.
@@ -553,7 +563,8 @@ def run_all_reserved_holdout_batches(
             # Never report success for a duplicate, unreserved or empty batch.
             if (not isinstance(selected, list) or not selected
                     or len(selected) != len(set(selected))
-                    or set(selected) & seen or not set(selected) <= all_ids):
+                    or set(selected) & (seen | deferred_audio)
+                    or not set(selected) <= all_ids):
                 result["status"] = "BLOCKED_INVALID_BATCH_SELECTION"
                 result["failed_batch"] = number
                 save()
@@ -570,6 +581,31 @@ def run_all_reserved_holdout_batches(
                 },
             }
             result["batches"].append(item)
+            attempted.update(selected)
+            result["attempted_clip_ids"] = sorted(attempted)
+            result["attempted_clips"] = len(attempted)
+            if (continue_on_insufficient_audio
+                    and len(selected) == 1
+                    and batch["status"] == "BLOCKED_UPSTREAM_STAGE"
+                    and batch.get("blocked_stage") == "original_audio"):
+                # Only an explicitly reported *audio-evidence insufficiency*
+                # may be deferred. Never bypass policy, split, source identity,
+                # corrupted media, arbitrary exceptions, or missing reports.
+                clip_id = selected[0]
+                per_clip = summary.get("per_clip_stage_status", {})
+                code = per_clip.get(clip_id, {}).get("original_audio")
+                counts = summary.get("stage_status_counts", {}).get("original_audio", {})
+                if (code in {"INSUFFICIENT_UNIQUE_ANCHORS", "INSUFFICIENT_AUDIO"}
+                        and counts == {code: 1}):
+                    deferred_audio.add(clip_id)
+                    result["deferred_audio_clip_ids"] = sorted(deferred_audio)
+                    result["deferred_audio_clips"] = len(deferred_audio)
+                    result["remaining_clips"] = len(
+                        all_ids - seen - deferred_audio
+                    )
+                    item["deferred_insufficient_audio"] = True
+                    save()
+                    continue
             if batch["status"] not in (
                 "UNREVIEWED_MEASUREMENTS_COMPLETE",
                 "SIMULATED_STAGE_TEST_COMPLETE",
@@ -588,17 +624,23 @@ def run_all_reserved_holdout_batches(
             seen.update(selected)
             result["processed_clip_ids"] = sorted(seen)
             result["processed_clips"] = len(seen)
-            result["remaining_clips"] = len(all_ids - seen)
+            result["remaining_clips"] = len(all_ids - seen - deferred_audio)
             for key in result["observed_totals"]:
                 result["observed_totals"][key] += item["observations"][key]
             # Persist after every completed batch, not only at invocation exit.
             save()
 
-        if len(seen) != len(all_ids):
+        if len(seen | deferred_audio) != len(all_ids):
             result["status"] = "BOUNDED_BATCH_LIMIT_REACHED"
         elif (not state_path.is_file()
               or hashlib.sha256(state_path.read_bytes()).hexdigest() != reservation_hash):
             result["status"] = "BLOCKED_CHANGED_RESERVATION_STATE"
+        elif deferred_audio:
+            # There are deliberately incomplete clips: no all-green result.
+            result["status"] = (
+                "UNREVIEWED_INSUFFICIENT_AUDIO_RECORDED" if runners is None
+                else "SIMULATED_INSUFFICIENT_AUDIO_RECORDED"
+            )
         else:
             result["status"] = (
                 "UNREVIEWED_ALL_BATCHES_COMPLETE" if runners is None

@@ -711,10 +711,16 @@ def examples_validate_holdout_e2e(
     preflight_only: bool = typer.Option(False, help="Check reserved clips without downloading media"),
     all_batches: bool = typer.Option(False, help="Process all reserved clips once in bounded batches"),
     max_batches: int = typer.Option(8, min=1, max=12),
+    continue_on_insufficient_audio: bool = typer.Option(
+        False,
+        help="Isolate each clip; defer only uniquely insufficient original audio evidence",
+    ),
 ) -> None:
     """Run local-source video evidence with fail-closed checkpoints."""
     if all_batches and preflight_only:
         raise typer.BadParameter("Use --preflight-only without --all-batches")
+    if continue_on_insufficient_audio and not all_batches:
+        raise typer.BadParameter("--continue-on-insufficient-audio requires --all-batches")
     provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
     rules = load_policy_rules(policy_file)
     if all_batches:
@@ -722,6 +728,7 @@ def examples_validate_holdout_e2e(
             provider, store=store, state_path=state, root=root,
             policy_rules=rules, max_clips=max_clips, max_batches=max_batches,
             progress=typer.echo,
+            continue_on_insufficient_audio=continue_on_insufficient_audio,
         )
         allowed = {"UNREVIEWED_ALL_BATCHES_COMPLETE"}
     else:
@@ -748,6 +755,7 @@ def examples_validate_holdout_e2e(
             "next_action": diagnosis["next_action"],
             "first_blocker": diagnosis["first_blocker"],
             "unattempted_clips": len(diagnosis["unattempted_clip_ids"]),
+            "deferred_insufficient_audio_clips": report.get("deferred_audio_clips", 0),
         }, ensure_ascii=False, indent=2))
     if report["status"] not in allowed:
         raise typer.Exit(code=3)

@@ -530,3 +530,125 @@ def test_all_batches_rechecks_original_corpus_after_each_batch(tmp_path):
     assert report["processed_clips"] == 0
     assert len(calls) == 9
     assert not (root / ".holdout-e2e.lock").exists()
+
+
+def _one_weak_audio_clip_runners(root, state, *, weak_status="INSUFFICIENT_UNIQUE_ANCHORS",
+                                 calls=None):
+    """Inject exactly one evidence failure, without fabricating rights approval."""
+    collection = _candidates(CorpusGrowthState.model_validate_json(
+        state.read_text(encoding="utf-8")
+    ))
+    bad_id = human_clip_identity(collection[0].clip_url)
+    runners = make_runners(root, calls=calls)
+    original_audio = runners["original_audio"]
+
+    def one_weak_clip(provider, **kwargs):
+        result = original_audio(provider, **kwargs)
+        selected = _candidates(CorpusGrowthState.model_validate_json(
+            kwargs["state_path"].read_text(encoding="utf-8")
+        ))
+        assert len(selected) == 1
+        current_id = human_clip_identity(selected[0].clip_url)
+        if current_id == bad_id:
+            report = root / "holdout-audio-alignment.json"
+            payload = json.loads(report.read_text(encoding="utf-8"))
+            payload["records"][current_id]["status"] = weak_status
+            report.write_text(json.dumps(payload), encoding="utf-8")
+        return result
+
+    runners["original_audio"] = one_weak_clip
+    return runners, bad_id
+
+
+def test_opt_in_continues_only_audio_insufficiency_without_false_success(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=4)
+    original_state = state.read_bytes()
+    calls = []
+    runners, bad_id = _one_weak_audio_clip_runners(root, state, calls=calls)
+    result = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=3, max_batches=4, runners=runners,
+        continue_on_insufficient_audio=True,
+    )
+    assert result["status"] == "SIMULATED_INSUFFICIENT_AUDIO_RECORDED"
+    assert result["real_media_run_completed"] is False
+    assert result["continue_on_insufficient_audio"] is True
+    assert result["configured_max_clips"] == 3
+    assert result["max_clips_per_batch"] == 1
+    assert result["reserved_clips"] == 4
+    assert result["attempted_clips"] == 4
+    assert result["processed_clips"] == 3
+    assert result["deferred_audio_clips"] == 1
+    assert result["deferred_audio_clip_ids"] == [bad_id]
+    assert bad_id not in result["processed_clip_ids"]
+    assert result["remaining_clips"] == 0
+    assert len(result["batches"]) == 4
+    assert all(len(b["selected_clip_ids"]) == 1 for b in result["batches"])
+    assert len(set(x for b in result["batches"] for x in b["selected_clip_ids"])) == 4
+    assert len(calls) == 3 * len(STAGES) + 2
+    assert result["batches"][0]["deferred_insufficient_audio"] is True
+    assert result["batches"][0]["blocked_stage"] == "original_audio"
+    assert result["observed_totals"]["clips_with_unique_original_audio_matches"] == 3
+    assert state.read_bytes() == original_state
+    assert result["qualification_allowed"] is False
+    assert result["reviewed_gold_available"] is False
+    assert result["ready"] is False
+    assert not (root / ".holdout-e2e.lock").exists()
+
+
+def test_opt_in_insufficient_audio_with_bounded_budget_never_claims_complete(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=4)
+    runners, bad_id = _one_weak_audio_clip_runners(root, state)
+    result = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=3, max_batches=2, runners=runners,
+        continue_on_insufficient_audio=True,
+    )
+    assert result["status"] == "BOUNDED_BATCH_LIMIT_REACHED"
+    assert result["deferred_audio_clip_ids"] == [bad_id]
+    assert result["processed_clips"] == 1
+    assert result["attempted_clips"] == 2
+    assert result["remaining_clips"] == 2
+    assert result["real_media_run_completed"] is False
+
+
+def test_opt_in_never_bypasses_policy_or_transport_failure(tmp_path):
+    for unsafe in ("QUARANTINED_POLICY", "RETRYABLE_FAILURE"):
+        case = tmp_path / unsafe
+        case.mkdir()
+        store, state, root = files(case)
+        add_reserved_clips(state, count=3)
+        calls = []
+        runners, _ = _one_weak_audio_clip_runners(
+            root, state, weak_status=unsafe, calls=calls,
+        )
+        result = run_all_reserved_holdout_batches(
+            None, store=store, state_path=state, root=root, policy_rules=[],
+            max_clips=3, max_batches=3, runners=runners,
+            continue_on_insufficient_audio=True,
+        )
+        assert result["status"] == "BLOCKED_BATCH"
+        assert result["blocked_stage"] == "original_audio"
+        assert result["deferred_audio_clip_ids"] == []
+        assert result["processed_clips"] == 0
+        assert result["attempted_clips"] == 1
+        assert len(result["batches"]) == 1
+        assert calls == ["finished_video", "original_audio"]
+        assert not (root / ".holdout-e2e.lock").exists()
+
+
+def test_default_all_batches_still_fails_closed_on_insufficient_audio(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=3)
+    runners, _ = _one_weak_audio_clip_runners(root, state)
+    # Force single-clip budget to exercise same bad source without opt-in.
+    result = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=3, runners=runners,
+    )
+    assert result["status"] == "BLOCKED_BATCH"
+    assert result["deferred_audio_clips"] == 0
+    assert result["attempted_clips"] == 1
+    assert result["remaining_clips"] == 3
