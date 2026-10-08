@@ -14,6 +14,7 @@ from holoclip.clip_policy import (
     PolicyDecision, PolicyOperation, evaluate_source_metadata,
 )
 from holoclip.corpus_growth import CorpusGrowthState, _public
+from holoclip.providers.cost import CostPolicyError
 from holoclip.examples import human_clip_identity, load_human_clip_store
 from holoclip.holdout_reservations import holdout_inventory
 from holoclip.provider_benchmark import BenchmarkCase, atomic_json, verified_window
@@ -40,7 +41,7 @@ def _measured(record: dict) -> bool:
                 public_data=True, dimensions=frozenset(), measurement_path=path,
             ))
         return True
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except (OSError, ValueError, KeyError, TypeError, CostPolicyError, json.JSONDecodeError):
         return False
 
 
