@@ -342,6 +342,49 @@ video absolute seek time. This is not a complete continuous
 video calibration, speed/freeze handling and independently reviewed gold
 are required before editing readiness or provider qualification.
 
+## Increment 6: local acoustic cut-transition brackets (#122)
+
+Once `examples-inspect-visual-edits` has recorded conservative source/finished
+frame correspondences, the new `examples-refine-cut-candidates` command measures
+**denser audio offsets** around previously unique source-aligned clip intervals.
+Its work remains bounded (480 tested short fragments per clip by default)
+and uses cached 12-band 4 kHz fingerprints from existing local finished video
+and original-stream audio; no new model, full-video download, user-selected
+timestamps, or cloud inference is needed.
+
+```powershell
+uv run --extra media holoclip examples-refine-cut-candidates --max-clips 3
+```
+
+For each acoustically supported source-to-finished region, the refiner matches
+2-second fragments on a 1-second grid inside a local ±3-second source search
+window around the prior approximate offset. It requires a high correlation and
+uniqueness over distant local alternatives. Consecutive fragments with stable
+offsets are *not* treated as cuts. When two locally unique matches disagree
+and their supported clips are separated by at most six seconds, the output
+contains a **CUT_INTERVAL_CANDIDATE** with an output-video time interval, not a
+single frame or an exact timestamp. Unsupported longer gaps remain
+`UNKNOWN_WIDE_GAP`; contradictory overlaps become
+`UNKNOWN_CONTRADICTORY_AUDIO`; exhaustion of the configured work budget
+produces `UNKNOWN_SAMPLING_BUDGET` with **no partial cut claims**.
+Silent/unmatched passages cannot become proof that a cut exists.
+
+The stage accepts only up-to-date, checksum-verified earlier evidence, checks
+original stream/candidate identity, policy (including padded source ranges),
+reservations and learning-leakage conflicts before reuse or local processing.
+Source/finished visual matches are included as diagnostic counts only:
+sampled ORB geometry cannot independently confirm the acoustic cut boundary.
+Content-hashed evidence is checkpointed under
+`data/provider-benchmark/holdout/cut_brackets/holdout-cut-brackets.json`.
+All production/gold/held-out/event-split and frame-accurate flags remain
+**false**; the old training dataset and editorial profile are untouched.
+
+**Next:** measured source-PTS correction and synchronized dense visual frames
+around candidate brackets, verified piecewise time mapping, speed/freeze
+discrimination, subtitle/overlay observation and cross-stream event isolation.
+Real Hololive clip quality and free-provider production qualification remain
+unverified by fixture CI.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
