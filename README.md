@@ -53,6 +53,18 @@ evidence, without additional downloads or paid AI inference. Acoustic
 silence, ambiguous matches, visual-only edits and unavailable absolute
 source timestamps remain explicit unknowns.
 
+After the sparse source/finished visual observations, candidate cut
+intervals can be refined using denser local acoustic correlations without a
+paid inference service, manually provided timestamps, or full-source video:
+
+```powershell
+uv run --extra media holoclip examples-refine-cut-candidates --max-clips 3
+```
+
+This records **time ranges** where uniquely matched audio changes source
+offset; it does not certify exact-frame edit cuts, time-map completeness,
+visual confirmation or human-review quality.
+
 Source-vs-finished visual geometry can now be inspected after bounded
 source-pair preparation without a cloud AI key, user-authored labels or
 manually selected frame IDs:
