@@ -170,6 +170,32 @@ def test_unattended_source_audio_and_checksum_bound_resume(tmp_path):
     assert provider.calls == 3  # source provider rechecks/caches; matcher itself is reused
 
 
+def test_sparse_old_audio_match_cache_is_recomputed_without_reusing_old_evidence(tmp_path):
+    provider, store, state, prepared, _ = _pipeline(tmp_path)
+    observed = []
+
+    def record_match(*args):
+        observed.append(True)
+        return _fake_audio_align(*args)
+
+    first = _run_pipeline(provider, store, state, prepared, align=record_match)
+    assert first["counts"] == {"PARTIAL_AUDIO_MATCH": 1}
+    assert len(observed) == 1
+    path = prepared / "audio" / "holdout-audio-alignment.json"
+    content = json.loads(path.read_text(encoding="utf-8"))
+    saved = next(iter(content["records"].values()))
+    saved["match_sampling_version"] = "20-second-sparse"
+    path.write_text(json.dumps(content), encoding="utf-8")
+
+    second = _run_pipeline(provider, store, state, prepared, align=record_match)
+    assert second["counts"] == {"PARTIAL_AUDIO_MATCH": 1}
+    assert len(observed) == 2
+    saved = next(iter(json.loads(path.read_text(encoding="utf-8"))["records"].values()))
+    assert saved["match_sampling_version"] == "bounded-eight-second-anchor-coverage-v2"
+    _run_pipeline(provider, store, state, prepared, align=record_match)
+    assert len(observed) == 2
+
+
 def test_learning_conflict_prevents_even_metadata_probe(tmp_path):
     provider, store, state, prepared, _ = _pipeline(tmp_path)
     upsert_human_clip_examples(store, [trusted_example("leaked", stream_id="stream-evaluation")])
