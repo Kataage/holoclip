@@ -101,6 +101,18 @@ a measured output jump is **not proof of a human editor cut**, reviewed
 gold or production readiness. The source-to-finished temporal map is
 still incomplete; see [autonomous evidence policy](autonomous-evidence-policy.md).
 
+## Requested vs measured original-source section clock
+
+`examples-calibrate-source-clocks` independently matches the previously
+downloaded bounded original-video section's *actual audio* against the full
+original stream audio before allowing even approximate source-video clock
+correspondence. Repeated/ambiguous audio, missing AV tracks and unexpected
+seek positions remain unknown. Native **section** frame PTS and audio packet
+PTS are recorded, but **absolute original-source native frame timestamps are
+not verified**. The output is a diagnostic evidence artifact, not reviewed
+gold or a legitimate `held_out=true` benchmark case. See
+[autonomous evidence policy](autonomous-evidence-policy.md).
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
