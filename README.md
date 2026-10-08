@@ -41,6 +41,18 @@ uv run --extra media holoclip examples-prepare-holdout --max-clips 3
 uv run --extra media holoclip examples-align-holdout --max-clips 3
 ```
 
+Source-vs-finished visual geometry can now be inspected after bounded
+source-pair preparation without a cloud AI key, user-authored labels or
+manually selected frame IDs:
+
+```powershell
+uv run --extra media holoclip examples-inspect-visual-edits --max-clips 3
+```
+
+This uses measured ORB/RANSAC frame correspondences to propose zoom/reframe
+candidates with geometry/inlier diagnostics. It **does not** certify an exact
+cut map, text/subtitle recognition, verified edit intent, or production gold.
+
 After audio anchors have been established, the optional
 `examples-measure-source-pairs` stage requests only the identified bounded
 original-video sections and saves checksum-verified frame/shot evidence paired
