@@ -40,6 +40,48 @@ def test_paid_account_rejected(tmp_path, mutation):
         AccountEvidence.model_validate(raw | mutation)
 
 
+@pytest.mark.parametrize("provider,model,headers", [
+    ("gemini", "gemini-3.8-flash", {"x-goog-api-key": "paid-project-key"}),
+    ("gemini", "gemini-3.8-flash", {"Authorization": "Bearer other-key"}),
+    ("groq", "openai/gpt-oss-120b", {"Authorization": "Bearer paid-project-key"}),
+    ("groq", "openai/gpt-oss-120b", {"x-goog-api-key": "paid-project-key"}),
+])
+async def test_request_cannot_substitute_a_paid_wire_credential(tmp_path, provider, model, headers):
+    guard = guard_at(tmp_path / "quota.db", provider=provider)
+    entry = guard.registry[f"{provider}:{model}"]
+    def fail_if_called(request):
+        pytest.fail("Unverified credential reached HTTP")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fail_if_called)) as client:
+        with pytest.raises(CostPolicyError, match="API key|Authorization"):
+            await guard.post(client, provider=provider, model=model, base_url=entry.base_url,
+                key="test-key", operation=next(iter(entry.operations)),
+                estimate={"requests": 1}, public=True, headers=headers)
+    with guard.ledger.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("provider,model", [
+    ("gemini", "gemini-3.8-flash"),
+    ("groq", "openai/gpt-oss-120b"),
+])
+async def test_verified_wire_credentials_are_injected_even_if_caller_omits_headers(tmp_path, provider, model):
+    guard = guard_at(tmp_path / "quota.db", provider=provider)
+    entry = guard.registry[f"{provider}:{model}"]
+    observed = []
+    def handler(request):
+        observed.append(request.headers)
+        return httpx.Response(200, json={})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await guard.post(client, provider=provider, model=model, base_url=entry.base_url,
+            key="test-key", operation=next(iter(entry.operations)),
+            estimate={"requests": 1}, public=True)
+    assert len(observed) == 1
+    if provider == "gemini":
+        assert observed[0].get("x-goog-api-key") == "test-key"
+    else:
+        assert observed[0].get("authorization") == "Bearer test-key"
+
+
 @pytest.mark.parametrize("base,model", [
     ("https://paid.nvidia.com/v1", "z-ai/glm-5.3"),
     ("https://integrate.api.nvidia.com/v1?route=paid", "z-ai/glm-5.3"),
