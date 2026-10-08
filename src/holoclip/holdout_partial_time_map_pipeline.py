@@ -20,6 +20,7 @@ from holoclip.provider_benchmark import atomic_json
 from holoclip.providers.cost import CostPolicyError
 from holoclip.providers.source.yt_dlp import choose_source_candidate
 from holoclip.video_measurement import checksum_file
+from holoclip.visual_source_crosscheck import VERSION as SOURCE_VISUAL_VERSION
 
 VERSION = "reserved-partial-output-source-map-v1"
 
@@ -151,6 +152,7 @@ def build_reserved_partial_maps(
                 or not isinstance(cut.get("refinement"), dict)
                 or cut["refinement"].get("version") != REFINEMENT_VERSION
                 or side.get("status") != "MEASURED_UNREVIEWED_CUT_SIDE_EVIDENCE"
+                or side.get("source_visual_method_version") != SOURCE_VISUAL_VERSION
                 or not isinstance(sections, list) or not 1 <= len(sections) <= 5
                 or not (len(sections) == len(section_clocks)
                         == len(group_links) == len(section_shas))
@@ -209,7 +211,9 @@ def build_reserved_partial_maps(
                 "source_video_sha": source_hashes,
                 "manifest_sha": manifest_hashes,
                 "clock_report": clock, "frame_links": linked,
-                "cut_report": cut, "full_audio_sha": a["source_media_sha256"],
+                "cut_report": cut,
+                "source_visual_method": SOURCE_VISUAL_VERSION,
+                "full_audio_sha": a["source_media_sha256"],
             })
             if side_identity != side.get("fingerprint"):
                 raise ValueError("Cut sides do not refer to the pinned upstream reports")
