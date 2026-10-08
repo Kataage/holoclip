@@ -652,3 +652,202 @@ def test_default_all_batches_still_fails_closed_on_insufficient_audio(tmp_path):
     assert result["deferred_audio_clips"] == 0
     assert result["attempted_clips"] == 1
     assert result["remaining_clips"] == 3
+
+
+def test_resume_replays_every_prior_stage_before_new_reservations(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=5)
+    original = state.read_bytes()
+    first_calls = []
+    first = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=2, max_batches=2, runners=make_runners(root, calls=first_calls),
+    )
+    assert first["status"] == "BOUNDED_BATCH_LIMIT_REACHED"
+    assert first["processed_clips"] == 4
+    assert len(first_calls) == 18
+    resumed_calls = []
+    second = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=2, max_batches=3, runners=make_runners(root, calls=resumed_calls),
+        resume_checkpoint=True,
+    )
+    assert second["status"] == "SIMULATED_ALL_BATCHES_COMPLETE"
+    assert second["resume_checkpoint"] is True
+    assert second["revalidated_previous_batches"] == 2
+    assert len(resumed_calls) == 27  # 2 replayed batches plus 1 new batch
+    assert second["processed_clips"] == 5
+    assert second["attempted_clips"] == 5
+    assert second["remaining_clips"] == 0
+    assert len(set(second["processed_clip_ids"])) == 5
+    assert [x["selected_clip_ids"] for x in second["batches"][:2]] == [
+        x["selected_clip_ids"] for x in first["batches"]
+    ]
+    assert [len(x["selected_clip_ids"]) for x in second["batches"]] == [2, 2, 1]
+    assert second["observed_totals"]["clips_with_unique_original_audio_matches"] == 5
+    assert second["observed_totals"]["sampled_source_finished_frame_links"] == 10
+    assert second["ready"] is False and second["qualification_allowed"] is False
+    assert second["real_media_run_completed"] is False
+    assert state.read_bytes() == original
+
+
+def test_resume_without_prior_audit_starts_bounded_new_run(tmp_path):
+    store, state, root = files(tmp_path)
+    first = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=1, runners=make_runners(root),
+        resume_checkpoint=True,
+    )
+    assert first["status"] == "SIMULATED_ALL_BATCHES_COMPLETE"
+    assert first["revalidated_previous_batches"] == 0
+    assert first["processed_clips"] == 1
+
+
+def test_resume_rechecks_prior_real_stage_and_stops_on_new_audio_insufficiency(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=3)
+    run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=1, runners=make_runners(root),
+    )
+    prior = json.loads((root / "holdout-e2e-all-batches.json").read_text(encoding="utf-8"))
+    called = []
+    runners = make_runners(root, calls=called, override={
+        "original_audio": "INSUFFICIENT_UNIQUE_ANCHORS",
+    })
+    second = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=3, runners=runners, resume_checkpoint=True,
+    )
+    assert second["status"] == "BLOCKED_RESUME_REVALIDATION_FAILED"
+    assert second["failed_batch"] == 1
+    assert second["blocked_stage"] == "original_audio"
+    assert second["processed_clips"] == 0
+    assert called == ["finished_video", "original_audio"]
+    assert second["ready"] is False
+    assert not (root / ".holdout-e2e.lock").exists()
+    assert prior["batches"][0]["status"] == "SIMULATED_STAGE_TEST_COMPLETE"
+
+
+def test_resume_rejects_changed_reservation_state_without_mutating_checkpoint(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=3)
+    run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=1, runners=make_runners(root),
+    )
+    path = root / "holdout-e2e-all-batches.json"
+    saved_bytes = path.read_bytes()
+    corpus = CorpusGrowthState.model_validate_json(state.read_text(encoding="utf-8"))
+    corpus.cursors["changed-by-discovery"] = 99
+    state.write_text(corpus.model_dump_json(), encoding="utf-8")
+    calls = []
+    result = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=3, runners=make_runners(root, calls=calls),
+        resume_checkpoint=True,
+    )
+    assert result["status"] == "BLOCKED_UNSAFE_RESUME_CHECKPOINT"
+    assert result["ready"] is False
+    assert calls == []
+    assert path.read_bytes() == saved_bytes
+    assert (root / "holdout-e2e-resume-refusal.json").is_file()
+    assert not (root / ".holdout-e2e.lock").exists()
+
+
+def test_resume_rejects_changed_policy_digest_before_media_replay(tmp_path):
+    from holoclip.clip_policy import ClipPolicyRule, PolicyDecision
+
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=3)
+    run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=1, runners=make_runners(root),
+    )
+    calls = []
+    policy = ClipPolicyRule(
+        id="new-media-rule", decision=PolicyDecision.BLOCK,
+        reason="must never skip changed rights rules",
+        source_id="testsource", evidence_url="https://example.invalid/rights",
+    )
+    result = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[policy],
+        max_clips=1, max_batches=3, runners=make_runners(root, calls=calls),
+        resume_checkpoint=True,
+    )
+    assert result["status"] == "BLOCKED_UNSAFE_RESUME_CHECKPOINT"
+    assert calls == []
+    assert result["qualification_allowed"] is False
+
+
+def test_resume_rejects_forged_historical_stage_status(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=3)
+    run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=1, runners=make_runners(root),
+    )
+    path = root / "holdout-e2e-all-batches.json"
+    prior = json.loads(path.read_text(encoding="utf-8"))
+    prior["batches"][0]["stage_status_counts"]["original_audio"] = {
+        "PARTIAL_AUDIO_MATCH": 0, "QUARANTINED_POLICY": 1,
+    }
+    path.write_text(json.dumps(prior), encoding="utf-8")
+    calls = []
+    rejected = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=2, runners=make_runners(root, calls=calls),
+        resume_checkpoint=True,
+    )
+    assert rejected["status"] == "BLOCKED_UNSAFE_RESUME_CHECKPOINT"
+    assert calls == []
+    assert json.loads(path.read_text(encoding="utf-8")) == prior
+
+
+def test_resume_refuses_historical_deferred_or_failed_batches(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=3)
+    runners = make_runners(root, override={"original_audio": "INSUFFICIENT_AUDIO"})
+    original = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=2, runners=runners,
+        continue_on_insufficient_audio=True,
+    )
+    assert original["status"] == "BOUNDED_BATCH_LIMIT_REACHED"
+    called = []
+    result = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=3, runners=make_runners(root, calls=called),
+        continue_on_insufficient_audio=True, resume_checkpoint=True,
+    )
+    assert result["status"] == "BLOCKED_UNSAFE_RESUME_CHECKPOINT"
+    assert called == []
+
+
+def test_crash_during_historical_replay_keeps_original_full_audit(tmp_path):
+    import pytest
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=4)
+    run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=2, runners=make_runners(root),
+    )
+    path = root / "holdout-e2e-all-batches.json"
+    original = path.read_bytes()
+    calls = []
+    runners = make_runners(root, calls=calls)
+    old = runners["original_audio"]
+    def interrupt_on_second_replay(provider, **kwargs):
+        if calls.count("original_audio") >= 1:
+            raise KeyboardInterrupt("simulated abrupt restart")
+        return old(provider, **kwargs)
+    runners["original_audio"] = interrupt_on_second_replay
+    with pytest.raises(KeyboardInterrupt):
+        run_all_reserved_holdout_batches(
+            None, store=store, state_path=state, root=root, policy_rules=[],
+            max_clips=1, max_batches=4, runners=runners,
+            resume_checkpoint=True,
+        )
+    assert calls.count("finished_video") == 2
+    assert path.read_bytes() == original
+    assert not (root / ".holdout-e2e.lock").exists()
