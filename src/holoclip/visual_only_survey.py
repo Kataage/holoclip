@@ -6,6 +6,7 @@ human edit cuts or claim exhaustiveness from incomplete output sampling.
 from __future__ import annotations
 
 import math
+import subprocess
 from pathlib import Path
 
 from holoclip.visual_cut_brackets import measure_visual_cut_bracket
@@ -14,7 +15,7 @@ VERSION = "bounded-output-only-visual-survey-v1"
 MAX_WINDOWS = 6
 WINDOW_SECONDS = 6.
 MAX_PEAKS = 18
-MAX_SECONDS = 3600.
+MAX_SECONDS = 86400.
 
 
 def _finite(value: object) -> bool:
@@ -26,7 +27,9 @@ def _windows(duration: float, *, window_seconds: float, max_windows: int) -> lis
     if width <= 0:
         return []
     # Never introduce gaps while a complete survey fits the bounded budget.
-    count = min(max_windows, max(1, math.ceil(duration / width)))
+    # Overlapping windows prevent a seam from landing exactly between two
+    # independently decoded windows when full coverage is affordable.
+    count = 1 if duration <= width else max_windows
     starts = ([0.] if count == 1 else [
         i * (duration - width) / (count - 1) for i in range(count)
     ])
@@ -132,7 +135,7 @@ def survey_finished_visual_changes(
                     "verified_edit_cut": False,
                     "time_basis": "uniform_ffmpeg_sampled_clock_unverified_frame_pts",
                 })
-    except (OSError, RuntimeError, ValueError):
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
         result["status"] = "UNKNOWN_BOUNDED_VISUAL_DECODE"
         return result
     result["observed_peaks"] = sorted(
