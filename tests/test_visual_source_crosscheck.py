@@ -1,7 +1,6 @@
 """Bounded original/finished visual checks cannot turn a scene into gold."""
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
