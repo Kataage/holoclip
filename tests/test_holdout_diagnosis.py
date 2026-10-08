@@ -6,7 +6,7 @@ import json
 from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
 from holoclip.holdout_diagnosis import diagnose_holdout_e2e
 from holoclip.holdout_e2e_trial import (
-    run_all_reserved_holdout_batches, run_reserved_holdout_e2e,
+    STAGES, run_all_reserved_holdout_batches, run_reserved_holdout_e2e,
 )
 from test_holdout_e2e_trial import add_reserved_clips, make_runners
 from test_holdout_preparation import files
@@ -312,9 +312,7 @@ def test_conflicted_holdout_split_is_preserved_as_preflight_cause(tmp_path):
     report = run_all_reserved_holdout_batches(
         None, store=store, state_path=state, root=root, policy_rules=[],
         max_clips=1, max_batches=2,
-        runners={s.name: must_not_acquire for s in __import__(
-            "holoclip.holdout_e2e_trial", fromlist=["STAGES"]
-        ).STAGES},
+        runners={stage.name: must_not_acquire for stage in STAGES},
     )
     assert report["status"] == "BLOCKED_TRAIN_HOLDOUT_SPLIT"
     assert report["failed_batch"] == 1
