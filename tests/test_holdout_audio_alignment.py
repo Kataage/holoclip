@@ -49,6 +49,20 @@ def test_multiple_audio_cuts_preserved_as_separate_approximate_ranges():
     assert result["unresolved"]
 
 
+def test_short_two_piece_edit_keeps_at_least_three_independent_unique_anchors():
+    # 44 seconds, two 22-second observed pieces. Old 20s sampling tested
+    # 0,19,38s only; middle fragment straddled the cut and blocked E2E.
+    source = _features(800, seed=29)
+    cut = np.concatenate([source[36:124], source[176:264]], axis=0)
+    evidence = match_features(cut, source)
+    assert evidence["status"] == "PARTIAL_AUDIO_MATCH"
+    assert len(evidence["anchors"]) >= 3
+    assert len(evidence["ranges"]) == 2
+    assert evidence["source_monotonic"] is True
+    assert evidence["ranges"][0]["source_start"] == pytest.approx(9., abs=.25)
+    assert evidence["ranges"][1]["source_start"] == pytest.approx(44., abs=1.)
+
+
 def test_repeated_source_event_and_unrelated_clip_cannot_establish_unique_match():
     source = _features(500)
     duplicated = np.concatenate([source, source], axis=0)
