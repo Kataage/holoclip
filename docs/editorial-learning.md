@@ -106,6 +106,21 @@ a later consumer of this timeline and is not implemented by this learning layer.
 
 ## Autonomous corpus growth
 
+**No manual source list is required.** Newly resolved eligible source streams are
+allocated to learning or an automatic reserved holdout bucket before ingest.
+Existing human-example streams stay in learning, and later clips from a reserved
+stream remain reserved; source membership conflicts are quarantined. The
+reservation is *metadata-only*, not a gold label or proof of held-out independence
+for cross-stream/multi-POV events.
+
+`uv run holoclip examples-holdout-status` exports durable, non-promotable
+reservations and conflicts without an API key or downloads. See
+[autonomous evidence policy](autonomous-evidence-policy.md) for required
+event-level decontamination, independent grading and no-operator acceptance
+gates. Unverified cases may remain quarantined indefinitely; none may be silently
+converted into reviewed gold.
+
+
 ```powershell
 uv run holoclip examples-grow-corpus --cycles 20
 uv run holoclip examples-grow-corpus --target-trusted 100 --target-streams 50 --cycles 100
