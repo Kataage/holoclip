@@ -146,7 +146,7 @@ def summarize_observed_evidence(
         if data.get("version") != stage.version or any(
             data.get(flag) is not False for flag in (
                 "qualification_allowed", "event_split_verified",
-                "reviewed_gold_available",
+                "reviewed_gold_available", "benchmark_held_out",
             )
         ):
             raise ValueError("Unsafe or mismatched report: " + stage.name)
@@ -263,7 +263,8 @@ def _run_reserved_holdout_e2e_unlocked(
     if not 1 <= max_clips <= 20:
         raise ValueError("1..20 reserved clip budget required")
     root.mkdir(parents=True, exist_ok=True)
-    path = root / "holdout-e2e-audit.json"
+    path = root / ("holdout-e2e-preflight.json" if preflight_only
+                   else "holdout-e2e-audit.json")
     output = {
         "version": VERSION, "status": "BLOCKED_NO_RESERVED_CLIPS",
         "preflight_only": preflight_only,
@@ -296,8 +297,17 @@ def _run_reserved_holdout_e2e_unlocked(
         output["conflicted_streams_count"] = len(inventory["conflicted_streams"])
         save()
         return output
+    if len({human_clip_identity(item.clip_url) for item in candidates}) != len(candidates):
+        output["status"] = "BLOCKED_AMBIGUOUS_RESERVATION"
+        save()
+        return output
 
-    batch, remaining = _select_batch(state, root, max_clips)
+    try:
+        batch, remaining = _select_batch(state, root, max_clips)
+    except (ValueError, OSError):
+        output["status"] = "BLOCKED_INVALID_PRIOR_CHECKPOINT"
+        save()
+        return output
     output["selected_clips"] = len(batch)
     output["remaining_clips_after_batch"] = remaining
     selected_ids = [human_clip_identity(item.clip_url) for item in batch]
@@ -361,6 +371,12 @@ def _run_reserved_holdout_e2e_unlocked(
             save()
             return output
         save()
+    if (not state_path.is_file()
+            or hashlib.sha256(state_path.read_bytes()).hexdigest() != original_sha):
+        output["status"] = "BLOCKED_CHANGED_RESERVATION_STATE"
+        output["blocked_stage"] = "postflight"
+        save()
+        return output
     output["real_media_run_completed"] = runners is None
     output["status"] = (
         "UNREVIEWED_MEASUREMENTS_COMPLETE" if runners is None
