@@ -13,7 +13,9 @@ from pathlib import Path
 
 from holoclip.corpus_growth import CorpusGrowthState
 from holoclip.examples import human_clip_identity
-from holoclip.holdout_e2e_trial import MULTI_BATCH_VERSION, STAGES, VERSION
+from holoclip.holdout_e2e_trial import (
+    MULTI_BATCH_VERSION, STAGES, VERSION, _holdout_policy_sha,
+)
 from holoclip.holdout_preparation import _candidates
 from holoclip.holdout_reservations import holdout_inventory
 from holoclip.provider_benchmark import atomic_json
@@ -159,7 +161,7 @@ def _classify_blocker(stage: str | None, statuses: dict) -> str:
 
 def diagnose_holdout_e2e(
     *, store: Path, state_path: Path, root: Path,
-    output: Path | None = None,
+    output: Path | None = None, policy_rules: list | None = None,
 ) -> dict:
     """Summarize stored *run* audits without reading/downloading original media.
 
@@ -233,6 +235,7 @@ def diagnose_holdout_e2e(
         "MULTI_BATCH" if audit_path.name.endswith("all-batches.json")
         else "SINGLE_BATCH"
     )
+    result["policy_verification"] = "NOT_REQUESTED" if policy_rules is None else "PENDING"
     try:
         audit = json.loads(audit_path.read_text(encoding="utf-8"))
         if not isinstance(audit, dict):
@@ -253,6 +256,19 @@ def diagnose_holdout_e2e(
             result["next_action"] = "RERUN_TRIAL_AFTER_RESERVATION_CHANGE"
             save()
             return result
+        if policy_rules is not None:
+            recorded_policy_sha = audit.get("policy_rules_sha256")
+            if not isinstance(recorded_policy_sha, str):
+                result["status"] = "BLOCKED_AUDIT_MISSING_POLICY_DIGEST"
+                result["next_action"] = "REEXECUTE_TRIAL_TO_BIND_POLICY"
+                save()
+                return result
+            if recorded_policy_sha != _holdout_policy_sha(policy_rules):
+                result["status"] = "BLOCKED_STALE_POLICY_RULES"
+                result["next_action"] = "RERUN_TRIAL_AFTER_POLICY_CHANGE"
+                save()
+                return result
+            result["policy_verification"] = "MATCHED_CURRENT_RULES"
         rows, _ = _records_from_audit(audit, reserved)
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         result["status"] = "BLOCKED_INVALID_AUDIT"
