@@ -6,6 +6,7 @@ import json
 import math
 from pathlib import Path
 
+from holoclip.acoustic_cut_brackets import VERSION as REFINEMENT_VERSION
 from holoclip.bounded_source_evidence import _checked_measurement, _valid_ranges
 from holoclip.clip_policy import (
     PolicyDecision, PolicyOperation, evaluate_source_metadata, evaluate_source_ranges,
@@ -146,6 +147,9 @@ def build_reserved_partial_maps(
                 or clock.get("status") != "MEASURED_SOURCE_SECTION_CLOCK_DIAGNOSTICS"
                 or linked.get("status") != "MEASURED_UNREVIEWED_FRAME_LINKS"
                 or cut.get("status") != "MEASURED_UNREVIEWED_CUT_BRACKETS"
+                or cut.get("method") != REFINEMENT_VERSION
+                or not isinstance(cut.get("refinement"), dict)
+                or cut["refinement"].get("version") != REFINEMENT_VERSION
                 or side.get("status") != "MEASURED_UNREVIEWED_CUT_SIDE_EVIDENCE"
                 or not isinstance(sections, list) or not 1 <= len(sections) <= 5
                 or not (len(sections) == len(section_clocks)
