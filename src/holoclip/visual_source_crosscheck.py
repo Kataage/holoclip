@@ -8,6 +8,7 @@ finished edit reused the same natural transition. Absence is never gold.
 from __future__ import annotations
 
 import math
+import subprocess
 from pathlib import Path
 
 from holoclip.visual_cut_brackets import (
@@ -149,7 +150,7 @@ def inspect_visual_only_source_changes(
                     "VISUAL_JUMP_CANDIDATES": "SOURCE_VISUAL_CHANGE_ALSO_OBSERVED",
                     "UNKNOWN_NO_ISOLATED_JUMP": "SOURCE_NO_ISOLATED_CHANGE_OBSERVED",
                 }.get(observed["status"], "UNKNOWN_SOURCE_VISUAL_DECODE")
-            except (OSError, RuntimeError, ValueError):
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
                 status = "UNKNOWN_SOURCE_VISUAL_DECODE"
         result["peak_observations"].append({
             "output_interval": interval,
