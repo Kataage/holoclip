@@ -209,3 +209,97 @@ def test_stage_summary_does_not_use_unexecuted_cached_cut_or_side(tmp_path):
     )
     assert none["real_cut_observations"] == {}
     assert none["real_cut_observation_totals"]["described_clips"] == 0
+
+
+def test_multi_batch_persists_all_distinct_real_cut_descriptions(tmp_path):
+    """A later bounded batch must not replace earlier clip observations."""
+    from holoclip.holdout_e2e_trial import run_all_reserved_holdout_batches
+    from test_holdout_e2e_trial import add_reserved_clips, make_runners
+    from test_holdout_preparation import files
+
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=3)
+    runners = make_runners(root)
+    cut_runner = runners["acoustic_cut_brackets"]
+    side_runner = runners["two_sided_cut_evidence"]
+
+    def cut(provider, **kwargs):
+        answer = cut_runner(provider, **kwargs)
+        path = root / "cut_brackets" / "holdout-cut-brackets.json"
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        for clip_id, record in doc["records"].items():
+            if record["status"] == "MEASURED_UNREVIEWED_CUT_BRACKETS":
+                record.update({
+                    "clip_id": clip_id,
+                    "audio_source_sha256": "a" * 64,
+                    "finished_media_sha256": "b" * 64,
+                    "refinement": {
+                        "version": "bounded-acoustic-cut-brackets-v1",
+                        "status": "AUDIO_SUPPORTED_INTERVALS",
+                        "transitions": [{
+                            "status": "CUT_INTERVAL_CANDIDATE",
+                            "interval": [15., 17.],
+                        }],
+                    },
+                    "output_visual_cut_evidence": [{
+                        "acoustic_interval": [15., 17.],
+                        "relation": "CORROBORATING_OUTPUT_CHANGE",
+                        "verified_edit_cut": False,
+                        "native_frame_pts_verified": False,
+                    }],
+                    "reviewed_gold_available": False,
+                    "event_split_verified": False,
+                    "frame_accurate_cuts_verified": False,
+                })
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        return answer
+
+    def sides(provider, **kwargs):
+        answer = side_runner(provider, **kwargs)
+        path = root / "cut_sides" / "holdout-cut-side-evidence.json"
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        for clip_id, record in doc["records"].items():
+            if record["status"] == "MEASURED_UNREVIEWED_CUT_SIDE_EVIDENCE":
+                record.update({
+                    "clip_id": clip_id,
+                    "audio_source_sha256": "a" * 64,
+                    "finished_media_sha256": "b" * 64,
+                    "reviewed_gold_available": False,
+                    "event_split_verified": False,
+                    "frame_accurate_cuts_verified": False,
+                    "transitions": [{
+                        "acoustic_interval": [15., 17.],
+                        "editorial_gold": False,
+                        "candidate": {
+                            "status": "MULTIMODAL_EDIT_JUMP_CANDIDATE",
+                            "verified_edit_cut": False,
+                        },
+                    }],
+                })
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        return answer
+
+    runners["acoustic_cut_brackets"] = cut
+    runners["two_sided_cut_evidence"] = sides
+    result = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=2, max_batches=2, runners=runners,
+    )
+    assert result["status"] == "SIMULATED_ALL_BATCHES_COMPLETE"
+    assert result["real_media_run_completed"] is False
+    assert len(result["real_cut_observations"]) == 3
+    assert len(result["batches"]) == 2
+    assert sum(len(batch["real_cut_observations"]) for batch in
+               result["batches"]) == 3
+    assert result["real_cut_observation_totals"]["described_clips"] == 3
+    assert result["real_cut_observation_totals"]["cut_candidates"] == 3
+    assert result["real_cut_observation_totals"][
+        "two_sided_multimodal_candidates"
+    ] == 3
+    assert result["real_cut_observation_totals"]["editor_cut_precision"] is None
+    persisted = json.loads(
+        (root / "holdout-e2e-all-batches.json").read_text(encoding="utf-8")
+    )
+    assert persisted["real_cut_observation_totals"] == result[
+        "real_cut_observation_totals"
+    ]
