@@ -64,6 +64,10 @@ uv run --extra media holoclip examples-validate-holdout-e2e --preflight-only
 uv run --extra media holoclip examples-validate-holdout-e2e --max-clips 3
 # Autonomous bounded multi-batch validation, for reserved real clip/source evidence:
 uv run --extra media holoclip examples-validate-holdout-e2e --all-batches --max-clips 3 --max-batches 8
+# After interruption or reaching a finite batch budget, replay all previously
+# successful reserved-video batches with full nine-stage validation, then
+# continue up to the NEW total max-batches budget:
+uv run --extra media holoclip examples-validate-holdout-e2e --all-batches --resume-checkpoint --max-clips 3 --max-batches 12
 # Optional: examine other reserved clips even when one original audio cannot
 # be uniquely matched. Other failures (policy, identity, media, exceptions)
 # ALWAYS stop. Bounded to one clip per batch, up to 12 clips per invocation.
@@ -112,6 +116,28 @@ if the bounded invocation examined every reservation but some audio
 correspondence was insufficient. For ordinary use, leave this opt-in
 disabled to retain the original fail-on-first-mismatch behavior.
 
+If Windows restarts or a finite `--max-batches` budget is reached,
+`--resume-checkpoint` can recover the last completed-batch selection
+order from the prior `holdout-e2e-all-batches.json`. Crucially, it
+**replays all nine real stage checks for every historical completed
+batch**, including media SHA/policy/source guardrails, before attempting
+a new reservation. Successful cached expensive work may be reused by
+individual stages only after their own integrity checks. This is
+**not** blind trust of the JSON audit or a shortcut to reviewer gold.
+
+Checkpoint replay refuses changed reservation-state SHA, changed ordered
+rights/policy rules, mismatched stage schema/execution mode, forged stage
+tallies, duplicate clip IDs, or previous failed/deferred batches. Existing
+audits from before this feature lack the policy digest and therefore must
+be rerun normally; unsafe resume does **not** overwrite the saved audit
+and writes `holdout-e2e-resume-refusal.json` instead. During replay of
+prior successful batches, the full original checkpoint stays intact so
+an unexpected second interruption does not erase it. The maximum of
+12 batches applies to the *total revalidated + newly executed* batch
+count; increase `--max-batches` only within that fixed upper bound.
+When the checkpoint has failed/deferred clips, use normal diagnosis and
+a fresh strict trial rather than skipping over them.
+
 The run holds one exclusive lock across all batches, fails closed
 at the first blocked/quarantined/insufficient step, and never retries a
 failed batch indefinitely. It writes a **separate cumulative**
@@ -137,7 +163,11 @@ uv run --extra media holoclip examples-diagnose-holdout-e2e
 This writes `data/provider-benchmark/holdout/holdout-e2e-diagnosis.json`
 with the first failed stage, fixed next-action code, stage status totals,
 original reserved clip IDs not yet attempted, and whether the saved audit
-still matches the exact reservation-state SHA-256. The diagnostic prefers
+still matches the exact reservation-state SHA-256. When invoked from the CLI, offline diagnosis also checks the saved
+rights-policy SHA-256 against the current `--policy-file` (default
+`data/policy/clip_rules.jsonl`). A changed policy or legacy audit without
+this fingerprint is flagged rather than presented as a current successful
+measurement. The diagnostic prefers
 the cumulative multi-batch report, never double-counts the latest
 individual batch, and refuses missing, stale, tampered or older unauthenticated
 audit schema. `SIMULATED_TRIAL_ONLY` explicitly differentiates fixture

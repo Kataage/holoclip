@@ -391,3 +391,48 @@ def test_diagnosis_rejects_unattributed_audio_deferrals(tmp_path):
     diagnosed = _diagnose(store, state, root)
     assert diagnosed["status"] == "BLOCKED_INVALID_AUDIT"
     assert diagnosed["reviewed_gold_available"] is False
+
+
+def test_offline_diagnosis_requires_matching_current_clip_rights_rules(tmp_path):
+    from holoclip.clip_policy import ClipPolicyRule, PolicyDecision
+
+    store, state, root = files(tmp_path)
+    run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=make_runners(root),
+    )
+    rule = ClipPolicyRule(
+        id="newly-blocked-topic", decision=PolicyDecision.BLOCK,
+        reason="new permission constraint", source_id="test",
+        evidence_url="https://example.invalid/prohibition",
+    )
+    stale = diagnose_holdout_e2e(
+        store=store, state_path=state, root=root, policy_rules=[rule],
+    )
+    assert stale["status"] == "BLOCKED_STALE_POLICY_RULES"
+    assert stale["next_action"] == "RERUN_TRIAL_AFTER_POLICY_CHANGE"
+    assert stale["real_media_run_completed"] is False
+    assert stale["reviewed_gold_available"] is False
+    current = diagnose_holdout_e2e(
+        store=store, state_path=state, root=root, policy_rules=[],
+    )
+    assert current["status"] == "SIMULATED_TRIAL_ONLY"
+    assert current["policy_verification"] == "MATCHED_CURRENT_RULES"
+
+
+def test_offline_diagnosis_blocks_legacy_audit_without_policy_digest(tmp_path):
+    store, state, root = files(tmp_path)
+    run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root,
+        policy_rules=[], max_clips=1, runners=make_runners(root),
+    )
+    path = root / "holdout-e2e-audit.json"
+    old = json.loads(path.read_text(encoding="utf-8"))
+    old.pop("policy_rules_sha256", None)
+    path.write_text(json.dumps(old), encoding="utf-8")
+    checked = diagnose_holdout_e2e(
+        store=store, state_path=state, root=root, policy_rules=[],
+    )
+    assert checked["status"] == "BLOCKED_AUDIT_MISSING_POLICY_DIGEST"
+    assert checked["real_media_run_completed"] is False
+    assert checked["ready"] is False

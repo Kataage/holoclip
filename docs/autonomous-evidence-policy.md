@@ -862,6 +862,43 @@ never promotes reviewer gold, production approval, native source PTS,
 dense maps or cut-frame accuracy. For real Hololive accuracy, the
 operator must still run the bounded trial on authorized local media.
 
+## Increment 20: restart-safe fully revalidated bounded batch replay (#136)
+
+A saved cumulative audit after each successful media batch was not
+automatically reusable after a Windows reboot or interrupted run.
+The `--resume-checkpoint` opt-in recovers the prior selection order,
+**never** trusting the previous `status=success` by itself. The resumed
+run recomputes **all nine** guarded production stage outcomes for each
+previously successful batch with the same expected clip IDs, including
+the same media bytes and source rights/policy checks already implemented
+by each stage. All successfully rechecked old batches consume the same
+finite batch count; later new reservations are processed only after
+every historical batch is revalidated.
+
+Current rights-policy fingerprints are also recorded on **single-batch**
+audits and checked by standalone/automatic offline diagnosis; policy drift
+or missing legacy policy digests blocks its claims about a current trial.
+
+Every new cumulative run records the exact original reservation SHA-256,
+ordered policy-rules SHA-256, stage schema SHA-256 and real-vs-simulated
+execution mode. Replay rejects changed rights/policy, source reservations,
+stage schema, execution kind, batch width, any forged/missing nine-stage
+tallies, duplicated/nonreserved clip IDs, prior failed/quarantined/deferred
+batches or invalid report flags. Unsafe prior checkpoints are **not
+overwritten**: refusal is logged in a separate local JSON and the
+operator can start a fresh safe run. The original multi-batch checkpoint
+also survives a subsequent interruption *during historical replay*;
+until previously successful batches have all been reverified, no
+incomplete prefix is persisted over the original checkpoint.
+
+Existing stage cache invalidation rules continue to govern expensive
+media reuse; the checkpoint is merely an ordered set of previously
+selected clip IDs, never proof of present video hashes or source
+permissions. The same exclusive per-root lock, bounded max 12
+total (replayed plus new) batches, quota constraints, no-Docker/no-paid
+services and `ready=false` safeguards remain. No independently
+reviewed editor accuracy or native original video PTS is inferred.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
