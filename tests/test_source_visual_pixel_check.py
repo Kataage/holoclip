@@ -134,3 +134,63 @@ def test_real_orb_and_independent_pixel_checker_both_required(tmp_path):
     )
     assert result["matched_frames"] >= 3
     assert result["source_identity_verified"] is False
+
+
+def test_actual_encoded_mp4_samples_survive_independent_crosscheck(tmp_path):
+    """Exercise real video encoding/decoding, not merely fabricated scores."""
+    import pytest
+
+    paths = [tmp_path/"original.mp4", tmp_path/"finished.mp4"]
+    writers = [
+        cv2.VideoWriter(
+            str(p), cv2.VideoWriter_fourcc(*"mp4v"),
+            1., (416, 260),
+        ) for p in paths
+    ]
+    if not all(writer.isOpened() for writer in writers):
+        for writer in writers:
+            writer.release()
+        pytest.skip("VideoWriter mp4v codec unavailable in this environment")
+    try:
+        for i in range(4):
+            frame = np.random.default_rng(5800+i).integers(
+                0, 255, (260, 416, 3), dtype=np.uint8,
+            )
+            cv2.putText(
+                frame, f"original sequence {i}", (20, 120),
+                cv2.FONT_HERSHEY_SIMPLEX, .65, (255, 255, 255), 2,
+            )
+            writers[0].write(frame)
+            edited = frame.copy()
+            cv2.rectangle(edited, (8, 8), (42, 26), (255, 255, 255), -1)
+            writers[1].write(edited)
+    finally:
+        for writer in writers:
+            writer.release()
+
+    measured = []
+    for video_path, prefix in zip(paths, ("src-mp4", "dst-mp4")):
+        reader = cv2.VideoCapture(str(video_path))
+        assert reader.isOpened()
+        frames = []
+        try:
+            for i in range(4):
+                ok, image = reader.read()
+                assert ok, f"Failed to decode real video frame {i}"
+                output = tmp_path/f"{prefix}-{i}.png"
+                assert cv2.imwrite(str(output), image)
+                frames.append(SimpleNamespace(
+                    id=f"{prefix}-{i}", locator=str(output),
+                    pts_seconds=float(i), checksum=checksum_file(output),
+                ))
+        finally:
+            reader.release()
+        measured.append(SimpleNamespace(frames=frames))
+    pixel = confirm_pixel_temporal_pairs(list(zip(
+        measured[0].frames, measured[1].frames,
+    )))
+    assert pixel["status"] == "PIXEL_TEMPORAL_SEQUENCE_CORROBORATED_NOT_GOLD"
+    result = compare_sparse_visual_sequences(measured[1], [measured[0]])
+    assert result["status"] == "VISUAL_SEQUENCE_CORROBORATED_NOT_SOURCE_GOLD"
+    assert result["pixel_independent_check"]["version"] == VERSION
+    assert result["source_identity_verified"] is False
