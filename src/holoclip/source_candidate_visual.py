@@ -20,6 +20,9 @@ from holoclip.providers.source.base import SourceMetadata
 from holoclip.source_candidate_scout import VERSION as SCOUT_VERSION
 from holoclip.video_measurement import checksum_file, measure_window, probe_video
 from holoclip.visual_edit_evidence import _compare_features, _orb_features
+from holoclip.source_visual_pixel_check import (
+    VERSION as PIXEL_VERSION, confirm_pixel_temporal_pairs,
+)
 from holoclip.source_visual_refinement import (
     VERSION as REFINEMENT_VERSION, adaptive_refinement_starts, make_weak_hint,
 )
@@ -31,7 +34,7 @@ from holoclip.source_visual_assessment import (
     checked_visual_candidate_assessment,
 )
 
-VERSION = "bounded-shortlist-video-probes-v4"
+VERSION = "bounded-shortlist-video-probes-v5"
 WINDOW_SECONDS = 12.
 MAX_CLIPS = 2
 MAX_CANDIDATES = 2
@@ -123,7 +126,7 @@ def _measured_frames(window, max_frames: int) -> list:
 
 def compare_sparse_visual_sequences(
     finished, sources: list, *, extract=_orb_features,
-    compare=_compare_features,
+    compare=_compare_features, confirm_sequence=confirm_pixel_temporal_pairs,
 ) -> dict:
     """Corroborate 3 distinct, temporally coherent sampled frames at most.
 
@@ -135,6 +138,8 @@ def compare_sparse_visual_sequences(
         "examined_frame_comparisons": 0, "matched_source_window": None,
         "source_frame_times_local": [], "finished_frame_times_local": [],
         "weak_source_window": None, "weak_visual_pair_count": 0,
+        "pixel_independent_check": None,
+        "pixel_independent_version": PIXEL_VERSION,
         **_NO_GOLD,
     }
     dst = _measured_frames(finished, MAX_FINISHED_FRAMES)
@@ -226,6 +231,25 @@ def compare_sparse_visual_sequences(
         result["status"] = "UNKNOWN_MULTIPLE_VISUAL_TRAJECTORIES"
     elif good:
         group, seq = good[0]
+        # This is not the ORB/RANSAC verifier repeated: it loads the already
+        # measured real PNG bytes and verifies independent low-frequency
+        # DCT correspondences, source/output frame uniqueness and motion.
+        try:
+            pixel = confirm_sequence([(source, finished)
+                                      for finished, source in seq])
+        except Exception:
+            result["status"] = "UNKNOWN_INDEPENDENT_PIXEL_CHECK_FAILURE"
+            return result
+        result["pixel_independent_check"] = pixel
+        if (not isinstance(pixel, dict)
+                or pixel.get("status")
+                    != "PIXEL_TEMPORAL_SEQUENCE_CORROBORATED_NOT_GOLD"
+                or any(pixel.get(flag) is not False for flag in (
+                    "source_identity_verified", "reviewed_gold_available",
+                    "qualification_allowed"
+                ))):
+            result["status"] = "UNKNOWN_INDEPENDENT_PIXEL_NOT_CORROBORATED"
+            return result
         result.update({
             "status": "VISUAL_SEQUENCE_CORROBORATED_NOT_SOURCE_GOLD",
             "matched_frames": len(seq),
