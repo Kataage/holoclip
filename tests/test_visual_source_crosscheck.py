@@ -74,7 +74,7 @@ def test_same_source_change_is_observed_but_not_proven_to_be_natural_edit():
     assert result["peak_observations"][0]["status"] == (
         "SOURCE_VISUAL_CHANGE_ALSO_OBSERVED"
     )
-    assert calls == [("source.mkv", PEAK)]
+    assert calls == [("source.mkv", [6.025, 6.975])]
     assert result["verified_edit_cut"] is False
     assert result["source_scene_change_ruled_out"] is False
 
