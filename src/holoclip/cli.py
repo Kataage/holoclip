@@ -30,6 +30,7 @@ from holoclip.holdout_source_clock_pipeline import calibrate_reserved_section_cl
 from holoclip.holdout_frame_links_pipeline import correlate_reserved_source_frames
 from holoclip.holdout_cut_side_pipeline import inspect_reserved_cut_sides
 from holoclip.holdout_partial_time_map_pipeline import build_reserved_partial_maps
+from holoclip.holdout_e2e_trial import run_reserved_holdout_e2e
 from holoclip.editorial_planning import plan_candidate_boundaries
 from holoclip.editorial_evaluation import run_editorial_ab
 from holoclip.example_batch import (
@@ -677,6 +678,31 @@ def evaluation_leak_check(
     )
     if report.suspected_overlap:
         raise typer.Exit(5)
+
+
+@app.command("examples-validate-holdout-e2e")
+def examples_validate_holdout_e2e(
+    store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
+    state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
+    root: Path = typer.Option(Path("data/provider-benchmark/holdout")),
+    policy_file: Path = typer.Option(Path("data/policy/clip_rules.jsonl")),
+    max_clips: int = typer.Option(3, min=1, max=20),
+    preflight_only: bool = typer.Option(False, help="Check reserved clips without downloading media"),
+) -> None:
+    """Run each bounded real-media evidence stage and record measured gaps."""
+    provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
+    report = run_reserved_holdout_e2e(
+        provider, store=store, state_path=state, root=root,
+        policy_rules=load_policy_rules(policy_file),
+        max_clips=max_clips, preflight_only=preflight_only,
+        progress=typer.echo,
+    )
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+    if report["status"] not in {
+        "UNREVIEWED_MEASUREMENTS_COMPLETE",
+        "PREFLIGHT_ONLY_NO_MEDIA_EXECUTED",
+    }:
+        raise typer.Exit(code=3)
 
 
 @app.command("examples-build-partial-time-map")
