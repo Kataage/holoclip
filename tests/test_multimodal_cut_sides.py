@@ -16,7 +16,6 @@ from holoclip.multimodal_cut_sides import (
     HEIGHT, WIDTH, compare_transition_sides, decode_short_frames,
 )
 from test_acoustic_cut_brackets import _run as run_cut
-from test_editorial_profile import trusted_example
 from test_source_frame_links import fixture as frame_fixture, run as run_links
 from test_visual_edit_evidence import run_visual, texture
 
