@@ -28,6 +28,9 @@ from holoclip.providers.source.yt_dlp import choose_source_candidate
 from holoclip.video_measurement import checksum_file
 from holoclip.visual_cut_brackets import (VERSION as VISUAL_CUT_VERSION,
                                            measure_visual_cut_bracket)
+from holoclip.visual_only_survey import (
+    VERSION as VISUAL_SURVEY_VERSION, survey_finished_visual_changes,
+)
 
 VERSION = "reserved-acoustic-cut-brackets-v1"
 
@@ -42,6 +45,7 @@ def refine_reserved_cut_candidates(
     policy_rules: list, max_clips: int = 3, max_points: int = 480,
     progress=None, fingerprint=fingerprint_media, refine=refine_acoustic_cut_brackets,
     measure_jump=measure_visual_cut_bracket,
+    survey_visual=survey_finished_visual_changes,
 ) -> dict:
     """Revalidate actual input bytes, current policies and source split each run."""
     if not 1 <= max_clips <= 20 or not 10 <= max_points <= 1000:
@@ -239,6 +243,7 @@ def refine_reserved_cut_candidates(
                 "visual_observations": visual_pairs,
                 "max_points": max_points, "method": BRACKET_VERSION,
                 "visual_cut_method": VISUAL_CUT_VERSION,
+                "independent_visual_survey": VISUAL_SURVEY_VERSION,
                 "audio_version": AUDIO_VERSION,
             })
             cached = records.get(clip_id, {})
@@ -294,6 +299,25 @@ def refine_reserved_cut_candidates(
                         "source_visual_transition_ruled_out": False,
                         "native_frame_pts_verified": False,
                     })
+            # Independent visual evidence can reveal output scene changes
+            # even when no acoustic CUT_INTERVAL_CANDIDATE was found. It is
+            # not fed back into acoustic cut sides or original source maps.
+            surveyed = survey_visual(
+                Path(p["media_path"]), float(p["duration_seconds"]), transitions,
+            )
+            if (not isinstance(surveyed, dict)
+                    or surveyed.get("version") != VISUAL_SURVEY_VERSION
+                    or surveyed.get("status") not in {
+                        "MEASURED_UNREVIEWED_OUTPUT_ONLY_VISUAL_SIGNALS",
+                        "UNKNOWN_BOUNDED_VISUAL_DECODE",
+                        "UNKNOWN_INSUFFICIENT_VISUAL_SAMPLING",
+                        "UNKNOWN_VISUAL_PEAK_BUDGET",
+                    }
+                    or any(surveyed.get(flag) is not False for flag in (
+                        "verified_edit_cut", "reviewed_gold_available",
+                        "frame_accurate_cuts_verified", "qualification_allowed",
+                    ))):
+                raise ValueError("Output-only survey cannot promote unreviewed cuts")
             records[clip_id] = {
                 **base, "status": "MEASURED_UNREVIEWED_CUT_BRACKETS",
                 "fingerprint": identity, "method": BRACKET_VERSION,
@@ -301,6 +325,8 @@ def refine_reserved_cut_candidates(
                 "finished_media_sha256": p["media_sha256"],
                 "refinement": refined, "visual_pair_summary": visual_counts,
                 "output_visual_cut_evidence": jump_evidence,
+                "independent_output_visual_survey": surveyed,
+                "visual_survey_method_version": VISUAL_SURVEY_VERSION,
                 "visual_cut_method_version": VISUAL_CUT_VERSION,
                 "visual_cut_boundary_confirmed": False,
                 "source_absolute_seek_verified": False,
