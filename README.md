@@ -103,6 +103,28 @@ reservations, the status is `BOUNDED_BATCH_LIMIT_REACHED` (not success).
 Use `--preflight-only` separately, before full media execution.
 This is an evidence/diagnostic trial, not a production qualification.
 
+The `--all-batches` validation command now **automatically** runs offline
+triage after success or a blocked batch, printing the first blocker and
+next-action code without another media download or manual command.
+
+After the real-media trial, get a source-state-checked offline failure diagnosis
+without re-downloading or re-encoding any files:
+
+```powershell
+uv run --extra media holoclip examples-diagnose-holdout-e2e
+```
+
+This writes `data/provider-benchmark/holdout/holdout-e2e-diagnosis.json`
+with the first failed stage, fixed next-action code, stage status totals,
+original reserved clip IDs not yet attempted, and whether the saved audit
+still matches the exact reservation-state SHA-256. The diagnostic prefers
+the cumulative multi-batch report, never double-counts the latest
+individual batch, and refuses missing, stale, tampered or older unauthenticated
+audit schema. `SIMULATED_TRIAL_ONLY` explicitly differentiates fixture
+tests from actual media runs. Diagnosis **only reads saved reports and
+metadata**; it does not re-verify media files or imply reviewer/editor gold.
+A diagnostic result is never production qualification.
+
 The local `data/provider-benchmark/holdout/holdout-e2e-audit.json` records
 each stage's *actual* per-clip status, observed candidate coverage, frame
 links, candidate edit discontinuities and blockers. Precision/recall,

@@ -17,6 +17,7 @@ import pytest
 
 from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
 from holoclip.holdout_e2e_trial import run_reserved_holdout_e2e, STAGES
+from holoclip.holdout_diagnosis import diagnose_holdout_e2e
 from holoclip.providers.source.base import (
     AcquiredSource, AcquiredVideoRange, AcquisitionProfile,
     SourceCandidate, SourceMetadata,
@@ -196,3 +197,16 @@ def test_generated_ffmpeg_source_and_clip_through_all_nine_real_stages(tmp_path)
     assert json.loads((report_root / "holdout-e2e-audit.json").read_text())["status"] == (
         "UNREVIEWED_MEASUREMENTS_COMPLETE"
     )
+    diagnosis = diagnose_holdout_e2e(
+        store=store, state_path=state_path, root=report_root,
+    )
+    assert diagnosis["status"] == "UNREVIEWED_TRIAL_RECORDED"
+    assert diagnosis["audit_kind"] == "SINGLE_BATCH"
+    assert diagnosis["attempted_clips"] == 1
+    assert diagnosis["unattempted_clip_ids"] == []
+    assert diagnosis["first_blocker"] is None
+    assert diagnosis["real_media_run_completed"] is True
+    assert diagnosis["network_or_media_examined"] is False
+    assert diagnosis["ready"] is False
+    assert diagnosis["reviewed_gold_available"] is False
+    assert diagnosis["editor_cut_precision"] is None

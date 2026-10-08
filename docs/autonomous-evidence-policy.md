@@ -793,6 +793,38 @@ This allows unattended *trial execution*, not unattended **publication**
 or ready-route promotion. Real edited Hololive media still must be
 available locally, and any empirical failure must be investigated.
 
+## Increment 18: no-media offline status and repair diagnosis (#134)
+
+The bounded all-batch run now stamps SHA-256 of the original durable
+reservation state in both per-batch and cumulative audit reports. The
+new `examples-diagnose-holdout-e2e` command is a read-only metadata/audit
+inspection workflow (except writing its separate JSON output). It does
+**not** call a media provider, yt-dlp, FFmpeg, text/vision model, or
+external API. Before trusting any diagnostic it re-evaluates the
+train/holdout source-stream inventory and compares the exact reservation
+state SHA-256 with that of the saved run. Missing hash from earlier audit
+schemas, changed reservation content, malformed/tampered stage counts,
+duplicate or unknown clip references and any apparent production,
+event-heldout or reviewer-gold promotion fail closed.
+
+The diagnosis prefers `holdout-e2e-all-batches.json` and does not mix
+its observations with the last individual `holdout-e2e-audit.json`.
+It retains the originally attempted public clip IDs, identifies still
+unattempted reservations and aggregates **only saved stage-level
+diagnostic status counts**, including downstream
+`NOT_EXECUTED_THIS_RUN` markers. It classifies the first blocking
+stage into fixed remediation codes for acoustic insufficiency, policy,
+source identity and media integrity; raw provider/FFmpeg exception
+messages, tokens and URLs are never copied. It also explicitly reports
+`SIMULATED_TRIAL_ONLY` for injected test runner reports and
+`TRIAL_INCOMPLETE_BATCH_BUDGET` for a finite batch limit.
+
+A historical complete audit is only a reported finished test run;
+offline diagnosis **does not recheck binary media bytes** and does not
+supply independent editor cut-frame precision/recall, event isolation,
+native source frame PTS or a full OutputSourceTimeMap. No model route is
+marked production-ready or reviewed-gold.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished

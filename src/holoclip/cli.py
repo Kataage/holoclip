@@ -30,6 +30,7 @@ from holoclip.holdout_source_clock_pipeline import calibrate_reserved_section_cl
 from holoclip.holdout_frame_links_pipeline import correlate_reserved_source_frames
 from holoclip.holdout_cut_side_pipeline import inspect_reserved_cut_sides
 from holoclip.holdout_partial_time_map_pipeline import build_reserved_partial_maps
+from holoclip.holdout_diagnosis import diagnose_holdout_e2e
 from holoclip.holdout_e2e_trial import (
     run_all_reserved_holdout_batches, run_reserved_holdout_e2e,
 )
@@ -682,6 +683,24 @@ def evaluation_leak_check(
         raise typer.Exit(5)
 
 
+@app.command("examples-diagnose-holdout-e2e")
+def examples_diagnose_holdout_e2e(
+    store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
+    state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
+    root: Path = typer.Option(Path("data/provider-benchmark/holdout")),
+    output: Path | None = typer.Option(
+        None, help="Offline diagnostic output JSON; defaults inside --root",
+    ),
+) -> None:
+    """Diagnose saved holdout stages offline, without acquiring any new media."""
+    report = diagnose_holdout_e2e(
+        store=store, state_path=state, root=root, output=output,
+    )
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+    if report["status"] not in {"UNREVIEWED_TRIAL_RECORDED"}:
+        raise typer.Exit(code=3)
+
+
 @app.command("examples-validate-holdout-e2e")
 def examples_validate_holdout_e2e(
     store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
@@ -716,6 +735,20 @@ def examples_validate_holdout_e2e(
             "PREFLIGHT_ONLY_NO_MEDIA_EXECUTED",
         }
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+    if all_batches:
+        # Media-heavy work has already completed or failed. A second,
+        # inexpensive, offline-only triage makes the first blocked stage
+        # actionable without requiring a separate user command.
+        diagnosis = diagnose_holdout_e2e(
+            store=store, state_path=state, root=root,
+        )
+        typer.echo(json.dumps({
+            "offline_diagnosis": diagnosis["status"],
+            "diagnostic_report_path": diagnosis["report_path"],
+            "next_action": diagnosis["next_action"],
+            "first_blocker": diagnosis["first_blocker"],
+            "unattempted_clips": len(diagnosis["unattempted_clip_ids"]),
+        }, ensure_ascii=False, indent=2))
     if report["status"] not in allowed:
         raise typer.Exit(code=3)
 
