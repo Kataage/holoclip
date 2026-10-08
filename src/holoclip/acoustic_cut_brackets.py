@@ -92,7 +92,9 @@ def refine_acoustic_cut_brackets(
     # explicitly requested minimum spacing. Candidate boundaries remain
     # interval-valued; sparse sampling does not establish accurate edit PTS.
     available_steps = sorted({
-        candidate for candidate in (step, round(1.5 / HOP), round(2. / HOP))
+        candidate for candidate in (
+            step, round(1. / HOP), round(1.5 / HOP), round(2. / HOP)
+        )
         if candidate >= step
     })
     selected_step = next((
