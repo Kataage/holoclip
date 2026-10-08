@@ -62,6 +62,8 @@ checkpointed local command (Windows `uv`, FFmpeg, local CPU; no paid AI):
 ```powershell
 uv run --extra media holoclip examples-validate-holdout-e2e --preflight-only
 uv run --extra media holoclip examples-validate-holdout-e2e --max-clips 3
+# Autonomous bounded multi-batch validation, for reserved real clip/source evidence:
+uv run --extra media holoclip examples-validate-holdout-e2e --all-batches --max-clips 3 --max-batches 8
 ```
 
 The first invocation checks local holdout reservations and learning-stream
