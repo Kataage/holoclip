@@ -286,6 +286,7 @@ class BenchmarkRunner:
             result["requests"] = self.guard.ledger.telemetry(job_id)
             history = list((previous or {}).get("attempt_history", []))
             history.append({"status": result["status"], "structured_valid": result["structured_valid"],
+                            "error_class": result.get("error_class"),
                             "latency_seconds": result["latency_seconds"],
                             "at": result["at"]})
             result["attempt_history"] = history
@@ -326,6 +327,11 @@ def summarize(results: list[dict]) -> list[dict]:
         histories = [h for r in rows for h in r.get("attempt_history", [{"status": r["status"], "latency_seconds": r["latency_seconds"]}])]
         # An eventual successful resume cannot erase earlier timeout/failure rate.
         operational = [h for h in histories if h["status"] != "BLOCKED_QUOTA"]
+        # Transport failures belong in reliability, not in JSON validity.
+        # A legacy FAILED attempt with no class is conservatively invalid.
+        structured_attempts = [h for h in operational if h["status"] == "SUCCEEDED" or
+            (h["status"] == "FAILED" and h.get("error_class") in
+             (None, "ValueError", "KeyError", "ValidationError"))]
         latency = sorted(r.get("wall_seconds", r["latency_seconds"]) for r in rows)
         http_codes = {200, 202, 400, 401, 403, 404, 410, 429, 500, 502, 503, 504} | {
             int(r["status"].removeprefix("http_")) for r in requests
@@ -334,7 +340,7 @@ def summarize(results: list[dict]) -> list[dict]:
             "success_rate": sum(h["status"] == "SUCCEEDED" for h in operational) / max(1, len(operational)),
             "eventual_completion_rate": sum(r["status"] == "SUCCEEDED" for r in rows) / len(rows),
             "json_validity": sum(h.get("structured_valid", h["status"] == "SUCCEEDED")
-                                 for h in operational) / max(1, len(operational)),
+                                 for h in structured_attempts) / max(1, len(structured_attempts)),
             "p50_latency": statistics.median(latency), "p95_latency": latency[math.ceil(len(rows) * .95) - 1],
             "timeouts": sum(h["status"] == "TIMEOUT" for h in histories),
             "quota_deferrals": sum(h["status"] == "BLOCKED_QUOTA" for h in histories),
