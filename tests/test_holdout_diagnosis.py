@@ -1,0 +1,220 @@
+"""Media-free triage of real/failed/simulated reserved source video audits."""
+from __future__ import annotations
+
+import json
+
+from holoclip.corpus_growth import CorpusGrowthState
+from holoclip.holdout_diagnosis import diagnose_holdout_e2e
+from holoclip.holdout_e2e_trial import (
+    run_all_reserved_holdout_batches, run_reserved_holdout_e2e,
+)
+from test_holdout_e2e_trial import add_reserved_clips, make_runners
+from test_holdout_preparation import files
+
+
+def _diagnose(store, state, root):
+    return diagnose_holdout_e2e(store=store, state_path=state, root=root)
+
+
+def test_no_reservation_state_explains_without_network(tmp_path):
+    store, state, root = files(tmp_path)
+    state.unlink()
+    report = _diagnose(store, state, root)
+    assert report["status"] == "BLOCKED_MISSING_RESERVATION_STATE"
+    assert report["next_action"] == "RESTORE_DURABLE_RESERVATION_STATE"
+    assert report["network_or_media_examined"] is False
+    assert report["real_media_run_completed"] is False
+    assert report["ready"] is False
+    assert (root / "holdout-e2e-diagnosis.json").exists()
+
+
+def test_existing_reservations_without_audit_have_actionable_status(tmp_path):
+    store, state, root = files(tmp_path)
+    before = state.read_bytes()
+    report = _diagnose(store, state, root)
+    assert report["status"] == "NO_REAL_MEDIA_TRIAL_RECORDED"
+    assert report["next_action"] == "RUN_BOUNDED_HOLDOUT_MEDIA_TRIAL"
+    assert report["reserved_clips"] == 1
+    assert len(report["unattempted_clip_ids"]) == 1
+    assert report["batches"] == []
+    assert report["editor_cut_precision"] is None
+    assert state.read_bytes() == before
+
+
+def test_full_multi_batch_simulation_only_even_when_all_stages_succeed(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=5)
+    original_bytes = state.read_bytes()
+    result = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=2, max_batches=3, runners=make_runners(root),
+    )
+    assert result["status"] == "SIMULATED_ALL_BATCHES_COMPLETE"
+    diagnosis = _diagnose(store, state, root)
+    assert diagnosis["status"] == "SIMULATED_TRIAL_ONLY"
+    assert diagnosis["audit_kind"] == "MULTI_BATCH"
+    assert diagnosis["reserved_clips"] == 5
+    assert diagnosis["attempted_clips"] == 5
+    assert diagnosis["unattempted_clip_ids"] == []
+    assert len(diagnosis["batches"]) == 3
+    assert diagnosis["stage_status_totals"]["original_audio"] == {
+        "PARTIAL_AUDIO_MATCH": 5,
+    }
+    assert diagnosis["first_blocker"] is None
+    assert diagnosis["network_or_media_examined"] is False
+    assert diagnosis["real_media_run_completed"] is False
+    assert diagnosis["next_action"] == "RUN_WITH_REAL_MEDIA_PROVIDER"
+    assert diagnosis["qualification_allowed"] is False
+    assert diagnosis["event_holdout_accuracy"] is None
+    assert state.read_bytes() == original_bytes
+
+
+def test_failure_diagnosis_names_actual_blocker_from_persisted_stage_status(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=4)
+    run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=2, max_batches=3, runners=make_runners(root, override={
+            "original_audio": "INSUFFICIENT_UNIQUE_ANCHORS",
+        }),
+    )
+    diagnosis = _diagnose(store, state, root)
+    assert diagnosis["status"] == "TRIAL_BLOCKED_REVIEW_STAGE"
+    assert diagnosis["reserved_clips"] == 4
+    assert diagnosis["attempted_clips"] == 2
+    assert len(diagnosis["unattempted_clip_ids"]) == 2
+    assert diagnosis["first_blocker"] == {
+        "batch": 1, "stage": "original_audio",
+        "run_status": "BLOCKED_UPSTREAM_STAGE",
+        "observed_status_counts": {"INSUFFICIENT_UNIQUE_ANCHORS": 2},
+        "diagnostic_action": "CHECK_ORIGINAL_AUDIO_CORRESPONDENCE",
+    }
+    assert diagnosis["next_action"] == "CHECK_ORIGINAL_AUDIO_CORRESPONDENCE"
+    assert diagnosis["stage_status_totals"]["finished_video"] == {
+        "PREPARED_UNREVIEWED": 2,
+    }
+    assert diagnosis["stage_status_totals"]["source_video_pairs"] == {
+        "NOT_EXECUTED_THIS_RUN": 2,
+    }
+
+
+def test_incomplete_run_budget_reports_unattempted_original_clip_ids(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=4)
+    run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=2, runners=make_runners(root),
+    )
+    diagnosis = _diagnose(store, state, root)
+    assert diagnosis["status"] == "TRIAL_INCOMPLETE_BATCH_BUDGET"
+    assert diagnosis["next_action"] == "INCREASE_FINITE_BATCH_BUDGET_AND_RERUN"
+    assert diagnosis["attempted_clips"] == 2
+    assert len(diagnosis["unattempted_clip_ids"]) == 2
+    assert diagnosis["real_media_run_completed"] is False
+
+
+def test_original_reservation_state_change_invalidates_old_audit(tmp_path):
+    store, state, root = files(tmp_path)
+    run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=make_runners(root),
+    )
+    before = _diagnose(store, state, root)
+    assert before["status"] == "SIMULATED_TRIAL_ONLY"
+    corpus = CorpusGrowthState.model_validate_json(state.read_text(encoding="utf-8"))
+    corpus.cursors["other-worker-progress"] = 9
+    state.write_text(corpus.model_dump_json(), encoding="utf-8")
+    report = _diagnose(store, state, root)
+    assert report["status"] == "BLOCKED_STALE_RESERVATION_STATE"
+    assert report["next_action"] == "RERUN_TRIAL_AFTER_RESERVATION_CHANGE"
+    assert report["real_media_run_completed"] is False
+    assert report["batches"] == []
+
+
+def test_legacy_audit_without_reservation_digest_fails_closed(tmp_path):
+    store, state, root = files(tmp_path)
+    run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=make_runners(root),
+    )
+    path = root / "holdout-e2e-audit.json"
+    audit = json.loads(path.read_text(encoding="utf-8"))
+    del audit["reservation_state_sha256"]
+    path.write_text(json.dumps(audit), encoding="utf-8")
+    diagnosis = _diagnose(store, state, root)
+    assert diagnosis["status"] == "BLOCKED_AUDIT_MISSING_RESERVATION_DIGEST"
+    assert diagnosis["next_action"] == "REEXECUTE_TRIAL_TO_BIND_RESERVATIONS"
+
+
+def test_promoted_or_tampered_report_never_looks_like_actual_gold(tmp_path):
+    store, state, root = files(tmp_path)
+    run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=make_runners(root),
+    )
+    path = root / "holdout-e2e-audit.json"
+    audit = json.loads(path.read_text(encoding="utf-8"))
+    audit["reviewed_gold_available"] = True
+    audit["real_media_run_completed"] = True
+    path.write_text(json.dumps(audit), encoding="utf-8")
+    diagnosis = _diagnose(store, state, root)
+    assert diagnosis["status"] == "BLOCKED_INVALID_AUDIT"
+    assert diagnosis["ready"] is False
+    assert diagnosis["reviewed_gold_available"] is False
+    assert diagnosis["real_media_run_completed"] is False
+
+
+def test_unreviewed_claim_with_missing_stage_tallies_fails_closed(tmp_path):
+    store, state, root = files(tmp_path)
+    run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=make_runners(root),
+    )
+    path = root / "holdout-e2e-audit.json"
+    audit = json.loads(path.read_text(encoding="utf-8"))
+    audit["status"] = "UNREVIEWED_MEASUREMENTS_COMPLETE"
+    audit["real_media_run_completed"] = True
+    audit["observations"]["stage_status_counts"].pop("partial_time_map")
+    path.write_text(json.dumps(audit), encoding="utf-8")
+    diagnosis = _diagnose(store, state, root)
+    assert diagnosis["status"] == "BLOCKED_INVALID_AUDIT"
+    assert diagnosis["editor_cut_precision"] is None
+    assert diagnosis["real_media_run_completed"] is False
+
+
+def test_report_inspection_prefers_all_batches_without_double_counting_single(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=3)
+    all_report = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=3, runners=make_runners(root),
+    )
+    assert all_report["processed_clips"] == 3
+    assert (root / "holdout-e2e-audit.json").is_file()
+    diagnosis = _diagnose(store, state, root)
+    assert diagnosis["audit_kind"] == "MULTI_BATCH"
+    assert diagnosis["attempted_clips"] == 3
+    assert diagnosis["stage_status_totals"]["original_audio"] == {
+        "PARTIAL_AUDIO_MATCH": 3,
+    }
+
+
+def test_diagnosis_never_serializes_provider_exception_messages(tmp_path):
+    store, state, root = files(tmp_path)
+    runners = make_runners(root)
+
+    def bad_media(*args, **kwargs):
+        raise RuntimeError("secret-token-exposed-in-ffmpeg-stderr")
+
+    runners["finished_video"] = bad_media
+    result = run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=runners,
+    )
+    assert result["status"] == "STAGE_FAILED"
+    report = _diagnose(store, state, root)
+    assert report["status"] == "TRIAL_BLOCKED_REVIEW_STAGE"
+    serialized = json.dumps(report)
+    assert "secret-token" not in serialized
+    assert "ffmpeg-stderr" not in serialized
+    assert report["first_blocker"]["stage"] == "finished_video"
