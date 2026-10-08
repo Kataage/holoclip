@@ -1232,6 +1232,42 @@ All `visual_correspondence_tested`, `source_identity_verified`,
 `reviewed_gold_available`, `event_split_verified` and
 `qualification_allowed` flags are false; `ready=false`.
 
+## Increment 30: bounded unattended verification of missing-source candidates (#146)
+
+`source_visual_pending` now has a real bounded video evidence stage.
+During ordinary corpus-growth cycles a single pending item (configurable
+CLI cap 1..2) is checked without manual URLs or separate confirmation.
+At most two shortlisted source candidates are tried per item, each
+with three 12-second original-video windows (beginning, middle and end),
+plus one 12-second centered finished clip. Before each bounded fetch:
+canonical clip/source ID, metadata/public-ended status, source and
+finished scoped rights policy and candidate duration are checked.
+Acquisition uses only `acquire_video_range` and checks returned
+identities, ranges, measured duration, video presence and a strict
+64-MiB per-file limit. SHA256 digests of sampled source video and
+finished video are included in the persisted evidence.
+
+Sampled decoded frames are compared by the existing CPU ORB geometric
+matcher. A tentative sequence requires at least three different,
+temporally advancing and mutually consistent original/finished image
+pairs in *one* sampled source range, rejecting repeated time locations,
+static content, sparse frames and multiple matching source windows.
+Results remain `VISUAL_SEQUENCE_CORROBORATED_NOT_SOURCE_GOLD` or
+a clearly distinguished UNKNOWN/BLOCKED state. An absent sampled
+match is not a negative editor label or proof a proposed original is
+unrelated. If multiple candidate originals are visually corroborated,
+the decision remains ambiguous.
+
+All saved evidence is **non-promotable**: both `CorpusGrowthItem.source_url`
+and `source_stream_id` remain unset, `source_visual_pending` persists,
+no source video is imported into learning or heldout partitions,
+and no verified original native PTS, exact editor cut, dense time map,
+reviewed gold, capability qualification or production readiness
+is asserted. Earlier metadata-only candidate discovery and later
+source identity decisions remain separate. Sampled visual confirmation
+is an improvement, not proof of complete original-stream recovery.
+`ready=false` and all existing quality gates remain unchanged.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
