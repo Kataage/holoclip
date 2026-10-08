@@ -103,6 +103,10 @@ reservations, the status is `BOUNDED_BATCH_LIMIT_REACHED` (not success).
 Use `--preflight-only` separately, before full media execution.
 This is an evidence/diagnostic trial, not a production qualification.
 
+The `--all-batches` validation command now **automatically** runs offline
+triage after success or a blocked batch, printing the first blocker and
+next-action code without another media download or manual command.
+
 After the real-media trial, get a source-state-checked offline failure diagnosis
 without re-downloading or re-encoding any files:
 
