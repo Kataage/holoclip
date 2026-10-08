@@ -6,7 +6,6 @@ real editor cut precision, recall, true negative rate or original ID truth.
 """
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
