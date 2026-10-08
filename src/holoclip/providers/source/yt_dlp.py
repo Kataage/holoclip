@@ -570,12 +570,46 @@ class YtDlpSourceProvider:
             / "editing_video_sections" / identity
         )
         directory.mkdir(parents=True, exist_ok=True)
+        # Cache entries are proof-carrying: do not reuse just because a path
+        # exists. A partial/corrupt section must not be mistaken for a valid
+        # bounded original-video acquisition.
+        evidence_path = directory / "section-integrity.json"
         existing = self._existing_media(directory)
+
+        def sha256_file(path: Path) -> str:
+            digest = hashlib.sha256()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            return digest.hexdigest()
+
+        identity_record = {
+            "version": "yt-range-cache-v1",
+            "source_id": metadata.external_id,
+            "source_url": url,
+            "requested_start": round(start, 3),
+            "requested_end": round(end, 3),
+        }
         if existing is not None:
-            return AcquiredVideoRange(
-                metadata=metadata, media_path=existing, requested_start=start,
-                requested_end=end, reused=True,
-            )
+            verified = False
+            if not existing.is_symlink() and evidence_path.is_file():
+                try:
+                    saved = json.loads(evidence_path.read_text(encoding="utf-8"))
+                    verified = (all(saved.get(k) == v for k, v in identity_record.items())
+                                and saved.get("filename") == existing.name
+                                and existing.stat().st_size <= 256 * 1024 * 1024
+                                and saved.get("sha256") == sha256_file(existing))
+                except (OSError, ValueError, TypeError):
+                    verified = False
+            if verified:
+                return AcquiredVideoRange(
+                    metadata=metadata, media_path=existing, requested_start=start,
+                    requested_end=end, reused=True,
+                )
+            # Only remove the narrowly namespaced cached section on disk;
+            # never remove user-provided video media or global download caches.
+            existing.unlink()
+            evidence_path.unlink(missing_ok=True)
         # --download-sections requires yt-dlp's FFmpeg downloader. Fail if
         # sections are unsupported; never retry via ordinary acquire().
         args = [
@@ -598,6 +632,10 @@ class YtDlpSourceProvider:
         # this alone as proof that the requested absolute start is frame-accurate.
         if media.stat().st_size > 256 * 1024 * 1024:
             raise YtDlpError("Bounded video exceeds the 256 MiB safety ceiling")
+        evidence = {**identity_record, "filename": media.name, "sha256": sha256_file(media)}
+        temporary = evidence_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(evidence, sort_keys=True), encoding="utf-8")
+        temporary.replace(evidence_path)
         return AcquiredVideoRange(
             metadata=metadata, media_path=media, requested_start=start,
             requested_end=end, reused=False,
