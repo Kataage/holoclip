@@ -198,7 +198,10 @@ For **actual unreviewed human-edited holdout clips**, the existing
 `examples-validate-holdout-e2e` nine-stage command now also emits
 `observations.real_cut_observations` (per selected clip) and
 `observations.real_cut_observation_totals` inside its saved
-`holdout-e2e-audit.json`. This describes *measured candidate signals*:
+`holdout-e2e-audit.json`; `--all-batches` also preserves every
+successfully measured clip and cumulative reference-free totals in
+`holdout-e2e-all-batches.json` instead of keeping only the latest batch.
+This describes *measured candidate signals*:
 acoustic candidate counts, unknown audio transitions, median/P90 bracket
 width, overbroad brackets (>8s), output-video change corroboration, and
 independently matched original/finished two-sided visual candidates.
