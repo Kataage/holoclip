@@ -81,8 +81,8 @@ def test_one_command_runs_nine_stages_and_persists_observed_only_metrics(tmp_pat
         None, store=store, state_path=state, root=root, policy_rules=[],
         max_clips=1, runners=make_runners(root, calls=calls),
     )
-    assert report["status"] == "UNREVIEWED_MEASUREMENTS_COMPLETE"
-    assert report["real_media_run_completed"] is True
+    assert report["status"] == "SIMULATED_STAGE_TEST_COMPLETE"
+    assert report["real_media_run_completed"] is False
     assert report["ready"] is False
     assert report["production_ready"] is False
     assert len(calls) == 9
@@ -200,7 +200,7 @@ def test_unknown_map_does_not_claim_accuracy_or_coverage(tmp_path):
         None, store=store, state_path=state, root=root, policy_rules=[],
         max_clips=1, runners=runners,
     )
-    assert report["status"] == "UNREVIEWED_MEASUREMENTS_COMPLETE"
+    assert report["status"] == "SIMULATED_STAGE_TEST_COMPLETE"
     assert report["observations"]["local_time_map_candidate_segments"] == 0
     assert report["observations"]["measured_but_no_supported_local_map_clips"] == 1
     assert report["observations"]["editor_cut_recall"] is None
