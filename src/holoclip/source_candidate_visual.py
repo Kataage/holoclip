@@ -324,6 +324,7 @@ def verify_pending_source_visual(
             "refinement_method_version": REFINEMENT_VERSION,
             "cross_run_evidence_method_version": EVIDENCE_VERSION,
             "candidate_assessment_method_version": ASSESSMENT_VERSION,
+            "independent_pixel_check_version": PIXEL_VERSION,
             **_NO_GOLD,
         }
 
@@ -541,6 +542,8 @@ def verify_pending_source_visual(
                                 "UNKNOWN_VISUAL_COMPARISON_BUDGET",
                                 "UNKNOWN_IMAGE_DECODE",
                                 "UNKNOWN_MULTIPLE_VISUAL_TRAJECTORIES",
+                                "UNKNOWN_INDEPENDENT_PIXEL_NOT_CORROBORATED",
+                                "UNKNOWN_INDEPENDENT_PIXEL_CHECK_FAILURE",
                             }):
                         raise ValueError("Source visual result was promoted")
                     weak_window = visual.get("weak_source_window")
