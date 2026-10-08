@@ -617,6 +617,7 @@ def test_opt_in_insufficient_audio_with_bounded_budget_never_claims_complete(tmp
 def test_opt_in_never_bypasses_policy_or_transport_failure(tmp_path):
     for unsafe in ("QUARANTINED_POLICY", "RETRYABLE_FAILURE"):
         case = tmp_path / unsafe
+        case.mkdir()
         store, state, root = files(case)
         add_reserved_clips(state, count=3)
         calls = []
