@@ -50,7 +50,7 @@ def cut_row(*, transitions=None, visual=None):
         "qualification_allowed": False, "reviewed_gold_available": False,
         "event_split_verified": False, "frame_accurate_cuts_verified": False,
         "refinement": {
-            "version": "bounded-acoustic-cut-brackets-v1",
+            "version": "bounded-acoustic-cut-brackets-v2",
             "status": "AUDIO_SUPPORTED_INTERVALS", "transitions": changes,
         },
         "output_visual_cut_evidence": visual,
@@ -277,7 +277,7 @@ def test_multi_batch_persists_all_distinct_real_cut_descriptions(tmp_path):
                     "audio_source_sha256": "a" * 64,
                     "finished_media_sha256": "b" * 64,
                     "refinement": {
-                        "version": "bounded-acoustic-cut-brackets-v1",
+                        "version": "bounded-acoustic-cut-brackets-v2",
                         "status": "AUDIO_SUPPORTED_INTERVALS",
                         "transitions": [{
                             "status": "CUT_INTERVAL_CANDIDATE",
