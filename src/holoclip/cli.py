@@ -20,6 +20,7 @@ from holoclip.clip_policy import (
 )
 from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings
 from holoclip.corpus_growth import grow_corpus
+from holoclip.source_candidate_visual import verify_pending_source_visual
 from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
@@ -1033,6 +1034,26 @@ def examples_holdout_status(
     typer.echo(json.dumps({**report, "output": str(output)}, ensure_ascii=False, indent=2))
 
 
+@app.command("examples-verify-source-visual")
+def examples_verify_source_visual(
+    store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
+    state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
+    output: Path = typer.Option(Path("data/sources/source_visual_scout")),
+    policy_file: Path = typer.Option(Path("data/policy/clip_rules.jsonl")),
+    max_clips: int = typer.Option(1, min=1, max=2),
+    max_candidates: int = typer.Option(2, min=1, max=2),
+) -> None:
+    """Probe pending public source videos visually; never certify source identity."""
+    _load_env_file()
+    provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
+    report = verify_pending_source_visual(
+        provider, store=store, state_path=state, output=output,
+        policy_rules=load_policy_rules(policy_file), max_clips=max_clips,
+        max_candidates=max_candidates, progress=typer.echo,
+    )
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+
+
 @app.command()
 def examples_grow_corpus(
     store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
@@ -1092,6 +1113,14 @@ def examples_grow_corpus(
                     report = await grow_corpus(provider, store=store, state_path=state, ingest=ingest,
                         policy_rules=rules, scan_limit=scan_limit, max_new_examples=max_new_examples,
                         target_trusted=effective_target, target_streams=target_streams, progress=typer.echo)
+                    if state.exists():
+                        visual_report = verify_pending_source_visual(
+                            provider, store=store, state_path=state,
+                            output=Path("data/sources/source_visual_scout"),
+                            policy_rules=rules, max_clips=1, max_candidates=2,
+                            progress=typer.echo,
+                        )
+                        report["source_visual_verification"] = visual_report
                     try:
                         ready_profile = await _refresh_editorial_profile(
                             llm,
