@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from holoclip.audio_anchor_alignment import measured_audio_alignment
+from holoclip.audio_anchor_alignment import MATCH_SAMPLING_VERSION, measured_audio_alignment
 from holoclip.clip_policy import PolicyDecision, PolicyOperation, evaluate_source_metadata
 from holoclip.corpus_growth import CorpusGrowthState, _public
 from holoclip.examples import human_clip_identity, load_human_clip_store
@@ -137,7 +137,8 @@ def align_reserved_holdouts(provider, *, store: Path, state_path: Path,
                     and old_record.get("clip_media_sha256") == clip_sha
                     and old_record.get("source_media_sha256") == source_sha
                     and old_record.get("source_stream_id") == item.source_stream_id
-                    and old_record.get("fingerprint_version") == "audio-band-anchor-v1"):
+                    and old_record.get("fingerprint_version") == "audio-band-anchor-v1"
+                    and old_record.get("match_sampling_version") == MATCH_SAMPLING_VERSION):
                 if progress:
                     progress(f"holdout audio {clip_id}: reused checked alignment")
                 continue
@@ -146,6 +147,7 @@ def align_reserved_holdouts(provider, *, store: Path, state_path: Path,
                 **base, **evidence, "status": evidence["status"],
                 "clip_media_sha256": clip_sha, "source_media_sha256": source_sha,
                 "fingerprint_version": "audio-band-anchor-v1",
+                "match_sampling_version": MATCH_SAMPLING_VERSION,
                 "source_audio_path": str(source_media),
                 "policy_clip": cp.model_dump(mode="json"),
                 "policy_source": sp.model_dump(mode="json"),
