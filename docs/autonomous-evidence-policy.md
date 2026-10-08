@@ -420,6 +420,53 @@ statuses remain **false**. This is not the dense piecewise
 source↔output visual correlation with independently verified original PTS
 and real Japanese Hololive clips remains acceptance work.
 
+## Increment 8: calibrate source-video section audio clocks (#124)
+
+`examples-calibrate-source-clocks` adds an independent verification stage
+**after** bounded source-video pair acquisition (#120), without assuming that
+yt-dlp's requested original-source start time exactly equals the downloaded
+section's actual beginning.
+
+```powershell
+uv run --extra media holoclip examples-calibrate-source-clocks --max-clips 3
+```
+
+For each previously checksum-verified and rights-approved **bounded original
+video section**, decode its audio fingerprint using the existing local FFmpeg
+12-band/4kHz approach and match **at least three independent, unique
+4-second fragments** against the already cached full original-stream audio.
+Every accepted fragment must exceed correlation and uniqueness thresholds,
+and all independently measured offsets must agree within 0.25 seconds.
+Missing sound, nonunique recurring source audio, discontinuous download,
+unexpected requested-vs-measured section origins, and A/V clock disagreement
+stay explicitly `UNKNOWN`. Shortened/misplaced original downloads cannot
+become trusted visual source mappings.
+
+When source acoustic origin is supported, ffprobe also inventories the
+original **bounded section's native video-frame PTS** and the first audio
+packet's PTS. It creates an **approximate audio-relative original stream video
+time range**, NOT a verified original-stream video frame clock or a finished
+edit cut. AAC priming, source A/V offset, and transcode delay can change the
+relative audio/video clock. The 0.25-second audio feature interval is a
+resolution bound, **not a calibrated maximum timestamp error**.
+
+Every run re-checks learning/holdout overlap, current public/ended status,
+unique source metadata link, clip and original LEARN policy and range-scoped
+restrictions; SHA-256 pins the cached source/audio, original/finished video
+sections, measurement manifests and decoded frames. If measured source
+coverage differs from the originally requested section, rights policy is
+checked again on a padded observed interval; a restricted overlap is
+**quarantined**. Cached successes are never reused without revalidation.
+
+Output is
+`data/provider-benchmark/holdout/source_clocks/holdout-source-clock.json`.
+No provider, benchmark, or semantic gold promotion is allowed. Verified
+original frame absolute PTS, exact source-to-finished frame mapping,
+edit-origin vs original scene transitions, speed/freeze, multi-POV event
+independence and live quality calibration remain open. All existing false
+qualification, event-split, frame-cut, held-out and reviewed-gold flags
+are retained.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
