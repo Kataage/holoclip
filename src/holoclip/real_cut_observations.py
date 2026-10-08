@@ -86,7 +86,9 @@ def _describe_independent_visual_survey(row: dict) -> dict:
             or not 0 <= coverage <= duration + .05
             or not 0 <= unsampled <= duration + .05
             or abs(coverage + unsampled - duration) > .1
-            or not isinstance(windows, list) or not 1 <= len(windows) <= 6
+            or not isinstance(windows, list) or not 0 <= len(windows) <= 6
+            or (status == "MEASURED_UNREVIEWED_OUTPUT_ONLY_VISUAL_SIGNALS"
+                and not windows)
             or any(not isinstance(w, list) or len(w) != 2
                    or any(type(t) not in (int, float) or not math.isfinite(t)
                           for t in w)
