@@ -267,6 +267,73 @@ def test_failed_source_policy_blocks_download_and_cannot_turn_no_match_into_gold
     assert record["source_identity_verified"] is False
 
 
+
+
+def test_scoped_original_policy_blocks_range_before_original_video_fetch(tmp_path):
+    from holoclip.clip_policy import ClipPolicyRule, PolicyDecision
+    make_state(tmp_path/"state.json")
+    provider = Provider()
+    report = verify_pending_source_visual(
+        provider, store=tmp_path/"unused.jsonl",
+        state_path=tmp_path/"state.json",
+        output=tmp_path/"sampled",
+        policy_rules=[ClipPolicyRule(
+            id="restricted-intro", decision=PolicyDecision.BLOCK,
+            reason="original video section prohibited",
+            source_id=A.split("=")[-1], start=0., end=20.,
+        )],
+        measure=fake_measure, probe=fake_probe,
+    )
+    assert report["counts"] == {
+        "UNKNOWN_NO_VISUAL_MATCH_IN_BOUNDED_SAMPLES": 1
+    }
+    assert provider.calls == [(CLIP, 14., 26.)]
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    observed = state.items["candidate"].source_scout["visual_probe"][
+        "candidate_observations"
+    ][0]
+    assert observed["status"] == "BLOCKED_SOURCE_RANGE_POLICY"
+    assert observed["source_identity_verified"] is False
+
+
+def test_actual_orb_pixel_correspondence_is_nonpromotable(tmp_path):
+    import cv2
+    import numpy as np
+    from holoclip.video_measurement import checksum_file
+    pairs = []
+    for i in range(4):
+        pixels = np.random.default_rng(1100+i).integers(
+            0, 255, (256, 448), dtype=np.uint8,
+        )
+        paths = []
+        for kind in ("original", "finished"):
+            path = tmp_path/f"{kind}-{i}.png"
+            assert cv2.imwrite(str(path), pixels)
+            paths.append(path)
+        pairs.append(paths)
+    source = SimpleNamespace(frames=[
+        SimpleNamespace(
+            id=f"original-{i}", locator=str(item[0]),
+            pts_seconds=float(2*i), checksum=checksum_file(item[0]),
+        )
+        for i, item in enumerate(pairs)
+    ])
+    finished = SimpleNamespace(frames=[
+        SimpleNamespace(
+            id=f"finished-{i}", locator=str(item[1]),
+            pts_seconds=float(2*i), checksum=checksum_file(item[1]),
+        )
+        for i, item in enumerate(pairs)
+    ])
+    result = compare_sparse_visual_sequences(finished, [source])
+    assert result["status"] == "VISUAL_SEQUENCE_CORROBORATED_NOT_SOURCE_GOLD"
+    assert result["matched_frames"] >= 3
+    for flag in _NO_GOLD:
+        assert result[flag] is False
+
+
 def test_ambiguous_two_visual_candidates_are_not_automatically_selected(tmp_path):
     make_state(tmp_path/"state.json", candidates=[A, B])
     def positive(*_):
