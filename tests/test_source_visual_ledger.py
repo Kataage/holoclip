@@ -9,7 +9,7 @@ from holoclip.source_candidate_visual import _NO_GOLD, _finished_starts
 from holoclip.source_visual_ledger import (
     VERSION, append_visual_observation, checked_ledger,
 )
-from test_source_candidate_visual import A, B, Provider, make_state, verify
+from test_source_candidate_visual import Provider, make_state, verify
 
 
 CID = "AAAAAAAAAAA"
