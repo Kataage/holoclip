@@ -30,6 +30,10 @@ def make_weak_hint(
             or any(not _number(t) or not 0 <= t <= duration - WINDOW_SECONDS
                    for t in completed_starts)
             or seed_start not in completed_starts
+            or len(set(completed_starts)) != len(completed_starts)
+            or any(abs(a - b) < WINDOW_SECONDS - .001
+                   for i, a in enumerate(completed_starts)
+                   for b in completed_starts[i+1:])
             or not isinstance(finished_sha, str) or len(finished_sha) != 64):
         raise ValueError("Invalid nonpromotable weak visual search hint")
     return {
