@@ -424,10 +424,27 @@ class CostGuard:
         body = kwargs.get("json", kwargs.get("data", {}))
         if isinstance(body, dict) and "model" in body and body["model"] != model:
             raise CostPolicyError("Payload model does not match authorized model")
-        headers = kwargs.get("headers", {})
-        auth = headers.get("Authorization", headers.get("authorization"))
-        if auth is not None and auth != f"Bearer {key}":
-            raise CostPolicyError("Payload credential does not match account evidence")
+        # Authorize the credentials that will actually travel over the wire,
+        # not just a key passed as a separate trusted-looking argument. Always
+        # overwrite client request headers with the approved account's key.
+        headers = httpx.Headers(kwargs.get("headers") or {})
+        auth = headers.get("authorization")
+        google_key = headers.get("x-goog-api-key")
+        if provider == "gemini":
+            if google_key is not None and google_key != key:
+                raise CostPolicyError("Wire API key does not match verified free account")
+            if auth is not None:
+                raise CostPolicyError("Unexpected Authorization header for Gemini request")
+            headers["x-goog-api-key"] = key
+        else:
+            if auth is not None and auth != f"Bearer {key}":
+                raise CostPolicyError("Wire API key does not match verified free account")
+            if google_key is not None:
+                raise CostPolicyError("Unexpected Google API key header on non-Gemini request")
+            headers["authorization"] = f"Bearer {key}"
+        kwargs["headers"] = headers
+        if client.auth is not None:
+            raise CostPolicyError("Implicit HTTP client authentication is forbidden")
         limits = dict(account.daily_limits)
         for unit, maximum in entry.quota_snapshot.items():
             limits[unit] = min(limits.get(unit, maximum), maximum * 0.8)
