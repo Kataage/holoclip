@@ -12,6 +12,7 @@ import pytest
 
 from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
 from holoclip.holdout_e2e_trial import run_reserved_holdout_e2e
+from holoclip.scripted_cut_metrics import score_scripted_cut_report, REFERENCE_VERSION
 from test_holdout_real_ffmpeg_chain import (
     CLIP_URL, SOURCE_ID, SOURCE_URL, GeneratedVideoProvider,
     _ffmpeg, _generated_media,
@@ -86,6 +87,22 @@ def test_three_actual_ffmpeg_edits_keep_three_source_islands_and_both_cut_bracke
     # Known boundaries are true ONLY for our own scripted artificial media.
     assert all(any(lo <= scripted <= hi for lo, hi in candidates)
                for scripted in KNOWN_BOUNDARIES), candidates
+    synthetic_score = score_scripted_cut_report({
+        "version": REFERENCE_VERSION,
+        "reference_kind": "SCRIPTED_FFMPEG_ONLY",
+        "clip_id": CLIP_URL.split("v=")[-1],
+        "duration_seconds": 48.,
+        "cut_seconds": list(KNOWN_BOUNDARIES),
+    }, acoustic_report)
+    assert synthetic_score["true_positive_candidates"] == 2
+    assert synthetic_score["missed_scripted_cuts"] == 0
+    assert synthetic_score["scripted_interval_recall"] == 1.
+    assert synthetic_score["false_positive_candidates"] >= 0
+    assert synthetic_score["matched_midpoint_median_absolute_error_seconds"] is not None
+    assert synthetic_score["reviewed_gold_available"] is False
+    assert synthetic_score["editor_cut_recall"] is None
+    assert synthetic_score["ready"] is False
+
     assert result["ready"] is False
     assert result["qualification_allowed"] is False
     assert result["frame_accurate_cuts_verified"] is False
