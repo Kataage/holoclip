@@ -169,7 +169,7 @@ def test_dimension_repeats_do_not_count_as_distinct_gold_observations():
     assert special not in score.covered_dimensions and "japanese" in score.covered_dimensions
 
 
-@pytest.mark.parametrize("change", ["missing_gold", "hallucination", "low_quality", "not_real", "single_repeat", "failure"])
+@pytest.mark.parametrize("change", ["missing_gold", "hallucination", "low_quality", "not_real", "single_repeat"])
 def test_quality_floor_never_relaxed(change):
     report = report_fixture()
     if change == "missing_gold":
@@ -189,10 +189,29 @@ def test_quality_floor_never_relaxed(change):
         report["assessments"] = []
     elif change == "single_repeat":
         report["assessments"] = report["assessments"][::2]
-    else:
-        report["results"][0]["status"] = "TIMEOUT"
-        report["assessments"].pop(0)
     assert not any(q.qualified for q in derive_qualifications(report, "a" * 64))
+
+
+def test_operational_failure_below_five_percent_does_not_require_100_percent_completion():
+    report = report_fixture()
+    report["results"][0]["status"] = "TIMEOUT"
+    report["assessments"].pop(0)
+    qualifications = derive_qualifications(report, "a" * 64)
+    assert len(qualifications) == 1
+    assert qualifications[0].gold_cases == 30
+    assert qualifications[0].success_rate == pytest.approx(59 / 60)
+    assert qualifications[0].consistency == pytest.approx(29 / 30)
+    assert qualifications[0].qualified
+
+
+def test_missing_failed_attempt_record_cannot_improve_success_rate():
+    report = report_fixture()
+    report["results"][0]["status"] = "TIMEOUT"
+    report["assessments"].pop(0)
+    # A caller must not make a provider appear perfect by removing failures.
+    report["results"].pop(0)
+    scores = derive_qualifications(report, "a" * 64)
+    assert scores and not scores[0].qualified
 
 
 def test_promotion_recomputes_and_pins_report(tmp_path):
