@@ -1221,8 +1221,9 @@ shortlist is durable and includes per-candidate origin and
 
 This does **not** turn searchable metadata into verified video
 correspondence. Even a single remaining candidate is only a
-proposal, not source gold. The corpus item remains `review`,
-its canonical `source_url` and `source_stream_id` remain null,
+proposal, not source gold. The corpus item becomes `source_visual_pending` when a nonempty candidate
+shortlist exists (otherwise `review`), while its canonical `source_url`
+and `source_stream_id` remain null,
 and it is never added to training or the heldout reservation. The
 scout is a low-cost preparatory step for future *visual confirmation
 of candidate originals* and does not bypass preexisting rights,
