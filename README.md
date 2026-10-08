@@ -222,8 +222,9 @@ Explicit source links are inspected first, without issuing extra broad
 searches. No personal source links or manual preparation are needed.
 
 **Critically, source scouting does NOT verify the original stream.** The
-item stays in `review`, with `source_url=None` and
-`source_stream_id=None`, and cannot join the learning/holdout split
+item enters `source_visual_pending` when a shortlist exists (otherwise
+`review`), with `source_url=None` and `source_stream_id=None`;
+it cannot join the learning/holdout split
 or trigger source acquisition. Each record states
 `visual_correspondence_tested=false` and
 `source_identity_verified=false`. This is the *metadata candidate
