@@ -23,6 +23,14 @@ from holoclip.visual_edit_evidence import _compare_features, _orb_features
 from holoclip.source_visual_pixel_check import (
     VERSION as PIXEL_VERSION, confirm_pixel_temporal_pairs,
 )
+from holoclip.source_visual_real_controls import (
+    VERSION as CONTROL_VERSION, measure_source_video_controls,
+)
+from holoclip.source_visual_control_report import (
+    VERSION as CONTROL_REPORT_VERSION, checked_control_history,
+    add_control_result, summarize_control_history,
+)
+from holoclip.providers.source.yt_dlp import YtDlpSourceProvider
 from holoclip.source_visual_refinement import (
     VERSION as REFINEMENT_VERSION, adaptive_refinement_starts, make_weak_hint,
 )
@@ -34,7 +42,7 @@ from holoclip.source_visual_assessment import (
     checked_visual_candidate_assessment,
 )
 
-VERSION = "bounded-shortlist-video-probes-v5"
+VERSION = "bounded-shortlist-video-probes-v6"
 WINDOW_SECONDS = 12.
 MAX_CLIPS = 2
 MAX_CANDIDATES = 2
@@ -325,6 +333,8 @@ def verify_pending_source_visual(
             "cross_run_evidence_method_version": EVIDENCE_VERSION,
             "candidate_assessment_method_version": ASSESSMENT_VERSION,
             "independent_pixel_check_version": PIXEL_VERSION,
+            "measured_video_control_version": CONTROL_VERSION,
+            "measured_control_report_version": CONTROL_REPORT_VERSION,
             **_NO_GOLD,
         }
 
@@ -375,6 +385,14 @@ def verify_pending_source_visual(
             )
         except ValueError:
             finish("BLOCKED_INVALID_OR_STALE_VISUAL_CANDIDATE_ASSESSMENT")
+            continue
+        try:
+            control_history = checked_control_history(
+                scout.get("real_video_control_history"),
+                clip_id=clip_id, candidate_ids=candidate_ids,
+            )
+        except ValueError:
+            finish("BLOCKED_INVALID_REAL_VIDEO_CONTROL_HISTORY")
             continue
         saved_refinements = scout.get("visual_refinements", {})
         if not isinstance(saved_refinements, dict):
@@ -445,6 +463,7 @@ def verify_pending_source_visual(
             ]
             report["candidate_round_before"] = round_number
             report["unprobed_shortlist_candidates"] = len(available) - len(selection)
+            control_run = False
             for index in selection:
                 candidate = available[index]
                 observed = {
@@ -533,6 +552,32 @@ def verify_pending_source_visual(
                             "requested_range": [start, end], "media_sha256": digest,
                             "source_native_pts_verified": False,
                         })
+                    # Real-source self-controls have known constructed labels,
+                    # but never real editor/original-stream truth labels. They
+                    # run once per cycle on existing measured frames, without
+                    # fetching any extra video or contaminating the ledger.
+                    if not control_run and type(provider) is YtDlpSourceProvider:
+                        control_run = True
+                        control = measure_source_video_controls(
+                            windows[0], root=output / "controls",
+                        )
+                        observed["real_video_constructed_controls"] = control
+                        control_history, saved_control = add_control_result(
+                            control_history, clip_id=clip_id,
+                            candidate_ids=candidate_ids,
+                            source_id=source.external_id,
+                            control=control,
+                        )
+                        scout["real_video_control_history"] = control_history
+                        report["constructed_control_observation"] = {
+                            "source_stream_id": source.external_id,
+                            "origin_kind": "YT_DLP_BOUNDED_PUBLIC_VIDEO_UNREVIEWED",
+                            "saved_new_measured_control": saved_control,
+                            "result": control,
+                        }
+                        report["constructed_control_summary"] = (
+                            summarize_control_history(control_history)
+                        )
                     visual = compare_sequences(finished, windows)
                     if (not isinstance(visual, dict)
                             or any(visual.get(flag) is not False for flag in _NO_GOLD)
@@ -623,6 +668,9 @@ def verify_pending_source_visual(
                 report["finished_round_after"] = finished_round + 1
             scout["visual_evidence"] = ledger
             scout["visual_candidate_assessment"] = assessment
+            report["constructed_control_summary"] = summarize_control_history(
+                control_history
+            )
             report["cumulative_source_visual_support"] = ledger["summary"]
             report["candidate_assessment"] = assessment
             matched = sum(

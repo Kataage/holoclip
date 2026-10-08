@@ -21,6 +21,7 @@ from holoclip.clip_policy import (
 from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings
 from holoclip.corpus_growth import grow_corpus
 from holoclip.source_candidate_visual import verify_pending_source_visual
+from holoclip.source_visual_control_report import report_saved_source_controls
 from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
@@ -1032,6 +1033,15 @@ def examples_holdout_status(
     """Export automatic source-level holdout reservations (not reviewed gold)."""
     report = export_holdout_inventory(store, state, output)
     typer.echo(json.dumps({**report, "output": str(output)}, ensure_ascii=False, indent=2))
+
+
+@app.command("examples-source-controls-report")
+def examples_source_controls_report(
+    state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
+) -> None:
+    """Summarize real acquired-video constructed controls, never editor accuracy."""
+    report = report_saved_source_controls(state)
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 @app.command("examples-verify-source-visual")

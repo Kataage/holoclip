@@ -210,6 +210,33 @@ Previously measured v1 cut/source-side/time-map cache chains do not
 qualify as v2 measurements; rerun the already documented bounded holdout
 command to recompute them with current provenance guards.
 
+The unattended `source_visual_pending` worker now also runs an
+**actual-acquired-video constructed control audit** once per cycle
+on an already downloaded, public/policy-allowed original video sample
+when using the real `YtDlpSourceProvider` (never on synthetic/fake
+provider objects). It SHA-verifies the measured re-encoded video and
+up to four sampled decoded image files, produces a *known positive*
+by JPEG recompression and a small generated overlay, and a *known
+temporal-order decoy* by reversing those same images while keeping
+timestamps ascending. Both go through the full ORB + independently
+checked pixel-temporal matcher. This adds **no extra online video
+downloads**, no model or paid API, and has a four-frame bound.
+All output uses a distinct, non-learning control directory.
+
+Completed control outcomes are persisted by source video SHA256 and
+deduplicated across repeated runs. Use
+`uv run holoclip examples-source-controls-report` to report the actual
+number of observed video control samples and the fraction of constructed
+positive/temporal-decoy controls recognized. With no actual saved
+samples, counts stay at zero and fractions are NULL. Historical
+records are fully checked (video hashes, ownership, no-gold flags)
+before new media acquisition. These **constructed labels are not
+human editing/source labels**; the report always leaves actual source
+precision, recall and false-match rate NULL, regardless of whether
+controls pass. Only running on actual public video provides empirical
+codec/control behavior; it does not prove any clip came from a
+particular Hololive livestream or make `ready=true`.
+
 Real source/finished frame matches now have a **second independent
 pixel-domain temporal check** before the visual scout records them as
 a positive correspondence. ORB/RANSAC first proposes three or more
