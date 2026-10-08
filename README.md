@@ -163,7 +163,11 @@ uv run --extra media holoclip examples-diagnose-holdout-e2e
 This writes `data/provider-benchmark/holdout/holdout-e2e-diagnosis.json`
 with the first failed stage, fixed next-action code, stage status totals,
 original reserved clip IDs not yet attempted, and whether the saved audit
-still matches the exact reservation-state SHA-256. The diagnostic prefers
+still matches the exact reservation-state SHA-256. When invoked from the CLI, offline diagnosis also checks the saved
+rights-policy SHA-256 against the current `--policy-file` (default
+`data/policy/clip_rules.jsonl`). A changed policy or legacy audit without
+this fingerprint is flagged rather than presented as a current successful
+measurement. The diagnostic prefers
 the cumulative multi-batch report, never double-counts the latest
 individual batch, and refuses missing, stale, tampered or older unauthenticated
 audit schema. `SIMULATED_TRIAL_ONLY` explicitly differentiates fixture
