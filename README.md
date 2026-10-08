@@ -210,6 +210,28 @@ Previously measured v1 cut/source-side/time-map cache chains do not
 qualify as v2 measurements; rerun the already documented bounded holdout
 command to recompute them with current provenance guards.
 
+The bounded holdout audio-cut stage also performs an **independent visual
+survey of the already-downloaded finished video**. Up to six short,
+deterministic FFmpeg windows (default six seconds each) are examined,
+including when there is *no acoustic cut candidate*. Output-only visual
+change peaks that do not overlap acoustic candidates are stored under
+`independent_output_visual_survey` and surfaced in
+`observations.real_cut_observations` and the existing offline diagnosis.
+The survey records actual successfully decoded coverage and the unexamined
+duration. A failed window gives an explicit UNKNOWN and **never counts as
+zero changes**. No new URLs, manual labeling, paid service or GPU are
+needed, and a cache fingerprint change causes the survey to run when
+the measured clip is next processed.
+
+These output-only peaks are **not verified editor cuts**: a gameplay scene
+change, camera move, overlay or transcode can have the same appearance.
+They do not automatically enter source-side cut evidence, native frame
+correspondence, human editor precision/recall, or production routing.
+Some long-video intervals are deliberately unsampled; no complete cut
+recall can be inferred from this bounded scan. Videos without the
+pipeline's initial trusted source-audio reservation/anchors still need
+upstream evidence before this specific holdout stage can execute.
+
 For **actual unreviewed human-edited holdout clips**, the existing
 `examples-validate-holdout-e2e` nine-stage command now also emits
 `observations.real_cut_observations` (per selected clip) and
