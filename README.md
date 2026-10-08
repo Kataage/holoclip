@@ -220,6 +220,21 @@ require a user-provided URL, manually labeled cut list, additional
 download, extra model call, or a new Windows command. See the
 [autonomous evidence policy](docs/autonomous-evidence-policy.md).
 
+After a real or interrupted `--all-batches` run, the existing automatic
+offline diagnosis now includes `cut_signal_triage` in
+`holdout-e2e-diagnosis.json`: bounded, deterministic per-clip codes for
+unsupported audio, >8-second candidate intervals, unknown transitions,
+missing output-video support and missing original/finished two-sided
+corroboration. It validates recorded clip IDs, non-promotion flags,
+per-batch vs cumulative counts, and plausible measurements **before**
+reporting the codes. Mutated or incomplete #139 diagnostics fail closed
+as `BLOCKED_INVALID_AUDIT`; older audit files without #139 fields say
+`LEGACY_NO_CUT_OBSERVATIONS`. Simulated tests remain labeled simulated.
+This is inspection of saved JSON only; it does **not** reopen media,
+self-calibrate thresholds, change original audit files or provide
+human-cut precision/recall. The next-action code for earlier stage
+blockers retains precedence over descriptive cut-signal triage.
+
 For quantitative validation of known **synthetic FFmpeg edit scripts**,
 the offline `examples-score-scripted-cuts` command now compares scripted
 hard-cut output times with saved unreviewed acoustic cut intervals. It
