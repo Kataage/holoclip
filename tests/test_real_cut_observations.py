@@ -11,21 +11,35 @@ from holoclip.real_cut_observations import (
 
 def cut_row(*, transitions=None, visual=None):
     changes = transitions if transitions is not None else [
-        {"status": "CUT_INTERVAL_CANDIDATE", "interval": [15., 17.]},
+        {"status": "CUT_INTERVAL_CANDIDATE", "interval": [15., 17.],
+         "offset_change_seconds": 9.},
         {"status": "UNKNOWN_WIDE_GAP", "interval": [20., 30.]},
-        {"status": "CUT_INTERVAL_CANDIDATE", "interval": [30., 40.]},
+        {"status": "CUT_INTERVAL_CANDIDATE", "interval": [30., 40.],
+         "offset_change_seconds": 18.},
     ]
     if visual is None:
         visual = [
             {
                 "acoustic_interval": [15., 17.],
+                "acoustic_offset_change_seconds": 9.,
                 "relation": "CORROBORATING_OUTPUT_CHANGE",
                 "verified_edit_cut": False, "native_frame_pts_verified": False,
+                "source_visual_transition_ruled_out": False,
+                "visual_result": {
+                    "version": "bounded-output-visual-jumps-v1",
+                    "status": "VISUAL_JUMP_CANDIDATES",
+                },
             },
             {
                 "acoustic_interval": [30., 40.],
+                "acoustic_offset_change_seconds": 18.,
                 "relation": "UNRESOLVED_VISUAL_EVIDENCE",
                 "verified_edit_cut": False, "native_frame_pts_verified": False,
+                "source_visual_transition_ruled_out": False,
+                "visual_result": {
+                    "version": "bounded-output-visual-jumps-v1",
+                    "status": "UNKNOWN_BRACKET_TOO_WIDE",
+                },
             },
         ]
     return {
@@ -239,13 +253,20 @@ def test_multi_batch_persists_all_distinct_real_cut_descriptions(tmp_path):
                         "transitions": [{
                             "status": "CUT_INTERVAL_CANDIDATE",
                             "interval": [15., 17.],
+                            "offset_change_seconds": 9.,
                         }],
                     },
                     "output_visual_cut_evidence": [{
                         "acoustic_interval": [15., 17.],
+                        "acoustic_offset_change_seconds": 9.,
                         "relation": "CORROBORATING_OUTPUT_CHANGE",
                         "verified_edit_cut": False,
                         "native_frame_pts_verified": False,
+                        "source_visual_transition_ruled_out": False,
+                        "visual_result": {
+                            "version": "bounded-output-visual-jumps-v1",
+                            "status": "VISUAL_JUMP_CANDIDATES",
+                        },
                     }],
                     "reviewed_gold_available": False,
                     "event_split_verified": False,
