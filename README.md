@@ -210,6 +210,27 @@ Previously measured v1 cut/source-side/time-map cache chains do not
 qualify as v2 measurements; rerun the already documented bounded holdout
 command to recompute them with current provenance guards.
 
+The autonomous public human-clip corpus discovery now performs a
+**bounded public-source candidate scout** when an editor omits a source
+link or lists multiple equally plausible original streams. It queries
+public metadata only (up to two deterministic YouTube search phrases,
+five results per phrase and six individual metadata probes), checks
+ended/public status, minimum plausible original duration and applicable
+metadata policy, and stores an unverified shortlist in
+`CorpusGrowthItem.source_scout` in the persistent corpus state.
+Explicit source links are inspected first, without issuing extra broad
+searches. No personal source links or manual preparation are needed.
+
+**Critically, source scouting does NOT verify the original stream.** The
+item stays in `review`, with `source_url=None` and
+`source_stream_id=None`, and cannot join the learning/holdout split
+or trigger source acquisition. Each record states
+`visual_correspondence_tested=false` and
+`source_identity_verified=false`. This is the *metadata candidate
+retrieval* prerequisite for future bounded visual candidate
+verification—not a claim that missing-source clips are solved. No
+video download, paid API or GPU is added by the scout.
+
 The same guarded local cut-side stage now also runs an
 **audio-offset-independent visual frame-sequence search**. It reuses the
 already hash-verified source and finished frame manifests, compares
