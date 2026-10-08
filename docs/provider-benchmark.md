@@ -68,6 +68,28 @@ independent reviewed gold; see the
 [autonomous evidence policy](autonomous-evidence-policy.md).
 Never promote this diagnostic report as a benchmark qualification.
 
+## Acoustic cut-bracket diagnostics (not reference gold)
+
+`examples-refine-cut-candidates` performs bounded local acoustic matching
+between uniquely matched original and finished audio regions and reports
+candidate cut time **intervals**, wide unknown gaps, source-offset points,
+and supplemental visual frame-coverage evidence. It revalidates upstream
+measured bytes and current rights/split constraints. This does not establish
+exact video cut frames, event-independent gold or editing intent and must not
+be fed directly into provider qualification. The [autonomous evidence
+policy](autonomous-evidence-policy.md) specifies thresholds and unresolved work.
+
+## Bounded acoustic cut-interval diagnostics
+
+`examples-refine-cut-candidates` consumes the checksum-checked operator-free
+visual/source/audio evidence chain, then measures local dense acoustic matches.
+Different unique source offsets generate **bounded candidate cut intervals**,
+not exact cuts. Wide gaps, contradictory overlaps and unsupported audio are
+explicit unknowns; visual observations are only diagnostic correlation
+evidence. This does not supply HUMAN_GOLD, `held_out=true` cases, independent
+event grouping or production model approval. See
+[autonomous evidence policy](autonomous-evidence-policy.md).
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
