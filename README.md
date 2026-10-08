@@ -184,6 +184,16 @@ execution is **not** production acceptance. The Git repository includes
 example metadata but does **not** include the user's locally downloaded
 real source/video files or completed private holdout checkpoints.
 
+Downstream bounded-original-video acquisition now additionally validates
+the exact current acoustic sampling method (`bounded-observed-audio-islands-v3`)
+and independently **reconstructs each claimed match range from its
+underlying strong six-second anchors**. It rejects an old 25-second
+unsupported gap even if saved JSON claims a continuous match, as well
+as forged range endpoints/counts, before any source-video download.
+Prior source-video pair caches lacking the sampling-method stamp are
+invalidated and remeasured under current source rights and hash checks.
+This protects direct CLI stage execution, not just the nine-stage runner.
+
 The acoustic matcher refuses to call an entire passage supported merely
 because two 6-second independently matching fragments have the same
 original-source offset: gaps exceeding four seconds without a verified
