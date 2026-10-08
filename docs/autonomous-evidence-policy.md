@@ -32,10 +32,11 @@ does not replace original-stream/video verification, dataset splits or calibrate
    in `data/examples/corpus_growth.json`. A prior reservation always wins over a
    future discovery of another clip from that source; a conflict with external
    training writes becomes `split_conflict`, not an automatic reassignment.
-5. Reserved items remain **metadata-only** and never enter `ingest_human_example_from_urls`,
-   the retrieval index or the Editorial Profile. They can later be acquired using
-   the same source/policy constraints by a separate evaluator. Inaccessible or
-   policy-ambiguous candidates remain quarantined. Never bypass rights controls.
+5. Reserved items are excluded from `ingest_human_example_from_urls`, the retrieval
+   index and the Editorial Profile. Their *finished clips* may be separately
+   acquired for unreviewed measurements only, subject to current source/policy
+   checks. Inaccessible or ambiguous candidates remain quarantined; source edit
+   mapping and event-level leakage verification remain separate future gates.
 6. Source-stream separation is necessary but **not sufficient** for multi-POV/cross-stream
    compilations of the same event. The future split finalizer must build
    event/participant/overlap groups and reject unresolved cross-source contamination
@@ -99,11 +100,55 @@ uv run holoclip examples-holdout-status
 reserved stream IDs and conflicts. It is an inventory, **not** a benchmark manifest
 or independently reviewed labels.
 
+## Increment 2: guarded acquisition and deterministic measurements (#118)
+
+`uv run holoclip examples-prepare-holdout` now consumes previously reserved
+public/ended clip metadata from `data/examples/corpus_growth.json`. It requires
+**no model API keys, manually supplied video URLs or labels**. For up to three
+reserved clips per invocation, the command:
+
+- Reloads all known learning streams and canonical clip identities so new
+  contamination blocks work **before network probing**.
+- Rechecks clip and original-source public/ended status, exact source identity,
+  unambiguous source-link resolution and both parties' current LEARN policy.
+  Scoped no-clip restrictions quarantine because precise original-source ranges
+  are not independently verified.
+- Acquires the **finished human edit** using the existing managed yt-dlp
+  `EDITING_VIDEO` profile, preserving the original discovery/learning store.
+- Calls authoritative ffprobe/FFmpeg/PySceneDetect deterministic measurement on
+  at most three 5–120-second video windows per acquired clip (default 20 seconds).
+- Saves complete media fingerprints, measurement manifest paths, source and
+  policy provenance in a separate atomic checkpoint
+  `data/provider-benchmark/holdout/holdout-preparation.json`. Verified cached
+  media/frames/sheets are reused on rerun; corrupt or missing bytes cause
+  deterministic re-measurement rather than silent acceptance.
+- Keeps failed metadata, policy and measurements explicitly quarantined or
+  retryable. It neither calls paid/free cloud inference nor adds any examples
+  to the training index.
+
+Run after metadata discovery:
+
+```powershell
+uv run holoclip examples-grow-corpus --discover-only
+uv run holoclip examples-holdout-status
+uv run holoclip examples-prepare-holdout --max-clips 3 --window-seconds 20
+```
+
+The checkpoint is diagnostic with `qualification_allowed=false`,
+`reviewed_gold_available=false`, `event_split_verified=false` and
+`benchmark_held_out=false`. **It is not a BenchmarkManifest and must never be
+passed directly to `providers qualify`.** Preparation currently measures finished
+edits only, not source-to-finished alignment; a later stage must obtain **bounded
+original-source ranges**, verify multi-POV/event overlap and exact corresponding
+edits before constructing a true held-out benchmark. Availability/policy errors
+do not grant exceptions or trigger paid endpoints.
+
 ## Not yet implemented / acceptance work
 
-1. **#107 / #99:** automatically reacquire/measure reserved clips into an event
-   grouped holdout, make independent weak references, adjudicate disputed cases
-   without requiring a user-provided file, and calibrate against *genuinely*
+1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
+   edits, verify original-clip alignment and cross-source event isolation, make
+   independent weak references, adjudicate disputed cases without user-provided
+   data, and calibrate against *genuinely*
    reviewed independent gold. If no legitimate reviewed gold exists, keep the
    affected capability unqualified rather than forge it.
 2. **#109:** broaden verified no-payment transports and resilient cross-vendor

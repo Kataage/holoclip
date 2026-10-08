@@ -32,6 +32,20 @@ with preserved artifacts. See [production provider setup](docs/production-provid
 
 ## Unattended data and evaluation policy
 
+Once new holdout source streams have been reserved by
+`examples-grow-corpus --discover-only`, run:
+
+```powershell
+uv run holoclip examples-prepare-holdout --max-clips 3
+```
+
+This automatically retrieves permitted public finished clips and creates
+resumable, checksum-verified video/scene/frame measurements. No cloud AI key or
+manual reference annotations are required for this stage. Measurements remain
+unreviewed and cannot qualify a production model; corresponding original-source
+edit mapping, cross-stream event isolation and calibrated gold still remain.
+
+
 Holoclip discovers public human-made clips without requiring the operator to
 supply training URLs. New source streams are automatically reserved for later
 holdout evaluation **before** learning ingestion; clips from the same source

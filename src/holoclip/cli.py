@@ -21,6 +21,7 @@ from holoclip.clip_policy import (
 from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings
 from holoclip.corpus_growth import grow_corpus
 from holoclip.holdout_reservations import export_holdout_inventory
+from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.editorial_planning import plan_candidate_boundaries
 from holoclip.editorial_evaluation import run_editorial_ab
 from holoclip.example_batch import (
@@ -668,6 +669,25 @@ def evaluation_leak_check(
     )
     if report.suspected_overlap:
         raise typer.Exit(5)
+
+
+@app.command("examples-prepare-holdout")
+def examples_prepare_holdout(
+    store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
+    state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
+    policy_file: Path = typer.Option(Path("data/policy/clip_rules.jsonl")),
+    output: Path = typer.Option(Path("data/provider-benchmark/holdout")),
+    max_clips: int = typer.Option(3, min=1, max=20),
+    window_seconds: float = typer.Option(20, min=5, max=120),
+) -> None:
+    """Fetch and measure reserved public clips; never certify gold or production routes."""
+    provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
+    report = prepare_reserved_holdouts(
+        provider, store=store, state_path=state, output=output,
+        policy_rules=load_policy_rules(policy_file), max_clips=max_clips,
+        window_seconds=window_seconds, progress=typer.echo,
+    )
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 @app.command("examples-holdout-status")
