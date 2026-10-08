@@ -277,7 +277,10 @@ def run_reserved_holdout_e2e(
             save()
             return output
         save()
-    output["real_media_run_completed"] = True
-    output["status"] = "UNREVIEWED_MEASUREMENTS_COMPLETE"
+    output["real_media_run_completed"] = runners is None
+    output["status"] = (
+        "UNREVIEWED_MEASUREMENTS_COMPLETE" if runners is None
+        else "SIMULATED_STAGE_TEST_COMPLETE"
+    )
     save()
     return output
