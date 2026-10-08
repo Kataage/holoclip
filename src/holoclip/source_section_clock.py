@@ -10,7 +10,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from holoclip.audio_anchor_alignment import HOP, VERSION as AUDIO_VERSION, fingerprint_media
+from holoclip.audio_anchor_alignment import HOP, fingerprint_media
 from holoclip.video_measurement import frame_pts, probe_video
 
 VERSION = "bounded-source-audio-clock-v1"
