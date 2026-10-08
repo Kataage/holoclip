@@ -294,6 +294,7 @@ def _run_reserved_holdout_e2e_unlocked(
         return output
     state_bytes = state_path.read_bytes()
     output["reservation_state_sha256"] = hashlib.sha256(state_bytes).hexdigest()
+    output["policy_rules_sha256"] = _holdout_policy_sha(policy_rules)
     state = CorpusGrowthState.model_validate_json(state_bytes)
     candidates = _candidates(state)
     inventory = holdout_inventory(store, state_path)
