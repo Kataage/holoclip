@@ -214,6 +214,10 @@ def test_integrated_cut_side_checkpoint_and_resumption(tmp_path):
     )
     assert row["independent_visual_source_checks"]["verified_edit_cut"] is False
     assert row["independent_visual_source_checks"]["reviewed_gold_available"] is False
+    assert row["visual_only_frame_search_version"] == (
+        "bounded-visual-only-frame-search-v1"
+    )
+    assert row["visual_only_frame_search"]["qualification_allowed"] is False
     assert len(calls) == 1
     def no_decode(*args, **kwargs):
         raise AssertionError("Unmodified checked frame evidence should be reused")
