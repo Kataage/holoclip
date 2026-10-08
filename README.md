@@ -205,6 +205,8 @@ This describes *measured candidate signals*:
 acoustic candidate counts, unknown audio transitions, median/P90 bracket
 width, overbroad brackets (>8s), output-video change corroboration, and
 independently matched original/finished two-sided visual candidates.
+Nonunique/missing acoustic support or an exhausted audio-sampling budget
+is **unmeasured** (null counts), not evidence of zero detected cuts.
 A missing/old method or stale/mismatched stage provenance gives a
 separate unverified/null result, **never a zero or a perfect score**.
 Only reports for stages executed in the current invocation are included,
