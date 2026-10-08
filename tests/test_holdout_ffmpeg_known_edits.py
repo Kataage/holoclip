@@ -13,6 +13,7 @@ import pytest
 
 from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
 from holoclip.holdout_e2e_trial import run_reserved_holdout_e2e
+from holoclip.scripted_cut_metrics import score_scripted_cut_report, REFERENCE_VERSION
 from test_holdout_real_ffmpeg_chain import (
     CLIP_URL, SOURCE_ID, SOURCE_URL, GeneratedVideoProvider,
     _ffmpeg, _generated_media,
@@ -122,6 +123,24 @@ def test_full_measured_pipeline_on_real_encoded_noncontiguous_edit(tmp_path, bac
             (root / "holdout-audio-alignment.json").read_text(encoding="utf-8")
         )["records"],
     }
+
+    synthetic_score = score_scripted_cut_report({
+        "version": REFERENCE_VERSION,
+        "reference_kind": "SCRIPTED_FFMPEG_ONLY",
+        "clip_id": CLIP_URL.split("v=")[-1],
+        "duration_seconds": EDITED_DURATION,
+        "cut_seconds": [SCRIPTED_CUT_SECOND],
+    }, cut_doc)
+    # This is measured against our own constructed script, never human gold.
+    assert synthetic_score["true_positive_candidates"] == 1
+    assert synthetic_score["missed_scripted_cuts"] == 0
+    assert synthetic_score["scripted_interval_recall"] == 1.
+    assert synthetic_score["scripted_interval_precision"] is not None
+    assert synthetic_score["matched_midpoint_median_absolute_error_seconds"] is not None
+    assert synthetic_score["matched_bracket_median_width_seconds"] <= 8.
+    assert synthetic_score["reviewed_gold_available"] is False
+    assert synthetic_score["editor_cut_precision"] is None
+    assert synthetic_score["ready"] is False
 
     # Even a successful cut *candidate* remains intentionally unreviewed.
     for flag in (
