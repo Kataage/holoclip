@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import math
 import re
 import shutil
 import subprocess
@@ -11,6 +13,7 @@ from pydantic import BaseModel
 
 from holoclip.providers.source.base import (
     AcquiredSource,
+    AcquiredVideoRange,
     AcquisitionProfile,
     SourceCandidate,
     SourceMetadata,
@@ -539,6 +542,66 @@ class YtDlpSourceProvider:
         if not candidates:
             return None
         return sorted(candidates)[0]
+
+    def acquire_video_range(
+        self,
+        url: str,
+        output_root: Path,
+        *,
+        start: float,
+        end: float,
+    ) -> AcquiredVideoRange:
+        """Download *only* an original-stream bounded time section with yt-dlp/FFmpeg.
+
+        Never falls back to full-stream acquisition. Downstream must verify measured
+        duration/bytes and not mistake the requested seek time for observed PTS.
+        """
+        if (not math.isfinite(start) or not math.isfinite(end)
+                or start < 0 or not 5 <= end - start <= 120):
+            raise ValueError("Source video section must be finite and 5..120 seconds")
+        metadata = self.probe(url)
+        if metadata.duration is not None and end > metadata.duration + 0.25:
+            raise ValueError("Requested video section exceeds source duration")
+        identity = hashlib.sha256(
+            f"yt-section-v1:{metadata.external_id}:{start:.3f}:{end:.3f}".encode("utf-8")
+        ).hexdigest()[:24]
+        directory = (
+            output_root / _safe_component(metadata.external_id)
+            / "editing_video_sections" / identity
+        )
+        directory.mkdir(parents=True, exist_ok=True)
+        existing = self._existing_media(directory)
+        if existing is not None:
+            return AcquiredVideoRange(
+                metadata=metadata, media_path=existing, requested_start=start,
+                requested_end=end, reused=True,
+            )
+        # --download-sections requires yt-dlp's FFmpeg downloader. Fail if
+        # sections are unsupported; never retry via ordinary acquire().
+        args = [
+            "--no-playlist", "--continue", "--no-overwrites", "--no-progress",
+            "--format", "bv*+ba/b",
+            "--download-sections", f"*{start:.3f}-{end:.3f}",
+            "--force-keyframes-at-cuts", "--merge-output-format", "mkv",
+            "--paths", str(directory), "--output", "media.%(ext)s",
+            "--print", "after_move:filepath", url,
+        ]
+        completed = self._run_yt_dlp(args, label="yt-dlp bounded source video")
+        paths = [Path(line.strip()) for line in completed.stdout.splitlines() if line.strip()]
+        media = next((p for p in reversed(paths) if p.is_file()
+                      and p.parent.resolve() == directory.resolve()), None)
+        if media is None:
+            media = self._existing_media(directory)
+        if media is None:
+            raise YtDlpError("Bounded source video acquisition returned no media")
+        # Reject a skipped section or an unexpected huge result. Never regard
+        # this alone as proof that the requested absolute start is frame-accurate.
+        if media.stat().st_size > 256 * 1024 * 1024:
+            raise YtDlpError("Bounded video exceeds the 256 MiB safety ceiling")
+        return AcquiredVideoRange(
+            metadata=metadata, media_path=media, requested_start=start,
+            requested_end=end, reused=False,
+        )
 
     def acquire(
         self,
