@@ -11,7 +11,7 @@ from holoclip.audio_anchor_alignment import measured_audio_alignment
 from holoclip.clip_policy import PolicyDecision, PolicyOperation, evaluate_source_metadata
 from holoclip.corpus_growth import CorpusGrowthState, _public
 from holoclip.examples import human_clip_identity, load_human_clip_store
-from holoclip.holdout_preparation import _measured, _candidates
+from holoclip.holdout_preparation import _measured, _candidates, prioritize_unprocessed
 from holoclip.holdout_reservations import holdout_inventory
 from holoclip.provider_benchmark import atomic_json
 from holoclip.providers.source.base import AcquisitionProfile
@@ -56,7 +56,10 @@ def align_reserved_holdouts(provider, *, store: Path, state_path: Path,
         atomic_json(report_path, result)
 
     attempts = 0
-    for item in _candidates(state):
+    for item in prioritize_unprocessed(
+        _candidates(state), records,
+        {"PARTIAL_AUDIO_MATCH", "INSUFFICIENT_UNIQUE_ANCHORS", "INSUFFICIENT_AUDIO"},
+    ):
         if attempts >= max_clips:
             break
         clip_id = human_clip_identity(item.clip_url)
