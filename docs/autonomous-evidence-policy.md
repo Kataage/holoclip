@@ -724,6 +724,38 @@ for only those controlled conditions. It does not evaluate independent real
 human-edited clips, noisy stream speech, overlays or the quality of
 editorial selection and cannot switch any production readiness flag.
 
+## Increment 16: refuse unverifiable audio islands even with matching source offset (#132)
+
+A same-duration inserted mute/narration/BGM interval can yield uniquely
+matching acoustic samples both before and after the insertion at the
+**same** clip↔source offset. Earlier anchor assembly allowed up to
+**25 seconds of unobserved edited audio** between sampled 6-second
+anchors to be represented as one continuous `PARTIAL_AUDIO_MATCH` range.
+This did not constitute verified acoustic evidence inside the missing
+middle and could incorrectly broaden source video acquisition and
+candidate cut evidence downstream.
+
+The grouping tolerance is now **at most 4 seconds of unobserved audio**
+between the two independently sampled matching fragments. The earlier
+~8-second candidate sampling cadence, 6-second acoustic windows,
+correlation >=0.79, uniqueness margin >=0.065, >=3 accepted matches
+and the 24-anchor upper bound all remain unchanged. Missing inserted
+audio stays outside every `ranges` interval and is not bridged merely
+because the measured end segments happen to have the same offset.
+The persisted `match_sampling_version` advances to
+`bounded-observed-audio-islands-v3`, requiring recomputation of old
+audio matches and subsequent provenance-dependent results.
+
+Added tests for same-length foreign-audio replacement in a 48-second
+clip while surrounding source offsets remain identical, pure three
+disjoint 16-second audio passages, and a real FFmpeg 48-second
+**three-piece edited video** whose two known scripted joins are
+at output t=16s and t=32s. The complete nine-stage pipeline must
+conservatively bracket both scripted boundaries; these artificial
+known boundary times are never promoted to human reviewer gold.
+Real Hololive stream capture with BGM, repeated scenes, multi-source
+editing and actual editor intent still require independent evaluation.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
