@@ -75,14 +75,14 @@ def survey_finished_visual_changes(
         candidates.append(interval)
     windows = _windows(float(duration_seconds), window_seconds=window_seconds,
                        max_windows=max_windows)
-    coverage = round(min(float(duration_seconds), _covered_seconds(windows)), 3)
     result = {
         "version": VERSION, "status": "UNKNOWN_VISUAL_NOT_MEASURED",
         "source": "FINISHED_OUTPUT_ONLY_UNREVIEWED",
         "duration_seconds": round(float(duration_seconds), 3),
-        "sampled_windows": windows,
-        "sampled_coverage_seconds": coverage,
-        "unsampled_duration_seconds": round(max(0., duration_seconds - coverage), 3),
+        "planned_windows": windows,
+        "sampled_windows": [],
+        "sampled_coverage_seconds": 0.,
+        "unsampled_duration_seconds": round(float(duration_seconds), 3),
         "sampling_clock": "uniform_ffmpeg_approximation_not_native_pts",
         "observed_peaks": [],
         "observed_visual_peaks": None,
@@ -107,6 +107,12 @@ def survey_finished_visual_changes(
             }:
                 result["status"] = "UNKNOWN_INSUFFICIENT_VISUAL_SAMPLING"
                 return result
+            result["sampled_windows"].append([start, end])
+            coverage = round(_covered_seconds(result["sampled_windows"]), 3)
+            result["sampled_coverage_seconds"] = coverage
+            result["unsampled_duration_seconds"] = round(
+                max(0., duration_seconds - coverage), 3
+            )
             for point in measurement.get("peaks", []):
                 if not isinstance(point, dict):
                     raise ValueError("Malformed output-only visual peak")
