@@ -1,5 +1,7 @@
 """Visual jump detector: synthetic frames, bounded FFmpeg decoder, cut-stage integration."""
 from pathlib import Path
+import shutil
+import subprocess
 
 import numpy as np
 import pytest
@@ -12,9 +14,8 @@ from test_acoustic_cut_brackets import _run, _setup
 
 
 def _samples(*, jump=False, continuous=False):
-    rng = np.random.default_rng(124)
-    first = rng.integers(0, 255, (HEIGHT, WIDTH), dtype=np.uint8)
-    second = rng.integers(0, 255, (HEIGHT, WIDTH), dtype=np.uint8)
+    first = np.full((HEIGHT, WIDTH), 20, dtype=np.uint8)
+    second = np.full((HEIGHT, WIDTH), 230, dtype=np.uint8)
     if continuous:
         return np.stack([first.copy() for _ in range(64)])
     frames = [first.copy() for _ in range(64)]
@@ -164,3 +165,23 @@ def test_pipeline_never_truncates_unbounded_visual_candidate_work(tmp_path):
     evidence = next(iter(report["records"].values()))["output_visual_cut_evidence"][0]
     assert evidence["status"] == "UNKNOWN_VISUAL_BRACKET_BUDGET"
     assert evidence["unresolved_candidates"] == 10
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg unavailable")
+def test_real_ffmpeg_bounded_sampling_reports_only_decoded_frames(tmp_path):
+    media = tmp_path / "short.mp4"
+    subprocess.run([
+        "ffmpeg", "-nostdin", "-v", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc2=size=256x144:rate=8:duration=5",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(media),
+    ], check=True, timeout=60)
+    frames, times = extract_bounded_frames(media, 1., 3.)
+    assert len(frames) in range(12, 19)
+    assert len(times) == len(frames)
+    assert frames.shape[1:] == (HEIGHT, WIDTH)
+    evidence = measure_visual_cut_bracket(media, [1.5, 2.5])
+    assert evidence["status"] in {
+        "VISUAL_JUMP_CANDIDATES", "UNKNOWN_NO_ISOLATED_JUMP",
+    }
+    assert evidence["frame_count"] <= 96
+    assert evidence["unknowns"]
