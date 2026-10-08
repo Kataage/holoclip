@@ -10,7 +10,7 @@ import statistics
 from collections import Counter
 
 VERSION = "unreviewed-real-cut-observations-v1"
-ACOUSTIC_VERSION = "bounded-acoustic-cut-brackets-v1"
+ACOUSTIC_VERSION = "bounded-acoustic-cut-brackets-v2"
 MAX_TRANSITIONS = 256
 _UNKNOWN = {"UNKNOWN_WIDE_GAP", "UNKNOWN_CONTRADICTORY_AUDIO"}
 _MEASURED = "MEASURED_UNREVIEWED_CUT_BRACKETS"
