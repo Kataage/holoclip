@@ -9,6 +9,8 @@ import math
 import statistics
 from collections import Counter
 
+from holoclip.visual_only_survey import VERSION as VISUAL_SURVEY_VERSION
+
 VERSION = "unreviewed-real-cut-observations-v1"
 ACOUSTIC_VERSION = "bounded-acoustic-cut-brackets-v2"
 MAX_TRANSITIONS = 256
@@ -45,6 +47,77 @@ def _safe_unreviewed(row: dict) -> bool:
     )
 
 
+
+def _describe_independent_visual_survey(row: dict) -> dict:
+    """Check separate output-only visual evidence, without editor-cut claims."""
+    result = {
+        "output_only_visual_status": "NOT_MEASURED_OR_UNVERIFIED",
+        "output_only_visual_change_count": None,
+        "output_only_visual_without_acoustic_count": None,
+        "output_only_visual_coverage_seconds": None,
+    }
+    survey = row.get("independent_output_visual_survey")
+    if survey is None:
+        return result
+    if (not isinstance(survey, dict)
+            or row.get("visual_survey_method_version") != VISUAL_SURVEY_VERSION
+            or survey.get("version") != VISUAL_SURVEY_VERSION
+            or survey.get("source") != "FINISHED_OUTPUT_ONLY_UNREVIEWED"
+            or any(survey.get(k) is not False for k in (
+                "verified_edit_cut", "reviewed_gold_available",
+                "frame_accurate_cuts_verified", "qualification_allowed",
+            ))):
+        raise ValueError("Untrusted independent visual survey")
+    status = survey.get("status")
+    valid = {
+        "MEASURED_UNREVIEWED_OUTPUT_ONLY_VISUAL_SIGNALS",
+        "UNKNOWN_BOUNDED_VISUAL_DECODE",
+        "UNKNOWN_INSUFFICIENT_VISUAL_SAMPLING",
+        "UNKNOWN_VISUAL_PEAK_BUDGET",
+    }
+    duration = survey.get("duration_seconds")
+    coverage = survey.get("sampled_coverage_seconds")
+    unsampled = survey.get("unsampled_duration_seconds")
+    windows = survey.get("sampled_windows")
+    if (status not in valid
+            or any(type(x) not in (int, float) or not math.isfinite(x)
+                   for x in (duration, coverage, unsampled))
+            or not 0 < duration <= 86400
+            or not 0 <= coverage <= duration + .05
+            or not 0 <= unsampled <= duration + .05
+            or abs(coverage + unsampled - duration) > .1
+            or not isinstance(windows, list) or not 1 <= len(windows) <= 6
+            or any(not isinstance(w, list) or len(w) != 2
+                   or any(type(t) not in (int, float) or not math.isfinite(t)
+                          for t in w)
+                   or not 0 <= w[0] < w[1] <= duration + .05 for w in windows)):
+        raise ValueError("Invalid independent visual survey coverage")
+    result["output_only_visual_status"] = status
+    result["output_only_visual_coverage_seconds"] = coverage
+    count = survey.get("observed_visual_peaks")
+    unmatched = survey.get("without_acoustic_candidate")
+    peaks = survey.get("observed_peaks")
+    if status == "MEASURED_UNREVIEWED_OUTPUT_ONLY_VISUAL_SIGNALS":
+        if (type(count) is not int or type(unmatched) is not int
+                or not 0 <= unmatched <= count <= 18
+                or not isinstance(peaks, list) or len(peaks) != count
+                or sum(p.get("relation") == "NO_ACOUSTIC_CANDIDATE_AT_SAMPLED_TIME"
+                       for p in peaks if isinstance(p, dict)) != unmatched
+                or any(not isinstance(p, dict)
+                       or p.get("verified_edit_cut") is not False
+                       or p.get("source_scene_change_ruled_out") is not False
+                       or p.get("relation") not in {
+                           "OVERLAPS_ACOUSTIC_CANDIDATE",
+                           "NO_ACOUSTIC_CANDIDATE_AT_SAMPLED_TIME",
+                       } for p in peaks)):
+            raise ValueError("Forged or inconsistent output-only visual counts")
+        result["output_only_visual_change_count"] = count
+        result["output_only_visual_without_acoustic_count"] = unmatched
+    elif count is not None or unmatched is not None:
+        raise ValueError("Unknown visual survey cannot assert zero measured peaks")
+    return result
+
+
 def describe_real_cut_observations(
     cut_row: dict, side_row: dict | None = None, *,
     maximum_bracket_seconds: float = 8.,
@@ -71,6 +144,10 @@ def describe_real_cut_observations(
         "two_sided_multimodal_candidates": None,
         "two_sided_unresolved_candidates": None,
         "two_sided_status": "NOT_MEASURED_OR_UNVERIFIED",
+        "output_only_visual_status": "NOT_MEASURED_OR_UNVERIFIED",
+        "output_only_visual_change_count": None,
+        "output_only_visual_without_acoustic_count": None,
+        "output_only_visual_coverage_seconds": None,
     }
     if not _safe_unreviewed(cut_row) or cut_row.get("status") != _MEASURED:
         return result
@@ -82,6 +159,9 @@ def describe_real_cut_observations(
                 "UNKNOWN_SAMPLING_BUDGET", "UNKNOWN_NO_SUPPORTED_RANGES",
             }):
         return result
+    # Output-only survey is independently measured even if acoustic refinement
+    # could not produce uniquely grounded cut candidate intervals.
+    result.update(_describe_independent_visual_survey(cut_row))
     # Exhausted budget / missing unique anchors is *not* an observed
     # zero-cut clip. Preserve unknown counts as null until audio was supported.
     if refinement["status"] != "AUDIO_SUPPORTED_INTERVALS":
@@ -233,6 +313,14 @@ def aggregate_real_cut_observations(rows: dict[str, dict]) -> dict:
         "two_sided_multimodal_candidates": (
             sum(x["two_sided_multimodal_candidates"] for x in side)
             if len(side) == len(measured) and measured else None
+        ),
+        "clips_with_measured_output_only_visual_survey": sum(
+            x.get("output_only_visual_change_count") is not None
+            for x in rows.values()
+        ),
+        "output_only_visual_without_acoustic_candidates": sum(
+            x.get("output_only_visual_without_acoustic_count") or 0
+            for x in rows.values()
         ),
         "human_editor_accuracy_available": False,
     }
