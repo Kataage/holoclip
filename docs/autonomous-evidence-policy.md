@@ -1053,6 +1053,41 @@ full time mapping, independent event/POV isolation, and production
 quality calibration remain **unverified**; `ready=false` and
 `editor_cut_precision/recall=null` by construction.
 
+## Increment 25: preflighted full-range bounded acoustic sampling (#141)
+
+When five or fewer independently supported acoustic ranges together
+require more than the configured sampling-point cap (default 480),
+the earlier v1 refinement sampled in chronological order, ran out of
+points partway through the ranges and discarded every candidate as
+`UNKNOWN_SAMPLING_BUDGET`. This was conservative but unnecessarily
+lost useful complete-range observations for moderately long excerpts.
+
+The v2 `bounded-acoustic-cut-brackets` method prevalidates all
+coarse source/finished ranges before doing expensive correlation,
+estimates required samples at 1-, 1.5-, and 2-second spacing, and
+chooses the densest full-range plan that fits the existing configured
+maximum. The final possible 2-second acoustic window of **every**
+anchored range is included even when the stride is not divisible.
+Only supported source regions are searched (unchanged `±3s` local
+search budget and unique-match threshold), and a supported source
+offset jump remains a non-frame-accurate candidate interval.
+If the whole range cannot fit even at 2 seconds, the method returns
+`UNKNOWN_SAMPLING_BUDGET`, `tested_points=0`, and **no partial
+measurement**, rather than selecting the first few convenient ranges.
+
+Every supported v2 measurement records actual sampling spacing,
+planned/tested point counts, and `FULL_COVERAGE_BUDGET_ADAPTED`
+strategy. Existing saved v1 cut reports are **not** reinterpreted as
+v2: cut-side and partial source-time map direct stages require v2
+method/version; their fingerprints force remeasurement. Real-video
+descriptions and scripted FFmpeg regression scorer also require v2.
+
+This is an algorithmic coverage change, **not** a claim that all
+possible edits are found or that sampling resolution is 2-second
+cut-time accuracy. It does not change source rights, approval,
+reviewed editor gold, production route eligibility, native frame
+PTS verification, or source/finished dense mapping.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
