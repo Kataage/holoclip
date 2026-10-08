@@ -1139,7 +1139,10 @@ strictly between **adjacent unique audio anchors in the same group**
 with a continuous stable source offset (<=0.25s disagreement),
 <=4-second unsupported gap, unique section mapping and sufficient
 source-video margins may trigger an extra short original-video seek.
-Other peaks remain `UNKNOWN_NO_TWO_SIDED_AUDIO_ANCHORS`. At most
+The approximate original-video check is additionally padded by
+375 ms on each side to tolerate finite FFmpeg sampling and local clock
+uncertainty; this is **not** an original native PTS or exact output cut
+error bound. Other peaks remain `UNKNOWN_NO_TWO_SIDED_AUDIO_ANCHORS`. At most
 six peaks may be probed per finished clip; crossing this cap leaves all
 unprobed evidence UNKNOWN rather than privileging early peaks.
 
