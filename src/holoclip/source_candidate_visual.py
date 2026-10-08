@@ -88,7 +88,12 @@ def _finished_starts(duration: float) -> list[float]:
         return []
     last = duration - WINDOW_SECONDS
     center = round(last / 2, 3)
-    candidates = [center, 0., round(last, 3)]
+    # For short clips the centered window can block *all* independent
+    # alternatives. Prefer distinct edges whenever two windows fit.
+    candidates = (
+        [0., round(last, 3)] if WINDOW_SECONDS*2 <= duration < 36
+        else [center, 0., round(last, 3)]
+    )
     for index in range(int(duration // WINDOW_SECONDS)):
         candidates.append(round(index * WINDOW_SECONDS, 3))
     selected = []
@@ -320,20 +325,24 @@ def verify_pending_source_visual(
                 or human_clip_identity(item.clip_url) in learned_clips):
             finish("BLOCKED_UNVERIFIED_SOURCE_QUEUE")
             continue
+        clip_id = human_clip_identity(item.clip_url)
+        candidate_ids = [
+            entry["source_stream_id"]
+            for entry in scout["candidate_sources"]
+        ]
         try:
-            clip_id = human_clip_identity(item.clip_url)
-            candidate_ids = [
-                entry["source_stream_id"]
-                for entry in scout["candidate_sources"]
-            ]
             ledger = checked_ledger(
                 scout.get("visual_evidence"),
                 clip_id=clip_id, candidate_ids=candidate_ids,
             )
-            saved_refinements = scout.get("visual_refinements", {})
-            if not isinstance(saved_refinements, dict):
-                finish("BLOCKED_INVALID_REFINEMENT_QUEUE")
-                continue
+        except ValueError:
+            finish("BLOCKED_INVALID_SOURCE_VISUAL_EVIDENCE")
+            continue
+        saved_refinements = scout.get("visual_refinements", {})
+        if not isinstance(saved_refinements, dict):
+            finish("BLOCKED_INVALID_REFINEMENT_QUEUE")
+            continue
+        try:
             clip = provider.probe(item.clip_url)
             if (not isinstance(clip, SourceMetadata)
                     or not _public(clip)
