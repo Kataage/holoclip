@@ -142,7 +142,8 @@ def _pipeline_fixture(tmp_path):
     }
     def fake_refiner(*args, **kwargs):
         _, _, refinement, transition, _ = supported_transition()
-        return {"status": "AUDIO_SUPPORTED_INTERVALS",
+        return {"version": "bounded-acoustic-cut-brackets-v2",
+                "status": "AUDIO_SUPPORTED_INTERVALS",
                 "points": refinement["points"], "transitions": [transition]}
     def fake_jump(*args):
         return {"status": "VISUAL_JUMP_CANDIDATES", "peaks": [
