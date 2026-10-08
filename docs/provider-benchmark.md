@@ -79,6 +79,17 @@ exact video cut frames, event-independent gold or editing intent and must not
 be fed directly into provider qualification. The [autonomous evidence
 policy](autonomous-evidence-policy.md) specifies thresholds and unresolved work.
 
+## Bounded acoustic cut-interval diagnostics
+
+`examples-refine-cut-candidates` consumes the checksum-checked operator-free
+visual/source/audio evidence chain, then measures local dense acoustic matches.
+Different unique source offsets generate **bounded candidate cut intervals**,
+not exact cuts. Wide gaps, contradictory overlaps and unsupported audio are
+explicit unknowns; visual observations are only diagnostic correlation
+evidence. This does not supply HUMAN_GOLD, `held_out=true` cases, independent
+event grouping or production model approval. See
+[autonomous evidence policy](autonomous-evidence-policy.md).
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
