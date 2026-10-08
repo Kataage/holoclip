@@ -53,6 +53,36 @@ evidence, without additional downloads or paid AI inference. Acoustic
 silence, ambiguous matches, visual-only edits and unavailable absolute
 source timestamps remain explicit unknowns.
 
+### Real-media reserved holdout validation (one command)
+
+Instead of manually invoking every 9-stage diagnostic, run the existing
+reserved public human-made clip/source evidence pipeline in one bounded,
+checkpointed local command (Windows `uv`, FFmpeg, local CPU; no paid AI):
+
+```powershell
+uv run --extra media holoclip examples-validate-holdout-e2e --preflight-only
+uv run --extra media holoclip examples-validate-holdout-e2e --max-clips 3
+```
+
+The first invocation checks local holdout reservations and learning-stream
+conflicts **without downloading anything**. The second sequentially runs
+finished-video preparation, source audio alignment, bounded source video
+measurement, visual geometry, acoustic cut-bracket observations, original
+section audio clock calibration, source↔finished frame links, candidate
+two-sided cut evidence, and partial time-map candidates. It automatically
+reuses each stage's verified cached media, but cannot continue through an
+upstream stage without successful measurements. Real public media downloads
+may take significant time; the input reservations must already exist.
+
+The local `data/provider-benchmark/holdout/holdout-e2e-audit.json` records
+each stage's *actual* per-clip status, observed candidate coverage, frame
+links, candidate edit discontinuities and blockers. Precision/recall,
+native timestamp error and event-independent quality remain null until
+there is independently reviewed real-media gold. Successful stage
+execution is **not** production acceptance. The Git repository includes
+example metadata but does **not** include the user's locally downloaded
+real source/video files or completed private holdout checkpoints.
+
 After gathering grounded original↔finished frame and cut evidence,
 create a **strictly diagnostic** partial output/source time map. Short
 interval candidates must be supported by independently unique audio

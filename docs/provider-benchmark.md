@@ -151,6 +151,23 @@ It requires current LEARN policy, split, immutable media and evidence
 fingerprint checks before every re-run. See
 [autonomous evidence policy](autonomous-evidence-policy.md).
 
+## Actual holdout execution status versus benchmark quality
+
+`examples-validate-holdout-e2e` executes the existing reserved real-video
+measurement stages sequentially and exports `holdout-e2e-audit.json`.
+Use `--preflight-only` for non-network reservation readiness checks.
+The report counts source audio matches, sampled frame links, acoustic/
+visual cut candidates, mapped candidate seconds, and unknown states from
+**actual observed local media checkpoints**. A stage stopping on bad
+provenance, rights, unavailable media, ambiguous anchors or missing
+reservations is a diagnostic result, not license to fabricate data.
+Editor cut precision/recall, true native frame timing error,
+independent event-level holdout quality and model readiness remain
+unavailable until external reviewed gold exists. This is not a
+provider qualification manifest or authorization to set
+`held_out=true`. See
+[autonomous evidence policy](autonomous-evidence-policy.md).
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
