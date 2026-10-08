@@ -321,3 +321,73 @@ def test_conflicted_holdout_split_is_preserved_as_preflight_cause(tmp_path):
     assert diagnosis["status"] == "BLOCKED_TRAIN_HOLDOUT_SPLIT"
     assert diagnosis["next_action"] == "REVIEW_TRAIN_HOLDOUT_SPLIT"
     assert diagnosis["network_or_media_examined"] is False
+
+
+def test_diagnosis_distinguishes_partial_audio_deferral_from_verified_completion(tmp_path):
+    from test_holdout_e2e_trial import _one_weak_audio_clip_runners
+
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=3)
+    runners, bad_id = _one_weak_audio_clip_runners(root, state)
+    trial = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root,
+        policy_rules=[], max_clips=3, max_batches=3, runners=runners,
+        continue_on_insufficient_audio=True,
+    )
+    assert trial["status"] == "SIMULATED_INSUFFICIENT_AUDIO_RECORDED"
+    diagnosis = _diagnose(store, state, root)
+    assert diagnosis["status"] == "TRIAL_PARTIAL_WITH_AUDIO_GAPS"
+    assert diagnosis["deferred_audio_clip_ids"] == [bad_id]
+    assert diagnosis["deferred_audio_clips"] == 1
+    assert diagnosis["attempted_clips"] == 3
+    assert diagnosis["unattempted_clip_ids"] == []
+    assert diagnosis["simulated_only"] is True
+    assert diagnosis["real_media_run_completed"] is False
+    assert diagnosis["next_action"] == "CHECK_ORIGINAL_AUDIO_CORRESPONDENCE"
+    assert diagnosis["first_blocker"]["stage"] == "original_audio"
+    assert diagnosis["ready"] is False
+    assert diagnosis["reviewed_gold_available"] is False
+    assert diagnosis["editor_cut_precision"] is None
+
+
+def test_diagnosis_rejects_forged_audio_deferral_from_policy_failure(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=2)
+    run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=2,
+        runners=make_runners(root, override={
+            "original_audio": "QUARANTINED_POLICY",
+        }),
+    )
+    audit_path = root / "holdout-e2e-all-batches.json"
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    selected = audit["batches"][0]["selected_clip_ids"][0]
+    audit["batches"][0]["deferred_insufficient_audio"] = True
+    audit["deferred_audio_clip_ids"] = [selected]
+    audit["deferred_audio_clips"] = 1
+    audit_path.write_text(json.dumps(audit), encoding="utf-8")
+    diagnosed = _diagnose(store, state, root)
+    assert diagnosed["status"] == "BLOCKED_INVALID_AUDIT"
+    assert diagnosed["deferred_audio_clips"] == 0
+    assert diagnosed["ready"] is False
+
+
+def test_diagnosis_rejects_unattributed_audio_deferrals(tmp_path):
+    from test_holdout_e2e_trial import _one_weak_audio_clip_runners
+
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=2)
+    runners, _ = _one_weak_audio_clip_runners(root, state)
+    run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=3, max_batches=2, runners=runners,
+        continue_on_insufficient_audio=True,
+    )
+    path = root / "holdout-e2e-all-batches.json"
+    audit = json.loads(path.read_text(encoding="utf-8"))
+    audit["deferred_audio_clip_ids"] = []
+    path.write_text(json.dumps(audit), encoding="utf-8")
+    diagnosed = _diagnose(store, state, root)
+    assert diagnosed["status"] == "BLOCKED_INVALID_AUDIT"
+    assert diagnosed["reviewed_gold_available"] is False
