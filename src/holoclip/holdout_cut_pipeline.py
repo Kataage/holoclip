@@ -23,6 +23,7 @@ from holoclip.examples import human_clip_identity, load_human_clip_store
 from holoclip.holdout_preparation import _candidates, _measured, prioritize_unprocessed
 from holoclip.holdout_reservations import holdout_inventory
 from holoclip.provider_benchmark import atomic_json
+from holoclip.providers.cost import CostPolicyError
 from holoclip.providers.source.yt_dlp import choose_source_candidate
 from holoclip.video_measurement import checksum_file
 
@@ -178,7 +179,7 @@ def refine_reserved_cut_candidates(
                     "visual_status": visual["status"],
                     "cut_boundary_visual_confirmation": False,
                 })
-        except (OSError, ValueError, KeyError, TypeError):
+        except (OSError, ValueError, KeyError, TypeError, CostPolicyError):
             block("BLOCKED_MEASUREMENT_INTEGRITY")
             continue
         attempted += 1
