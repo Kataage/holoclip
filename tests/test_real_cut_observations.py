@@ -187,6 +187,24 @@ def test_malformed_or_promoted_transition_fails_closed(transition):
         ))
 
 
+@pytest.mark.parametrize("status", [
+    "UNKNOWN_NO_UNIQUE_POINTS", "UNKNOWN_SAMPLING_BUDGET",
+    "UNKNOWN_NO_SUPPORTED_RANGES",
+])
+def test_unsupported_audio_does_not_turn_unknown_into_zero(status):
+    cut = cut_row(transitions=[], visual=[])
+    cut["refinement"]["status"] = status
+    result = describe_real_cut_observations(cut)
+    assert result["status"] == "UNKNOWN_ACOUSTIC_SUPPORT"
+    assert result["measurement_status"] == status
+    assert result["cut_candidate_count"] is None
+    assert result["unknown_audio_transition_count"] is None
+    assert result["output_visual_corroborating_candidates"] is None
+    assert aggregate_real_cut_observations({"one": result})[
+        "unverified_clips"
+    ] == 1
+
+
 def test_mismatched_cut_method_and_claimed_gold_are_not_measured():
     row = cut_row()
     row["refinement"]["version"] = "old-method"
