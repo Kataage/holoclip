@@ -20,6 +20,7 @@ from holoclip.clip_policy import (
 )
 from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings
 from holoclip.corpus_growth import grow_corpus
+from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.editorial_planning import plan_candidate_boundaries
 from holoclip.editorial_evaluation import run_editorial_ab
 from holoclip.example_batch import (
@@ -669,6 +670,17 @@ def evaluation_leak_check(
         raise typer.Exit(5)
 
 
+@app.command("examples-holdout-status")
+def examples_holdout_status(
+    store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
+    state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
+    output: Path = typer.Option(Path("data/provider-benchmark/holdout-reservations.json")),
+) -> None:
+    """Export automatic source-level holdout reservations (not reviewed gold)."""
+    report = export_holdout_inventory(store, state, output)
+    typer.echo(json.dumps({**report, "output": str(output)}, ensure_ascii=False, indent=2))
+
+
 @app.command()
 def examples_grow_corpus(
     store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
@@ -683,7 +695,7 @@ def examples_grow_corpus(
     discover_only: bool = typer.Option(False),
     cycles: int = typer.Option(1, min=1, max=100),
 ) -> None:
-    """Discover public human clips, quarantine uncertainty, ingest sequentially, then relearn."""
+    """Grow learning corpus and reserve new streams for independent evaluation."""
     _load_env_file()
     settings = RoutingSettings.from_env()
     groq = GroqTranscriptionSettings.from_env()
