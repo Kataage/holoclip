@@ -126,6 +126,18 @@ independent HUMAN_GOLD, exact source native PTS, an `OutputSourceTimeMap`
 or production qualification. See
 [autonomous evidence policy](autonomous-evidence-policy.md).
 
+## Independently corroborated acoustic/visual cut-side diagnostics
+
+`examples-compare-cut-sides` consumes preexisting guarded acoustic
+cut brackets, section audio clocks and original/finished visual links;
+it locally samples source and finished images *before and after* a
+candidate time jump. Two sequential geometric source/output matches
+are required on both sides; repeated content and insufficient coverage
+remain UNKNOWN. The result is **diagnostic source-offset discontinuity
+evidence**, not proof of editing causality, timestamp-perfect source PTS,
+independently held-out semantic labels or promotion to production routing.
+See [autonomous evidence policy](autonomous-evidence-policy.md).
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
