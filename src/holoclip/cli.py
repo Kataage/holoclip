@@ -30,7 +30,9 @@ from holoclip.holdout_source_clock_pipeline import calibrate_reserved_section_cl
 from holoclip.holdout_frame_links_pipeline import correlate_reserved_source_frames
 from holoclip.holdout_cut_side_pipeline import inspect_reserved_cut_sides
 from holoclip.holdout_partial_time_map_pipeline import build_reserved_partial_maps
-from holoclip.holdout_e2e_trial import run_reserved_holdout_e2e
+from holoclip.holdout_e2e_trial import (
+    run_all_reserved_holdout_batches, run_reserved_holdout_e2e,
+)
 from holoclip.editorial_planning import plan_candidate_boundaries
 from holoclip.editorial_evaluation import run_editorial_ab
 from holoclip.example_batch import (
@@ -688,20 +690,33 @@ def examples_validate_holdout_e2e(
     policy_file: Path = typer.Option(Path("data/policy/clip_rules.jsonl")),
     max_clips: int = typer.Option(3, min=1, max=20),
     preflight_only: bool = typer.Option(False, help="Check reserved clips without downloading media"),
+    all_batches: bool = typer.Option(False, help="Process all reserved clips once in bounded batches"),
+    max_batches: int = typer.Option(8, min=1, max=12),
 ) -> None:
-    """Run each bounded real-media evidence stage and record measured gaps."""
+    """Run local-source video evidence with fail-closed checkpoints."""
+    if all_batches and preflight_only:
+        raise typer.BadParameter("Use --preflight-only without --all-batches")
     provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
-    report = run_reserved_holdout_e2e(
-        provider, store=store, state_path=state, root=root,
-        policy_rules=load_policy_rules(policy_file),
-        max_clips=max_clips, preflight_only=preflight_only,
-        progress=typer.echo,
-    )
+    rules = load_policy_rules(policy_file)
+    if all_batches:
+        report = run_all_reserved_holdout_batches(
+            provider, store=store, state_path=state, root=root,
+            policy_rules=rules, max_clips=max_clips, max_batches=max_batches,
+            progress=typer.echo,
+        )
+        allowed = {"UNREVIEWED_ALL_BATCHES_COMPLETE"}
+    else:
+        report = run_reserved_holdout_e2e(
+            provider, store=store, state_path=state, root=root,
+            policy_rules=rules, max_clips=max_clips, preflight_only=preflight_only,
+            progress=typer.echo,
+        )
+        allowed = {
+            "UNREVIEWED_MEASUREMENTS_COMPLETE",
+            "PREFLIGHT_ONLY_NO_MEDIA_EXECUTED",
+        }
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
-    if report["status"] not in {
-        "UNREVIEWED_MEASUREMENTS_COMPLETE",
-        "PREFLIGHT_ONLY_NO_MEDIA_EXECUTED",
-    }:
+    if report["status"] not in allowed:
         raise typer.Exit(code=3)
 
 
