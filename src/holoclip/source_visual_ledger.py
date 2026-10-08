@@ -144,6 +144,25 @@ def checked_ledger(value: dict | None, *, clip_id: str,
             ) for e in events}) != len(events)
             or value.get("summary") != _summary(events)):
         raise ValueError("Inconsistent or forged visual-source evidence ledger")
+    # The same requested finished interval MUST refer to the same sampled
+    # bytes regardless of which original candidate it was compared with.
+    # Likewise the same original section must not silently mutate across
+    # finished-video intervals. This check is global across all events.
+    finished_hashes = {}
+    original_hashes = {}
+    for event in events:
+        finished_key = tuple(event["finished_range_seconds"])
+        source_key = (
+            event["source_stream_id"],
+            tuple(event["source_requested_range_seconds"]),
+        )
+        for seen, key, sha in (
+            (finished_hashes, finished_key, event["finished_media_sha256"]),
+            (original_hashes, source_key, event["source_media_sha256"]),
+        ):
+            if key in seen and seen[key] != sha:
+                raise ValueError("Video bytes changed across source candidates or runs")
+            seen[key] = sha
     return value
 
 
