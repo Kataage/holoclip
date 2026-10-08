@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from holoclip.corpus_growth import CorpusGrowthState
+from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
 from holoclip.holdout_diagnosis import diagnose_holdout_e2e
 from holoclip.holdout_e2e_trial import (
     run_all_reserved_holdout_batches, run_reserved_holdout_e2e,
@@ -293,3 +293,33 @@ def test_all_batches_cli_emits_offline_diagnosis_without_extra_media(tmp_path, m
     assert '"diagnostic_report_path"' in outcome.output
     assert (root / "holdout-e2e-all-batches.json").is_file()
     assert (root / "holdout-e2e-diagnosis.json").is_file()
+
+
+def test_conflicted_holdout_split_is_preserved_as_preflight_cause(tmp_path):
+    store, state, root = files(tmp_path)
+    corpus = CorpusGrowthState.model_validate_json(state.read_text(encoding="utf-8"))
+    reserved = next(iter(corpus.items.values()))
+    corpus.items["queued-same-source"] = CorpusGrowthItem(
+        clip_url="https://www.youtube.com/watch?v=queuedfake1",
+        source_url=reserved.source_url,
+        source_stream_id=reserved.source_stream_id,
+        status="queued", query="conflict guard synthetic test",
+    )
+    state.write_text(corpus.model_dump_json(), encoding="utf-8")
+    # No media runner may run on a split conflict.
+    def must_not_acquire(*args, **kwargs):
+        raise AssertionError("Train/holdout split conflict must block before media")
+    report = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=2,
+        runners={s.name: must_not_acquire for s in __import__(
+            "holoclip.holdout_e2e_trial", fromlist=["STAGES"]
+        ).STAGES},
+    )
+    assert report["status"] == "BLOCKED_TRAIN_HOLDOUT_SPLIT"
+    assert report["failed_batch"] == 1
+    assert report["batches"] == []
+    diagnosis = _diagnose(store, state, root)
+    assert diagnosis["status"] == "BLOCKED_TRAIN_HOLDOUT_SPLIT"
+    assert diagnosis["next_action"] == "REVIEW_TRAIN_HOLDOUT_SPLIT"
+    assert diagnosis["network_or_media_examined"] is False
