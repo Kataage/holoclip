@@ -32,10 +32,11 @@ does not replace original-stream/video verification, dataset splits or calibrate
    in `data/examples/corpus_growth.json`. A prior reservation always wins over a
    future discovery of another clip from that source; a conflict with external
    training writes becomes `split_conflict`, not an automatic reassignment.
-5. Reserved items remain **metadata-only** and never enter `ingest_human_example_from_urls`,
-   the retrieval index or the Editorial Profile. They can later be acquired using
-   the same source/policy constraints by a separate evaluator. Inaccessible or
-   policy-ambiguous candidates remain quarantined. Never bypass rights controls.
+5. Reserved items are excluded from `ingest_human_example_from_urls`, the retrieval
+   index and the Editorial Profile. Their *finished clips* may be separately
+   acquired for unreviewed measurements only, subject to current source/policy
+   checks. Inaccessible or ambiguous candidates remain quarantined; source edit
+   mapping and event-level leakage verification remain separate future gates.
 6. Source-stream separation is necessary but **not sufficient** for multi-POV/cross-stream
    compilations of the same event. The future split finalizer must build
    event/participant/overlap groups and reject unresolved cross-source contamination
@@ -144,9 +145,10 @@ do not grant exceptions or trigger paid endpoints.
 
 ## Not yet implemented / acceptance work
 
-1. **#107 / #99:** automatically reacquire/measure reserved clips into an event
-   grouped holdout, make independent weak references, adjudicate disputed cases
-   without requiring a user-provided file, and calibrate against *genuinely*
+1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
+   edits, verify original-clip alignment and cross-source event isolation, make
+   independent weak references, adjudicate disputed cases without user-provided
+   data, and calibrate against *genuinely*
    reviewed independent gold. If no legitimate reviewed gold exists, keep the
    affected capability unqualified rather than forge it.
 2. **#109:** broaden verified no-payment transports and resilient cross-vendor
