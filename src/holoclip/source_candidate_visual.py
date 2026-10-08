@@ -264,6 +264,7 @@ def verify_pending_source_visual(
             "candidate_observations": [],
             "finished_video_sha256": None,
             "source_scan_method": "nonrepeating-breadth-first-with-one-local-refinement-v2",
+            "refinement_method_version": REFINEMENT_VERSION,
             **_NO_GOLD,
         }
 
