@@ -11,6 +11,7 @@ from collections import Counter
 
 from holoclip.visual_only_survey import VERSION as VISUAL_SURVEY_VERSION
 from holoclip.visual_source_crosscheck import VERSION as SOURCE_VISUAL_VERSION
+from holoclip.visual_only_frame_search import VERSION as VISUAL_SEARCH_VERSION
 
 VERSION = "unreviewed-real-cut-observations-v1"
 ACOUSTIC_VERSION = "bounded-acoustic-cut-brackets-v2"
@@ -146,6 +147,11 @@ def _describe_independent_visual_survey(row: dict) -> dict:
 def _describe_source_visual_checks(cut_row: dict, side_row: dict) -> dict:
     """Only same-identity source-side evidence, never verified cut causation."""
     result = {
+        "visual_only_search_status": "NOT_MEASURED_OR_UNVERIFIED",
+        "visual_only_source_skip_hypotheses": None,
+        "visual_only_source_continuity_hypotheses": None,
+        "visual_only_source_group_switch_hypotheses": None,
+        "visual_only_unknown_correspondences": None,
         "source_visual_check_status": "NOT_MEASURED_OR_UNVERIFIED",
         "source_visual_change_also_observed": None,
         "source_visual_no_isolated_change_observed": None,
@@ -225,6 +231,111 @@ def _describe_source_visual_checks(cut_row: dict, side_row: dict) -> dict:
               and unknown != len(unmatched))):
         raise ValueError("Unknown original visual survey was promoted")
     result["source_visual_check_status"] = status
+    return result
+
+
+
+def _describe_visual_only_frame_search(cut_row: dict, side_row: dict) -> dict:
+    """Strictly descriptive cross-video image-sequence hypotheses."""
+    result = {
+        "visual_only_search_status": "NOT_MEASURED_OR_UNVERIFIED",
+        "visual_only_source_skip_hypotheses": None,
+        "visual_only_source_continuity_hypotheses": None,
+        "visual_only_source_group_switch_hypotheses": None,
+        "visual_only_unknown_correspondences": None,
+    }
+    raw = side_row.get("visual_only_frame_search")
+    if raw is None:
+        return result
+    if (not isinstance(raw, dict)
+            or side_row.get("visual_only_frame_search_version") != VISUAL_SEARCH_VERSION
+            or raw.get("version") != VISUAL_SEARCH_VERSION
+            or any(raw.get(flag) is not False for flag in (
+                "verified_edit_cut", "source_scene_change_ruled_out",
+                "frame_accurate_cuts_verified", "original_video_absolute_pts_verified",
+                "dense_output_source_map_verified",
+                "reviewed_gold_available", "qualification_allowed",
+            ))):
+        raise ValueError("Promoted visual-only sequence correspondence")
+    status = raw.get("status")
+    measured = "MEASURED_UNREVIEWED_VISUAL_SEQUENCE_SEARCH"
+    valid = {
+        measured, "UNKNOWN_NO_MEASURED_OUTPUT_SURVEY",
+        "UNKNOWN_VISUAL_SEARCH_PEAK_BUDGET",
+        "NO_UNMATCHED_OUTPUT_VISUAL_PEAKS",
+        "UNKNOWN_NO_PINNED_SOURCE_SECTIONS",
+        "UNKNOWN_VISUAL_FRAME_COVERAGE",
+        "UNKNOWN_VISUAL_SEARCH_COMPARISON_BUDGET",
+        "UNKNOWN_VISUAL_IMAGE_DECODE",
+    }
+    observations = raw.get("peak_observations")
+    counts = [
+        raw.get(key) for key in (
+            "visual_source_skip_hypotheses",
+            "visual_source_continuity_hypotheses",
+            "visual_source_group_switch_hypotheses",
+            "unknown_visual_correspondences",
+        )
+    ]
+    if (status not in valid or not isinstance(observations, list)
+            or len(observations) > 3
+            or any(type(n) is not int or not 0 <= n <= 18 for n in counts)
+            or any(type(raw.get(k)) is not int or not 0 <= raw[k] <= limit
+                   for k, limit in (
+                       ("tested_image_comparisons", 2400),
+                       ("tested_source_frame_samples", 100),
+                       ("tested_finished_frame_samples", 12),
+                   ))):
+        raise ValueError("Impossible bounded visual-only correspondence counts")
+    survey = cut_row.get("independent_output_visual_survey")
+    unmatched = [
+        p["time_bracket_seconds"] for p in survey.get("observed_peaks", [])
+        if p.get("relation") == "NO_ACOUSTIC_CANDIDATE_AT_SAMPLED_TIME"
+    ] if isinstance(survey, dict) else []
+    if status == measured:
+        if (sum(counts) != len(observations)
+                or len(observations) != len(unmatched)
+                or len(observations) > 3):
+            raise ValueError("Search observations disagree with output visual peaks")
+        statuses = {
+            "VISUAL_ONLY_SOURCE_SKIP_HYPOTHESIS",
+            "VISUAL_ONLY_CONTINUITY_COMPATIBLE",
+            "VISUAL_ONLY_GROUP_SWITCH_HYPOTHESIS",
+            "UNKNOWN_NO_TWO_SIDED_FINISHED_FRAMES",
+            "UNKNOWN_VISUAL_MATCH_NOT_UNIQUE",
+            "UNKNOWN_VISUAL_SOURCE_REORDERING",
+        }
+        if (any(not isinstance(entry, dict)
+                or entry.get("output_interval") != interval
+                or entry.get("status") not in statuses
+                or entry.get("editorial_gold") is not False
+                or entry.get("verified_edit_cut") is not False
+                for entry, interval in zip(observations, unmatched))
+                or counts[:3] != [
+                    sum(p["status"] == name for p in observations)
+                    for name in (
+                        "VISUAL_ONLY_SOURCE_SKIP_HYPOTHESIS",
+                        "VISUAL_ONLY_CONTINUITY_COMPATIBLE",
+                        "VISUAL_ONLY_GROUP_SWITCH_HYPOTHESIS",
+                    )
+                ]
+                or counts[3] != sum(
+                    p["status"].startswith("UNKNOWN_") for p in observations
+                )):
+            raise ValueError("Forged or misattributed visual-only hypothesis")
+        result.update({
+            "visual_only_source_skip_hypotheses": counts[0],
+            "visual_only_source_continuity_hypotheses": counts[1],
+            "visual_only_source_group_switch_hypotheses": counts[2],
+            "visual_only_unknown_correspondences": counts[3],
+        })
+    elif (observations or any(counts[:3])
+          or (status == "UNKNOWN_VISUAL_SEARCH_PEAK_BUDGET"
+              and counts[3] != len(unmatched))
+          or (status != "UNKNOWN_VISUAL_SEARCH_PEAK_BUDGET" and counts[3]
+              not in (0, len(unmatched)))):
+        raise ValueError("Unknown visual-only search fabricated completed links")
+    result["visual_only_search_status"] = status
     return result
 
 
@@ -368,6 +479,7 @@ def describe_real_cut_observations(
         return result
 
     result.update(_describe_source_visual_checks(cut_row, side_row))
+    result.update(_describe_visual_only_frame_search(cut_row, side_row))
     sides = side_row.get("transitions")
     if not isinstance(sides, list):
         result["two_sided_status"] = "INVALID_SIDE_SCHEMA"
@@ -447,6 +559,18 @@ def aggregate_real_cut_observations(rows: dict[str, dict]) -> dict:
         ),
         "source_no_isolated_change_observed": sum(
             x.get("source_visual_no_isolated_change_observed") or 0
+            for x in rows.values()
+        ),
+        "clips_with_measured_visual_only_frame_search": sum(
+            x.get("visual_only_source_skip_hypotheses") is not None
+            for x in rows.values()
+        ),
+        "visual_only_source_skip_hypotheses": sum(
+            x.get("visual_only_source_skip_hypotheses") or 0
+            for x in rows.values()
+        ),
+        "visual_only_source_group_switch_hypotheses": sum(
+            x.get("visual_only_source_group_switch_hypotheses") or 0
             for x in rows.values()
         ),
         "human_editor_accuracy_available": False,

@@ -251,7 +251,7 @@ def test_stale_source_visual_side_fingerprint_blocks_partial_map(tmp_path):
     path = prepared / "cut_sides" / "holdout-cut-side-evidence.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     record = next(iter(payload["records"].values()))
-    record["source_visual_method_version"] = "obsolete-source-visual-method"
+    record["visual_only_frame_search_version"] = "obsolete-visual-search-method"
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     class NoNetwork:

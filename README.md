@@ -210,6 +210,29 @@ Previously measured v1 cut/source-side/time-map cache chains do not
 qualify as v2 measurements; rerun the already documented bounded holdout
 command to recompute them with current provenance guards.
 
+The same guarded local cut-side stage now also runs an
+**audio-offset-independent visual frame-sequence search**. It reuses the
+already hash-verified source and finished frame manifests, compares
+CPU ORB/RANSAC image geometry across up to five reserved original
+video sections, and requires **two distinct, time-advancing images
+on each side** of an independently detected output change. It also
+rejects spatially repeated/ambiguous original matches and static
+frame hashes. If visual sequences appear to skip original source
+content, continue directly, or switch source sections, these remain
+`VISUAL_ONLY_..._HYPOTHESIS` and not confirmed human cuts.
+
+Search is capped at three output-only changes and 2,400 image
+comparisons, with explicit UNKNOWN for sparse sampling, repeated
+scenes, exceeded budgets or decoding failure. It uses **no audio
+offset to rank frame matches**, but the *existing guarded source
+section inventory* still requires prior audio reservation; it
+cannot identify an entirely unknown livestream from scratch.
+No extra original-video downloads, prompts, labels, GPU, paid
+provider or Docker. The sample-image timestamps remain re-encoded,
+local clocks; exact source/finished frame PTS and gold do not emerge.
+The saved reference-free audit includes image-only hypothesis counts
+but does not grant `ready=true`.
+
 The existing ninth-stage local media audit now also performs a **bounded
 source-side visual crosscheck** for output-only changes that did not overlap
 acoustic cut candidates. It uses only already verified original-video

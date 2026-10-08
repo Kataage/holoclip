@@ -21,6 +21,7 @@ from holoclip.providers.cost import CostPolicyError
 from holoclip.providers.source.yt_dlp import choose_source_candidate
 from holoclip.video_measurement import checksum_file
 from holoclip.visual_source_crosscheck import VERSION as SOURCE_VISUAL_VERSION
+from holoclip.visual_only_frame_search import VERSION as VISUAL_SEARCH_VERSION
 
 VERSION = "reserved-partial-output-source-map-v1"
 
@@ -153,6 +154,7 @@ def build_reserved_partial_maps(
                 or cut["refinement"].get("version") != REFINEMENT_VERSION
                 or side.get("status") != "MEASURED_UNREVIEWED_CUT_SIDE_EVIDENCE"
                 or side.get("source_visual_method_version") != SOURCE_VISUAL_VERSION
+                or side.get("visual_only_frame_search_version") != VISUAL_SEARCH_VERSION
                 or not isinstance(sections, list) or not 1 <= len(sections) <= 5
                 or not (len(sections) == len(section_clocks)
                         == len(group_links) == len(section_shas))
@@ -213,6 +215,7 @@ def build_reserved_partial_maps(
                 "clock_report": clock, "frame_links": linked,
                 "cut_report": cut,
                 "source_visual_method": SOURCE_VISUAL_VERSION,
+                "visual_only_sequence_method": VISUAL_SEARCH_VERSION,
                 "full_audio_sha": a["source_media_sha256"],
             })
             if side_identity != side.get("fingerprint"):

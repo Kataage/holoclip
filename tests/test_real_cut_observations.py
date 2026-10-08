@@ -499,3 +499,80 @@ def test_pinned_source_visual_hypothesis_reported_without_editor_gold():
     side["independent_visual_source_checks"] = forged
     with pytest.raises(ValueError):
         describe_real_cut_observations(cut, side)
+
+
+def test_visual_only_sequence_diagnostic_is_reference_free_and_provenance_checked():
+    import pytest
+    cut = cut_row()
+    cut["visual_survey_method_version"] = "bounded-output-only-visual-survey-v1"
+    cut["independent_output_visual_survey"] = {
+        "version": "bounded-output-only-visual-survey-v1",
+        "status": "MEASURED_UNREVIEWED_OUTPUT_ONLY_VISUAL_SIGNALS",
+        "source": "FINISHED_OUTPUT_ONLY_UNREVIEWED",
+        "duration_seconds": 45., "sampled_coverage_seconds": 6.,
+        "unsampled_duration_seconds": 39.,
+        "sampled_windows": [[3., 9.]],
+        "observed_visual_peaks": 1,
+        "without_acoustic_candidate": 1,
+        "observed_peaks": [{
+            "time_bracket_seconds": [4.8, 5.2],
+            "relation": "NO_ACOUSTIC_CANDIDATE_AT_SAMPLED_TIME",
+            "verified_edit_cut": False,
+            "source_scene_change_ruled_out": False,
+        }],
+        "verified_edit_cut": False, "reviewed_gold_available": False,
+        "frame_accurate_cuts_verified": False, "qualification_allowed": False,
+    }
+    side = side_row()
+    side["visual_only_frame_search_version"] = (
+        "bounded-visual-only-frame-search-v1"
+    )
+    seq = {
+        "version": "bounded-visual-only-frame-search-v1",
+        "status": "MEASURED_UNREVIEWED_VISUAL_SEQUENCE_SEARCH",
+        "peak_observations": [{
+            "output_interval": [4.8, 5.2],
+            "status": "VISUAL_ONLY_SOURCE_SKIP_HYPOTHESIS",
+            "sides": [],
+            "editorial_gold": False, "verified_edit_cut": False,
+        }],
+        "tested_image_comparisons": 16,
+        "tested_source_frame_samples": 4,
+        "tested_finished_frame_samples": 4,
+        "visual_source_skip_hypotheses": 1,
+        "visual_source_continuity_hypotheses": 0,
+        "visual_source_group_switch_hypotheses": 0,
+        "unknown_visual_correspondences": 0,
+        "verified_edit_cut": False,
+        "source_scene_change_ruled_out": False,
+        "frame_accurate_cuts_verified": False,
+        "original_video_absolute_pts_verified": False,
+        "dense_output_source_map_verified": False,
+        "reviewed_gold_available": False,
+        "qualification_allowed": False,
+    }
+    side["visual_only_frame_search"] = seq
+    obs = describe_real_cut_observations(cut, side)
+    assert obs["visual_only_source_skip_hypotheses"] == 1
+    assert obs["visual_only_unknown_correspondences"] == 0
+    assert obs["editor_cut_recall"] is None
+    assert aggregate_real_cut_observations({"clip": obs})[
+        "visual_only_source_skip_hypotheses"
+    ] == 1
+    from holoclip.real_cut_triage import _checked_row, _triage_codes
+    checked = _checked_row("youtube:aaaaaaaaaaa", obs)
+    assert "VISUAL_ONLY_SOURCE_SKIP_HYPOTHESIS_NOT_GOLD" in _triage_codes(checked)
+
+    forged = dict(seq)
+    forged["verified_edit_cut"] = True
+    side["visual_only_frame_search"] = forged
+    with pytest.raises(ValueError):
+        describe_real_cut_observations(cut, side)
+    side["visual_only_frame_search"] = {
+        **seq, "visual_source_skip_hypotheses": 2,
+    }
+    with pytest.raises(ValueError):
+        describe_real_cut_observations(cut, side)
+    bad_count = {**obs, "visual_only_source_skip_hypotheses": 2}
+    with pytest.raises(ValueError):
+        _checked_row("youtube:aaaaaaaaaaa", bad_count)

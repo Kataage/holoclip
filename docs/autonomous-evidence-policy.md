@@ -1167,6 +1167,42 @@ source without isolated change; they cannot certify actual Hololive
 editor gold, true cut precision/recall or production readiness.
 `ready=false` and all qualification gates remain unchanged.
 
+## Increment 28: bounded visual-only source frame-sequence search (#144)
+
+The protected two-sided cut-evidence stage now performs a second
+independent analysis of output-only visual changes, using **only
+already-download-bounded, checksum-verified measured frame manifests**.
+It does not need a local audio offset or a calibrated AV origin to
+rank source image matches *within those reserved sections*. The
+original source section acquisition still depends on upstream
+strongly matched audio; identifying totally unreserved source media
+visually remains future work.
+
+Per peak (maximum three peaks, five source sections, 20 sampled source
+frames per section and 2 nearby output frames on each side), CPU
+ORB/affine matching searches the permitted original sample images.
+Total comparisons are capped at 2,400 and exceeded budgets fail
+closed before feature extraction. A tentative association requires
+two independent advancing original/output frames per side,
+distinct frame bytes, sufficiently coherent sample-time progression
+and rejection of repeated source imagery beyond one second.
+Sparse coverage, missing transition-adjacent samples or competing
+equally plausible original times yield UNKNOWN.
+
+A visually supported temporal jump, continuity or source-section
+switch is recorded as a **hypothesis** only. Group-local original
+timestamps are from re-encoded bounded sections, not verified
+livestream-native timestamps; two-sided sparse correspondences
+cannot prove an edit cut was made or distinguish source-camera
+cuts from edited overlays and gameplay events. The source-side
+pipeline and the downstream partial-map stage both fingerprint
+`bounded-visual-only-frame-search-v1` and reject stale evidence;
+the reference-free diagnostic and offline triage recompute
+per-peak counts with strict no-promotion guards. No source/finished
+dense time map, reviewer gold, precision/recall, provider
+qualification, rights override or production availability changes.
+Production remains `ready=false`.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
