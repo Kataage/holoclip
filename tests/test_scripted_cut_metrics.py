@@ -18,7 +18,7 @@ def _cut(lo, hi, status="CUT_INTERVAL_CANDIDATE"):
 def _reference(cuts=None):
     return {
         "version": REFERENCE_VERSION, "reference_kind": "SCRIPTED_FFMPEG_ONLY",
-        "clip_id": "aaaaaaaaaaa", "duration_seconds": 48.,
+        "clip_id": "youtube:aaaaaaaaaaa", "duration_seconds": 48.,
         "cut_seconds": cuts if cuts is not None else [16., 32.],
     }
 
@@ -30,8 +30,8 @@ def _report(transitions):
         "benchmark_held_out": False, "event_split_verified": False,
         "frame_accurate_cuts_verified": False,
         "records": {
-            "aaaaaaaaaaa": {
-                "clip_id": "aaaaaaaaaaa", "status": "MEASURED_UNREVIEWED_CUT_BRACKETS",
+            "youtube:aaaaaaaaaaa": {
+                "clip_id": "youtube:aaaaaaaaaaa", "status": "MEASURED_UNREVIEWED_CUT_BRACKETS",
                 "frame_accurate_cuts_verified": False,
                 "refinement": {
                     "version": "bounded-acoustic-cut-brackets-v1",
@@ -158,13 +158,13 @@ def test_tampered_or_unreviewed_foreign_report_cannot_score():
     for mutate in (
         lambda ref, doc: ref.update({"reference_kind": "HUMAN_REVIEWED_GOLD"}),
         lambda ref, doc: doc.update({"qualification_allowed": True}),
-        lambda ref, doc: doc["records"]["aaaaaaaaaaa"].update({
+        lambda ref, doc: doc["records"]["youtube:aaaaaaaaaaa"].update({
             "frame_accurate_cuts_verified": True,
         }),
-        lambda ref, doc: doc["records"]["aaaaaaaaaaa"].update({
+        lambda ref, doc: doc["records"]["youtube:aaaaaaaaaaa"].update({
             "status": "RETRYABLE_FAILURE",
         }),
-        lambda ref, doc: doc["records"]["aaaaaaaaaaa"]["refinement"].update({
+        lambda ref, doc: doc["records"]["youtube:aaaaaaaaaaa"]["refinement"].update({
             "version": "unsupported-heuristic",
         }),
         lambda ref, doc: ref.update({"clip_id": "wrong-id"}),
