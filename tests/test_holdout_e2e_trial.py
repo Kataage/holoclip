@@ -4,7 +4,8 @@ import json
 
 from holoclip.examples import human_clip_identity
 from holoclip.holdout_e2e_trial import (
-    STAGES, _kwargs, run_reserved_holdout_e2e, summarize_observed_evidence,
+    STAGES, _kwargs, run_all_reserved_holdout_batches, run_reserved_holdout_e2e,
+    summarize_observed_evidence,
 )
 from holoclip.holdout_preparation import _candidates
 from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
@@ -402,3 +403,130 @@ def test_postflight_state_change_does_not_claim_e2e_completed(tmp_path):
     assert report["status"] == "BLOCKED_CHANGED_RESERVATION_STATE"
     assert report["blocked_stage"] == "postflight"
     assert not report["real_media_run_completed"]
+
+
+def test_all_batches_processes_every_reserved_clip_exactly_once(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=5)
+    original = state.read_bytes()
+    calls = []
+    report = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=2, max_batches=3, runners=make_runners(root, calls=calls),
+    )
+    assert report["status"] == "SIMULATED_ALL_BATCHES_COMPLETE"
+    assert report["real_media_run_completed"] is False
+    assert report["ready"] is False
+    assert report["qualification_allowed"] is False
+    assert report["reserved_clips"] == 5
+    assert report["processed_clips"] == 5
+    assert report["remaining_clips"] == 0
+    assert [len(b["selected_clip_ids"]) for b in report["batches"]] == [2, 2, 1]
+    assert len(set(report["processed_clip_ids"])) == 5
+    assert len(calls) == 27
+    totals = report["observed_totals"]
+    assert totals["clips_with_unique_original_audio_matches"] == 5
+    assert totals["sampled_source_finished_frame_links"] == 10
+    assert totals["multimodal_cut_candidates"] == 5
+    assert totals["local_time_map_candidate_segments"] == 5
+    assert totals["candidate_coverage_seconds"] == 10.
+    assert report["editor_cut_precision"] is None
+    assert report["editor_cut_recall"] is None
+    assert report["native_timestamp_error_seconds"] is None
+    assert report["event_holdout_accuracy"] is None
+    assert state.read_bytes() == original
+    assert not (root / ".holdout-e2e.lock").exists()
+    saved = json.loads((root / "holdout-e2e-all-batches.json").read_text(encoding="utf-8"))
+    assert saved["batches"] == report["batches"]
+
+
+def test_all_batches_limit_stops_cleanly_and_reports_remaining(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=5)
+    report = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=2, max_batches=2, runners=make_runners(root),
+    )
+    assert report["status"] == "BOUNDED_BATCH_LIMIT_REACHED"
+    assert report["processed_clips"] == 4
+    assert report["remaining_clips"] == 1
+    assert len(report["batches"]) == 2
+    assert report["real_media_run_completed"] is False
+    assert report["qualification_allowed"] is False
+
+
+def test_all_batches_stops_on_failure_without_attempting_next_batch(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=4)
+    calls = []
+    report = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=2, max_batches=4,
+        runners=make_runners(root, calls=calls, override={
+            "original_audio": "INSUFFICIENT_UNIQUE_ANCHORS",
+        }),
+    )
+    assert report["status"] == "BLOCKED_BATCH"
+    assert report["failed_batch"] == 1
+    assert report["blocked_stage"] == "original_audio"
+    assert report["blocked_batch_status"] == "BLOCKED_UPSTREAM_STAGE"
+    assert len(report["batches"]) == 1
+    assert report["batches"][0]["completed_stage_count"] == 2
+    assert report["processed_clips"] == 0
+    assert report["remaining_clips"] == 4
+    assert calls == ["finished_video", "original_audio"]
+    assert report["real_media_run_completed"] is False
+    assert not (root / ".holdout-e2e.lock").exists()
+
+
+def test_all_batches_respects_other_run_lock_without_overwriting_audit(tmp_path):
+    store, state, root = files(tmp_path)
+    root.mkdir(parents=True, exist_ok=True)
+    lock = root / ".holdout-e2e.lock"
+    lock.write_text("busy", encoding="utf-8")
+    audit = root / "holdout-e2e-all-batches.json"
+    audit.write_text('{"status": "previous-result"}', encoding="utf-8")
+    report = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=2, runners=make_runners(root),
+    )
+    assert report["status"] == "BLOCKED_CONCURRENT_RUN"
+    assert lock.read_text(encoding="utf-8") == "busy"
+    assert json.loads(audit.read_text(encoding="utf-8"))["status"] == "previous-result"
+
+
+def test_all_batches_does_not_claim_success_without_source_reservations(tmp_path):
+    store, state, root = files(tmp_path)
+    state.unlink()
+    report = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=2, runners=make_runners(root),
+    )
+    assert report["status"] == "BLOCKED_MISSING_RESERVATION_STATE"
+    assert report["real_media_run_completed"] is False
+    assert report["batches"] == []
+
+
+def test_all_batches_rechecks_original_corpus_after_each_batch(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=3)
+    calls = []
+    runners = make_runners(root, calls=calls)
+    original = runners["partial_time_map"]
+    def mutate_state(provider, **kwargs):
+        outcome = original(provider, **kwargs)
+        new = CorpusGrowthState.model_validate_json(state.read_text(encoding="utf-8"))
+        new.cursors["external"] = 17
+        state.write_text(new.model_dump_json(), encoding="utf-8")
+        return outcome
+    runners["partial_time_map"] = mutate_state
+    report = run_all_reserved_holdout_batches(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, max_batches=3, runners=runners,
+    )
+    assert report["status"] == "BLOCKED_BATCH"
+    assert report["failed_batch"] == 1
+    assert report["blocked_batch_status"] == "BLOCKED_CHANGED_RESERVATION_STATE"
+    assert report["processed_clips"] == 0
+    assert len(calls) == 9
+    assert not (root / ".holdout-e2e.lock").exists()
