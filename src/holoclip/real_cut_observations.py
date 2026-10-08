@@ -94,6 +94,19 @@ def _describe_independent_visual_survey(row: dict) -> dict:
                           for t in w)
                    or not 0 <= w[0] < w[1] <= duration + .05 for w in windows)):
         raise ValueError("Invalid independent visual survey coverage")
+    # The independently recorded coverage must agree with the windows
+    # actually decoded; planned/unopened windows cannot imply clean video.
+    measured_coverage = 0.
+    prior_right = 0.
+    prior_start = -1.
+    for left, right in windows:
+        if left < prior_start:
+            raise ValueError("Unsorted output-only sampled windows")
+        measured_coverage += max(0., right - max(left, prior_right))
+        prior_right = max(prior_right, right)
+        prior_start = left
+    if abs(measured_coverage - coverage) > .06:
+        raise ValueError("Visual survey coverage exceeds actually scanned windows")
     result["output_only_visual_status"] = status
     result["output_only_visual_coverage_seconds"] = coverage
     count = survey.get("observed_visual_peaks")
@@ -111,7 +124,15 @@ def _describe_independent_visual_survey(row: dict) -> dict:
                        or p.get("relation") not in {
                            "OVERLAPS_ACOUSTIC_CANDIDATE",
                            "NO_ACOUSTIC_CANDIDATE_AT_SAMPLED_TIME",
-                       } for p in peaks)):
+                       }
+                       or not isinstance(p.get("time_bracket_seconds"), list)
+                       or len(p["time_bracket_seconds"]) != 2
+                       or any(type(t) not in (int, float) or not math.isfinite(t)
+                              for t in p["time_bracket_seconds"])
+                       or not any(w[0] - .05 <= p["time_bracket_seconds"][0]
+                                  < p["time_bracket_seconds"][1] <= w[1] + .05
+                                  for w in windows)
+                       for p in peaks)):
             raise ValueError("Forged or inconsistent output-only visual counts")
         result["output_only_visual_change_count"] = count
         result["output_only_visual_without_acoustic_count"] = unmatched
