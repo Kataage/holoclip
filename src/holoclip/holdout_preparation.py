@@ -61,6 +61,15 @@ def _candidates(state: CorpusGrowthState):
     return selected
 
 
+def prioritize_unprocessed(items, records: dict[str, dict], completed: set[str]):
+    """Make progress without endlessly spending a bounded cycle on cached clips."""
+    def priority(pair):
+        index, item = pair
+        status = records.get(human_clip_identity(item.clip_url), {}).get("status")
+        return (0 if status is None else 2 if status in completed else 1, index)
+    return [item for _, item in sorted(enumerate(items), key=priority)]
+
+
 def prepare_reserved_holdouts(
     provider,
     *, store: Path, state_path: Path, output: Path,
@@ -103,7 +112,9 @@ def prepare_reserved_holdouts(
     attempted = 0
     # Eligible reservations only; previously failed/quarantined items can be rechecked
     # without editing the discovery queue or manually preparing clip URLs.
-    for item in _candidates(state):
+    for item in prioritize_unprocessed(
+        _candidates(state), records, {"PREPARED_UNREVIEWED"}
+    ):
         if attempted >= max_clips:
             break
         clip_id = human_clip_identity(item.clip_url)
