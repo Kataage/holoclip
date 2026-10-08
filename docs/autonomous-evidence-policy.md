@@ -1239,7 +1239,9 @@ During ordinary corpus-growth cycles a single pending item (configurable
 CLI cap 1..2) is checked without manual URLs or separate confirmation.
 At most two shortlisted source candidates are tried per item, each
 with three 12-second original-video windows (beginning, middle and end),
-plus one 12-second centered finished clip. A persisted per-source
+plus one 12-second centered finished clip. When more than two original
+candidates are shortlisted, a persisted round-robin candidate cursor
+moves through all entries across autonomous cycles. A persisted per-source
 breadth-first cursor rotates to previously unsampled 12-second locations
 on subsequent cycles. A completed coarse scan remains UNKNOWN, never
 proof of source absence. Before each bounded fetch:
