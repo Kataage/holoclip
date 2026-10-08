@@ -103,6 +103,32 @@ def _checked_row(clip_id: str, value: object) -> dict:
         "UNKNOWN_SOURCE_VISUAL_PROBE_BUDGET",
     } or any(n is not None for n in source_cols)):
         raise ValueError("Unverified source-side visual evidence was counted")
+    search_status = value.get("visual_only_search_status",
+                              "NOT_MEASURED_OR_UNVERIFIED")
+    search_keys = (
+        "visual_only_source_skip_hypotheses",
+        "visual_only_source_continuity_hypotheses",
+        "visual_only_source_group_switch_hypotheses",
+        "visual_only_unknown_correspondences",
+    )
+    search_counts = [value.get(k) for k in search_keys]
+    if search_status == "MEASURED_UNREVIEWED_VISUAL_SEQUENCE_SEARCH":
+        if (any(not _count(n, ceiling=3) for n in search_counts)
+                or sum(search_counts) != (
+                    value.get("output_only_visual_without_acoustic_count")
+                )):
+            raise ValueError("Visual-only search counts contradict output survey")
+    elif (search_status not in {
+        "NOT_MEASURED_OR_UNVERIFIED",
+        "UNKNOWN_NO_MEASURED_OUTPUT_SURVEY",
+        "UNKNOWN_VISUAL_SEARCH_PEAK_BUDGET",
+        "NO_UNMATCHED_OUTPUT_VISUAL_PEAKS",
+        "UNKNOWN_NO_PINNED_SOURCE_SECTIONS",
+        "UNKNOWN_VISUAL_FRAME_COVERAGE",
+        "UNKNOWN_VISUAL_SEARCH_COMPARISON_BUDGET",
+        "UNKNOWN_VISUAL_IMAGE_DECODE",
+    } or any(v is not None for v in search_counts)):
+        raise ValueError("Unverified audio-independent search was counted")
     if value["status"] != "UNREVIEWED_REFERENCE_FREE_OBSERVATIONS":
         if (any(value.get(field) is not None for field in (
                 *_NONNEGATIVE, "candidate_median_width_seconds",
@@ -159,6 +185,10 @@ def _triage_codes(row: dict) -> list[str]:
         if (row.get("output_only_visual_without_acoustic_count") or 0) > 0
         else []
     )
+    if (row.get("visual_only_source_skip_hypotheses") or 0) > 0:
+        visual_only.append("VISUAL_ONLY_SOURCE_SKIP_HYPOTHESIS_NOT_GOLD")
+    if (row.get("visual_only_source_group_switch_hypotheses") or 0) > 0:
+        visual_only.append("VISUAL_ONLY_SOURCE_GROUP_SWITCH_HYPOTHESIS_NOT_GOLD")
     if row["status"] == "UNKNOWN_ACOUSTIC_SUPPORT":
         return ["ACOUSTIC_SUPPORT_UNKNOWN", *visual_only]
     if row["status"] != "UNREVIEWED_REFERENCE_FREE_OBSERVATIONS":
