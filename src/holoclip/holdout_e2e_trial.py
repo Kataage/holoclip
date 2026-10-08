@@ -264,7 +264,7 @@ def run_reserved_holdout_e2e(
             step = {"stage": stage.name, "counts": counts, "report": stage.report}
             output["stages"].append(step)
             output["observations"] = metrics
-            if counts.get(stage.success, 0) == 0 or sum(counts.values()) != len(ids):
+            if counts.get(stage.success, 0) != len(ids) or sum(counts.values()) != len(ids):
                 output["status"] = "BLOCKED_UPSTREAM_STAGE"
                 output["blocked_stage"] = stage.name
                 save()
