@@ -21,6 +21,7 @@ from holoclip.examples import (
 )
 from holoclip.providers.source.base import SourceMetadata
 from holoclip.providers.source.yt_dlp import choose_source_candidate
+from holoclip.source_candidate_scout import scout_unresolved_public_source
 
 
 class CorpusGrowthItem(BaseModel):
@@ -28,6 +29,7 @@ class CorpusGrowthItem(BaseModel):
     source_url: str | None = None
     source_stream_id: str | None = None
     source_channel: str | None = None
+    source_scout: dict | None = None
     clip_channel: str | None = None
     query: str
     status: str = "discovered"
@@ -163,10 +165,26 @@ async def grow_corpus(
             if clip_policy.decision is not PolicyDecision.ALLOW:
                 item.status, item.reason = "policy_review", "clip metadata policy is not allow"
                 continue
-            chosen = choose_source_candidate(provider.source_candidates(clip))
+            candidates = provider.source_candidates(clip)
+            chosen = choose_source_candidate(candidates)
             if chosen is None:
-                item.status, item.reason = "review", "source resolution ambiguous or absent"
+                item.source_scout = scout_unresolved_public_source(
+                    provider, clip, explicit_candidates=candidates,
+                    policy_rules=policy_rules,
+                )
+                if item.source_scout["candidate_sources"]:
+                    # Reserved for a future autonomous visual-verification
+                    # worker. Never queue for learning or holdout directly.
+                    item.status, item.reason = (
+                        "source_visual_pending",
+                        "unverified original candidate images require cross-check",
+                    )
+                else:
+                    item.status, item.reason = (
+                        "review", "no independently verified source discovered",
+                    )
                 continue
+            item.source_scout = None
             source = provider.probe(chosen.url)
             item.source_url, item.source_stream_id = chosen.url, source.external_id
             item.source_channel, item.clip_channel = (

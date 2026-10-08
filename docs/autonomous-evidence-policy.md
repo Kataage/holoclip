@@ -1203,6 +1203,35 @@ dense time map, reviewer gold, precision/recall, provider
 qualification, rights override or production availability changes.
 Production remains `ready=false`.
 
+## Increment 29: unattended candidate discovery for missing originals (#145)
+
+A critical blocker before local visual source-frame search is often the
+absence of a uniquely identified original livestream URL. The
+corpus-growth metadata resolver now records a capped, automatically
+discovered *unverified source shortlist* instead of discarding
+potential source leads or guessing a source identity. When a clip
+description supplies multiple ambiguous explicit source URLs, the
+scout probes those candidates first; when there is no source link, it
+uses at most two bounded title-derived public video search queries.
+At most six metadata calls are made, filtering out the same clip,
+unavailable/live material, sources shorter than a plausible full
+original and candidates not metadata-policy-allowed. The returned
+shortlist is durable and includes per-candidate origin and
+`visual_correspondence=NOT_MEASURED`.
+
+This does **not** turn searchable metadata into verified video
+correspondence. Even a single remaining candidate is only a
+proposal, not source gold. The corpus item becomes `source_visual_pending` when a nonempty candidate
+shortlist exists (otherwise `review`), while its canonical `source_url`
+and `source_stream_id` remain null,
+and it is never added to training or the heldout reservation. The
+scout is a low-cost preparatory step for future *visual confirmation
+of candidate originals* and does not bypass preexisting rights,
+split, audio-anchor, frame-PTS or editorial quality gates.
+All `visual_correspondence_tested`, `source_identity_verified`,
+`reviewed_gold_available`, `event_split_verified` and
+`qualification_allowed` flags are false; `ready=false`.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
