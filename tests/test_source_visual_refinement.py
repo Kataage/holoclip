@@ -11,7 +11,7 @@ from holoclip.source_visual_refinement import (
     VERSION, adaptive_refinement_starts, make_weak_hint,
 )
 from test_source_candidate_visual import (
-    A, CLIP, Provider, frame, make_state, measured, verify,
+    A, CLIP, Provider, frame, make_state, verify,
 )
 from types import SimpleNamespace
 
