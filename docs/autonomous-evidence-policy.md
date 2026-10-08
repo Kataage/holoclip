@@ -294,6 +294,54 @@ piecewise temporal mapping around detected discontinuities, and begin stable
 subtitle/overlay detection. Fixture-only green CI does not establish that
 those downstream semantics are accurate.
 
+## Increment 6: dense audio transition brackets with visual provenance (#122)
+
+`examples-refine-cut-candidates` uses the original full-stream **audio
+fingerprint** and finished clip audio already downloaded for #119–#121.
+It runs an additional fine-grained, bounded matching pass inside previously
+verified coarse source/finished timing groups (default every 1 second, using
+2-second templates and a ±3-second local search). Strong spectral agreement
+and non-ambiguous competing offsets are required before recording measured
+correspondence points.
+
+When adjacent uniquely supported audio points imply different original-source
+offsets, it records **a candidate transition interval**, bounded by the
+last reliable old-offset sample and first reliable new-offset sample, with
+explicit 250ms sampling uncertainty. Intervals wider than six seconds are
+classified `UNKNOWN_WIDE_GAP`, not a confidently localized cut. Conflicting
+overlapping anchors are `UNKNOWN_CONTRADICTORY_AUDIO`. Missing, silent,
+processed, or ambiguous audio stays unknown. Exhausting the fixed 480-point
+budget returns **no partial cut conclusions**.
+
+The new stage also reads previously measured source/finished frame pairs and
+summarizes visual-correspondence coverage, but **never claims visual evidence
+confirms a cut** without matching absolute PTS and frame-neighborhood
+measurements. The input guard rechecks source+clip public/ended access, current
+LEARN policies including range-specific restrictions, training/holdout split,
+reserved original source identity, and verified audio/video/frame bytes.
+Resuming cached results requires an exact fingerprint of all upstream media,
+frame manifests, acoustic anchors and visual diagnostics. There are no cloud
+API calls, new user-supplied timestamps, human labels, or new videos to fetch.
+
+```powershell
+uv run --extra media holoclip examples-refine-cut-candidates
+```
+
+The output at
+`data/provider-benchmark/holdout/cut_brackets/holdout-cut-brackets.json`
+remains strictly diagnostic. `qualification_allowed=false`,
+`benchmark_held_out=false`, `frame_accurate_cuts_verified=false`,
+`event_split_verified=false`, and `reviewed_gold_available=false`.
+
+**Limitations:** a detected discontinuity in an audio offset is not itself
+proof of an edit frame; crossfades, silences, replacement music, repeated
+samples and transcoding may move or hide acoustic evidence. Coarse audio
+alignment is only a hypothesis about original audio, not proof of source
+video absolute seek time. This is not a complete continuous
+`OutputSourceTimeMap`. Visual temporal corroboration, actual Japanese
+video calibration, speed/freeze handling and independently reviewed gold
+are required before editing readiness or provider qualification.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
