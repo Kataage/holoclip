@@ -178,3 +178,46 @@ def test_invalid_survey_or_promoted_peak_not_accepted():
     unknown = run(sections, loader, compare, input_survey=absent)
     assert unknown["status"] == "UNKNOWN_NO_MEASURED_OUTPUT_SURVEY"
     assert unknown["visual_source_skip_hypotheses"] == 0
+
+
+def test_actual_orb_image_correspondence_across_muted_visual_edit(tmp_path):
+    """No acoustic offset supplied; actual image descriptors find source islands."""
+    import hashlib
+    import shutil
+    import cv2
+    import numpy as np
+
+    source_times = [10., 11., 15., 16.]
+    output_times = [3., 4., 6., 7.]
+    originals, finished = [], []
+    for i, (s_time, f_time) in enumerate(zip(source_times, output_times)):
+        image = np.random.default_rng(230 + i).integers(
+            0, 256, (360, 640), dtype=np.uint8,
+        )
+        spath = tmp_path / f"src{i}.png"
+        opath = tmp_path / f"clip{i}.png"
+        assert cv2.imwrite(str(spath), image)
+        shutil.copyfile(spath, opath)
+        originals.append(SimpleNamespace(
+            id=f"source-{i}", locator=str(spath), pts_seconds=s_time,
+            checksum=hashlib.sha256(spath.read_bytes()).hexdigest(),
+        ))
+        finished.append(SimpleNamespace(
+            id=f"output-{i}", locator=str(opath), pts_seconds=f_time,
+            checksum=hashlib.sha256(opath.read_bytes()).hexdigest(),
+        ))
+    windows = {
+        "source": SimpleNamespace(frames=originals, source_start=0.),
+        "finished": SimpleNamespace(frames=finished, source_start=0.),
+    }
+    result = search_source_visual_sequences(
+        survey(), [{
+            "group": 0, "source_measurement": "source",
+            "finished_measurement": "finished",
+        }], load_window=windows.__getitem__,
+    )
+    assert result["visual_source_skip_hypotheses"] == 1
+    assert result["peak_observations"][0]["status"] == (
+        "VISUAL_ONLY_SOURCE_SKIP_HYPOTHESIS"
+    )
+    assert result["verified_edit_cut"] is False
