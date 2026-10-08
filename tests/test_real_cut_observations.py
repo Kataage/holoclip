@@ -1,0 +1,211 @@
+"""Unreviewed cut statistics must never masquerade as editor precision/recall."""
+import json
+
+import pytest
+
+from holoclip.holdout_e2e_trial import summarize_observed_evidence
+from holoclip.real_cut_observations import (
+    VERSION, aggregate_real_cut_observations, describe_real_cut_observations,
+)
+
+
+def cut_row(*, transitions=None, visual=None):
+    changes = transitions if transitions is not None else [
+        {"status": "CUT_INTERVAL_CANDIDATE", "interval": [15., 17.]},
+        {"status": "UNKNOWN_WIDE_GAP", "interval": [20., 30.]},
+        {"status": "CUT_INTERVAL_CANDIDATE", "interval": [30., 40.]},
+    ]
+    if visual is None:
+        visual = [
+            {
+                "acoustic_interval": [15., 17.],
+                "relation": "CORROBORATING_OUTPUT_CHANGE",
+                "verified_edit_cut": False, "native_frame_pts_verified": False,
+            },
+            {
+                "acoustic_interval": [30., 40.],
+                "relation": "UNRESOLVED_VISUAL_EVIDENCE",
+                "verified_edit_cut": False, "native_frame_pts_verified": False,
+            },
+        ]
+    return {
+        "status": "MEASURED_UNREVIEWED_CUT_BRACKETS",
+        "clip_id": "youtube:aaaaaaaaaaa", "source_stream_id": "source_A",
+        "audio_source_sha256": "a" * 64,
+        "finished_media_sha256": "b" * 64,
+        "qualification_allowed": False, "reviewed_gold_available": False,
+        "event_split_verified": False, "frame_accurate_cuts_verified": False,
+        "refinement": {
+            "version": "bounded-acoustic-cut-brackets-v1",
+            "status": "AUDIO_SUPPORTED_INTERVALS", "transitions": changes,
+        },
+        "output_visual_cut_evidence": visual,
+    }
+
+
+def side_row():
+    return {
+        "status": "MEASURED_UNREVIEWED_CUT_SIDE_EVIDENCE",
+        "clip_id": "youtube:aaaaaaaaaaa", "source_stream_id": "source_A",
+        "audio_source_sha256": "a" * 64,
+        "finished_media_sha256": "b" * 64,
+        "qualification_allowed": False, "reviewed_gold_available": False,
+        "event_split_verified": False, "frame_accurate_cuts_verified": False,
+        "transitions": [
+            {
+                "acoustic_interval": [15., 17.], "editorial_gold": False,
+                "candidate": {"status": "MULTIMODAL_EDIT_JUMP_CANDIDATE",
+                              "verified_edit_cut": False},
+            },
+            {
+                "acoustic_interval": [30., 40.], "editorial_gold": False,
+                "candidate": {"status": "UNKNOWN_SOURCE_CONTINUITY",
+                              "verified_edit_cut": False},
+            },
+        ],
+    }
+
+
+def test_real_cut_descriptive_measurements_are_not_human_gold():
+    result = describe_real_cut_observations(cut_row(), side_row())
+    assert result["version"] == VERSION
+    assert result["status"] == "UNREVIEWED_REFERENCE_FREE_OBSERVATIONS"
+    assert result["cut_candidate_count"] == 2
+    assert result["unknown_audio_transition_count"] == 1
+    assert result["unknown_audio_transition_statuses"] == {"UNKNOWN_WIDE_GAP": 1}
+    assert result["overbroad_candidate_count"] == 1
+    assert result["candidate_median_width_seconds"] == 6.
+    assert result["candidate_p90_width_seconds"] == 10.
+    assert result["output_visual_corroborating_candidates"] == 1
+    assert result["two_sided_multimodal_candidates"] == 1
+    assert result["two_sided_unresolved_candidates"] == 1
+    assert result["two_sided_status"] == "MEASURED_UNREVIEWED"
+    for key in ("ready", "qualification_allowed", "reviewed_gold_available",
+                "frame_accurate_cuts_verified", "event_split_verified"):
+        assert result[key] is False
+    assert result["editor_cut_precision"] is None
+    assert result["editor_cut_recall"] is None
+
+
+def test_missing_side_is_unknown_not_zero_and_aggregation_retains_null():
+    r = describe_real_cut_observations(cut_row())
+    assert r["two_sided_multimodal_candidates"] is None
+    summary = aggregate_real_cut_observations({"a": r})
+    assert summary["cut_candidates"] == 2
+    assert summary["overbroad_candidates"] == 1
+    assert summary["two_sided_multimodal_candidates"] is None
+    assert summary["editor_cut_precision"] is None
+
+
+@pytest.mark.parametrize("field,value", [
+    ("clip_id", "youtube:different"),
+    ("source_stream_id", "different"),
+    ("audio_source_sha256", "c" * 64),
+    ("finished_media_sha256", "d" * 64),
+    ("reviewed_gold_available", True),
+])
+def test_foreign_or_promoted_side_never_corrobates(field, value):
+    side = side_row()
+    side[field] = value
+    result = describe_real_cut_observations(cut_row(), side)
+    assert result["two_sided_status"] == "UNVERIFIED_CROSS_STAGE_PROVENANCE"
+    assert result["two_sided_multimodal_candidates"] is None
+
+
+def test_reordered_or_promoted_side_is_not_verified():
+    side = side_row()
+    side["transitions"].reverse()
+    result = describe_real_cut_observations(cut_row(), side)
+    assert result["two_sided_status"] == "UNVERIFIED_SIDE_INTERVAL_LINKS"
+    side = side_row()
+    side["transitions"][0]["candidate"]["verified_edit_cut"] = True
+    assert describe_real_cut_observations(
+        cut_row(), side,
+    )["two_sided_multimodal_candidates"] is None
+
+
+def test_budget_and_missing_output_visual_are_not_zero():
+    side = side_row()
+    side["transitions"] = [{"status": "UNKNOWN_TRANSITION_BUDGET",
+                            "unresolved": 2}]
+    result = describe_real_cut_observations(
+        cut_row(visual=[{"status": "UNKNOWN_VISUAL_BRACKET_BUDGET"}]), side,
+    )
+    assert result["two_sided_status"] == "UNKNOWN_TRANSITION_BUDGET"
+    assert result["two_sided_multimodal_candidates"] is None
+    assert result["output_visual_corroborating_candidates"] is None
+
+
+def test_zero_cut_candidates_are_not_perfect_scores():
+    empty = cut_row(transitions=[], visual=[])
+    side = side_row()
+    side["transitions"] = []
+    row = describe_real_cut_observations(empty, side)
+    assert row["cut_candidate_count"] == 0
+    assert row["output_visual_corroborating_candidates"] == 0
+    assert row["two_sided_multimodal_candidates"] == 0
+    assert row["candidate_median_width_seconds"] is None
+    assert row["editor_cut_precision"] is None
+
+
+@pytest.mark.parametrize("transition", [
+    {"status": "CUT_INTERVAL_CANDIDATE", "interval": [-1., 3.]},
+    {"status": "CUT_INTERVAL_CANDIDATE", "interval": [20., 10.]},
+    {"status": "CUT_INTERVAL_CANDIDATE", "interval": [1., float("inf")]},
+    {"status": "CUT_INTERVAL_CANDIDATE", "interval": [0., True]},
+    {"status": "HUMAN_GOLD_CUT", "interval": [1., 3.]},
+])
+def test_malformed_or_promoted_transition_fails_closed(transition):
+    with pytest.raises(ValueError):
+        describe_real_cut_observations(cut_row(
+            transitions=[transition], visual=[],
+        ))
+
+
+def test_mismatched_cut_method_and_claimed_gold_are_not_measured():
+    row = cut_row()
+    row["refinement"]["version"] = "old-method"
+    result = describe_real_cut_observations(row)
+    assert result["status"] == "UNVERIFIED_CUT_MEASUREMENT"
+    assert result["cut_candidate_count"] is None
+    row = cut_row()
+    row["reviewed_gold_available"] = True
+    assert describe_real_cut_observations(row)["cut_candidate_count"] is None
+
+
+def test_stage_summary_does_not_use_unexecuted_cached_cut_or_side(tmp_path):
+    clip_id = "youtube:aaaaaaaaaaa"
+    for name, version, row in (
+        ("cut_brackets/holdout-cut-brackets.json",
+         "reserved-acoustic-cut-brackets-v1", cut_row()),
+        ("cut_sides/holdout-cut-side-evidence.json",
+         "reserved-multimodal-cut-side-evidence-v1", side_row()),
+    ):
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "version": version, "records": {clip_id: row},
+            "qualification_allowed": False, "reviewed_gold_available": False,
+            "event_split_verified": False, "benchmark_held_out": False,
+        }), encoding="utf-8")
+    only_cut = summarize_observed_evidence(
+        tmp_path, {clip_id}, completed_stages={"acoustic_cut_brackets"},
+    )
+    result = only_cut["real_cut_observations"][clip_id]
+    assert result["cut_candidate_count"] == 2
+    assert result["two_sided_multimodal_candidates"] is None
+    complete = summarize_observed_evidence(
+        tmp_path, {clip_id},
+        completed_stages={"acoustic_cut_brackets", "two_sided_cut_evidence"},
+    )
+    assert complete["real_cut_observations"][clip_id][
+        "two_sided_multimodal_candidates"
+    ] == 1
+    assert complete["real_cut_observation_totals"][
+        "two_sided_multimodal_candidates"
+    ] == 1
+    none = summarize_observed_evidence(
+        tmp_path, {clip_id}, completed_stages=set(),
+    )
+    assert none["real_cut_observations"] == {}
+    assert none["real_cut_observation_totals"]["described_clips"] == 0
