@@ -20,8 +20,11 @@ from holoclip.providers.source.base import SourceMetadata
 from holoclip.source_candidate_scout import VERSION as SCOUT_VERSION
 from holoclip.video_measurement import checksum_file, measure_window, probe_video
 from holoclip.visual_edit_evidence import _compare_features, _orb_features
+from holoclip.source_visual_refinement import (
+    VERSION as REFINEMENT_VERSION, adaptive_refinement_starts, make_weak_hint,
+)
 
-VERSION = "bounded-shortlist-video-probes-v1"
+VERSION = "bounded-shortlist-video-probes-v2"
 WINDOW_SECONDS = 12.
 MAX_CLIPS = 2
 MAX_CANDIDATES = 2
@@ -98,6 +101,7 @@ def compare_sparse_visual_sequences(
         "status": "UNKNOWN_NO_VISUAL_SEQUENCE", "matched_frames": 0,
         "examined_frame_comparisons": 0, "matched_source_window": None,
         "source_frame_times_local": [], "finished_frame_times_local": [],
+        "weak_source_window": None, "weak_visual_pair_count": 0,
         **_NO_GOLD,
     }
     dst = _measured_frames(finished, MAX_FINISHED_FRAMES)
@@ -167,6 +171,24 @@ def compare_sparse_visual_sequences(
                 break
     # Separate source windows, repeated scenes and multiple trajectories
     # are ambiguity, *not* evidence that one stream is the original.
+    # Only two distinct and temporally coherent matches in exactly one
+    # source window may justify a *future short seek*, never source identity.
+    # Suppress hints if matches point to competing source windows.
+    if (not good and len({group for _, group, _ in matches}) == 1):
+        ordered = sorted(matches, key=lambda x: (x[0].pts_seconds, x[0].id))
+        for index, (left_finished, group, left_source) in enumerate(ordered):
+            for right_finished, next_group, right_source in ordered[index+1:]:
+                dt = right_finished.pts_seconds - left_finished.pts_seconds
+                ds = right_source.pts_seconds - left_source.pts_seconds
+                if (group == next_group and dt >= .4 and ds >= .4
+                        and abs(dt - ds) <= .75
+                        and left_finished.checksum != right_finished.checksum
+                        and left_source.checksum != right_source.checksum):
+                    result["weak_source_window"] = group
+                    result["weak_visual_pair_count"] = 2
+                    break
+            if result["weak_source_window"] is not None:
+                break
     if len(good) > 1:
         result["status"] = "UNKNOWN_MULTIPLE_VISUAL_TRAJECTORIES"
     elif good:
@@ -241,7 +263,7 @@ def verify_pending_source_visual(
             "status": "UNKNOWN_NO_VERIFIED_VISUAL_CORROBORATION",
             "candidate_observations": [],
             "finished_video_sha256": None,
-            "source_scan_method": "nonrepeating-breadth-first-v1",
+            "source_scan_method": "nonrepeating-breadth-first-with-one-local-refinement-v2",
             **_NO_GOLD,
         }
 
@@ -323,6 +345,8 @@ def verify_pending_source_visual(
                     "scan_cursor_before": None,
                     "scan_cursor_after": None,
                     "source_video_seconds_sampled": 0.,
+                    "probe_mode": None,
+                    "weak_visual_hint_saved": False,
                 }
                 report["candidate_observations"].append(observed)
                 try:
@@ -347,7 +371,26 @@ def verify_pending_source_visual(
                         observed["status"] = "BLOCKED_INVALID_SOURCE_SCAN_CURSOR"
                         continue
                     observed["scan_cursor_before"] = cursor
-                    starts = _starts(source.duration, cursor)
+                    refinements = scout.setdefault("visual_refinements", {})
+                    if not isinstance(refinements, dict):
+                        observed["status"] = "BLOCKED_INVALID_REFINEMENT_QUEUE"
+                        continue
+                    hint = refinements.get(source.external_id)
+                    mode = "coarse_breadth_first"
+                    if hint is not None:
+                        try:
+                            starts = adaptive_refinement_starts(
+                                hint, source_id=source.external_id,
+                                duration=source.duration, cursor=cursor,
+                                finished_sha=finished_sha,
+                            )
+                        except ValueError:
+                            observed["status"] = "BLOCKED_STALE_OR_PROMOTED_REFINEMENT"
+                            continue
+                        mode = "one_shot_local_refinement"
+                    else:
+                        starts = _starts(source.duration, cursor)
+                    observed["probe_mode"] = mode
                     if not starts:
                         observed["status"] = "UNKNOWN_SOURCE_SCAN_EXHAUSTED"
                         observed["scan_cursor_after"] = cursor
@@ -378,13 +421,6 @@ def verify_pending_source_visual(
                             "requested_range": [start, end], "media_sha256": digest,
                             "source_native_pts_verified": False,
                         })
-                    # Only after completing every planned short range may the
-                    # cursor advance. Failed sections are retried next cycle.
-                    cursors[source.external_id] = cursor + 1
-                    observed["scan_cursor_after"] = cursor + 1
-                    observed["source_video_seconds_sampled"] = (
-                        len(spans) * WINDOW_SECONDS
-                    )
                     visual = compare_sequences(finished, windows)
                     if (not isinstance(visual, dict)
                             or any(visual.get(flag) is not False for flag in _NO_GOLD)
@@ -396,6 +432,39 @@ def verify_pending_source_visual(
                                 "UNKNOWN_MULTIPLE_VISUAL_TRAJECTORIES",
                             }):
                         raise ValueError("Source visual result was promoted")
+                    weak_window = visual.get("weak_source_window")
+                    weak_count = visual.get("weak_visual_pair_count", 0)
+                    if (weak_window is not None
+                            and (type(weak_window) is not int
+                                 or not 0 <= weak_window < len(spans)
+                                 or weak_count != 2
+                                 or visual["status"] != "UNKNOWN_NO_VISUAL_SEQUENCE")):
+                        raise ValueError("Unverified image pair was promoted")
+                    if weak_window is None and weak_count not in (0, None):
+                        raise ValueError("Contradictory weak image hint count")
+                    if mode == "one_shot_local_refinement":
+                        # A local check consumes exactly one stored hint.
+                        # The next cycle resumes the original broad search.
+                        refinements.pop(source.external_id, None)
+                        observed["scan_cursor_after"] = cursor
+                    else:
+                        # Only a valid, complete coarse observation advances
+                        # the coarse cursor; decoder failures retry the range.
+                        cursors[source.external_id] = cursor + 1
+                        observed["scan_cursor_after"] = cursor + 1
+                        if weak_window is not None:
+                            refinements[source.external_id] = make_weak_hint(
+                                source_id=source.external_id,
+                                duration=source.duration,
+                                seed_start=spans[weak_window][0],
+                                completed_starts=[p[0] for p in spans],
+                                next_cursor=cursor + 1,
+                                finished_sha=finished_sha,
+                            )
+                            observed["weak_visual_hint_saved"] = True
+                    observed["source_video_seconds_sampled"] = (
+                        len(spans) * WINDOW_SECONDS
+                    )
                     observed["status"] = visual["status"]
                     observed["visual_correspondence"] = visual["status"]
                     observed["sampled_sequence"] = visual
