@@ -10,6 +10,7 @@ import json
 import math
 from pathlib import Path
 
+from holoclip.acoustic_cut_brackets import VERSION as REFINEMENT_VERSION
 from holoclip.bounded_source_evidence import _checked_measurement, _valid_ranges
 from holoclip.clip_policy import (
     PolicyDecision, PolicyOperation, evaluate_source_metadata, evaluate_source_ranges,
@@ -151,6 +152,9 @@ def inspect_reserved_cut_sides(
                 or linked.get("audio_source_sha256") != a["source_media_sha256"]
                 or linked.get("finished_media_sha256") != p["media_sha256"]
                 or cut.get("status") != "MEASURED_UNREVIEWED_CUT_BRACKETS"
+                or cut.get("method") != REFINEMENT_VERSION
+                or not isinstance(cut.get("refinement"), dict)
+                or cut["refinement"].get("version") != REFINEMENT_VERSION
                 or cut.get("source_url") != item.source_url
                 or cut.get("source_stream_id") != item.source_stream_id
                 or cut.get("audio_source_sha256") != a["source_media_sha256"]
