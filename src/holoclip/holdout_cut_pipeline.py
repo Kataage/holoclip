@@ -146,8 +146,23 @@ def refine_reserved_cut_candidates(
                 or v.get("source_stream_id") != item.source_stream_id
                 or v.get("source_url") != item.source_url
                 or not isinstance(source_pairs, list) or not source_pairs
-                or len(visual_pairs) != len(source_pairs)):
+                or len(visual_pairs) != len(source_pairs)
+                or v.get("method_version") != "visual-orb-affine-v1"):
             block("BLOCKED_VISUAL_EVIDENCE_UNVERIFIED")
+            continue
+        # Only acoustic ranges actually covered by the bounded original-video
+        # pairs may enter this stage; an extra unmatched source stream segment
+        # cannot gain a visual-evidence provenance by association.
+        paired_ranges = ranges[:len(source_pairs)]
+        if len(paired_ranges) != len(source_pairs) or any(
+            pair.get("group") != index
+            or pair.get("source_start", 0) > span["source_start"] + .05
+            or pair.get("source_end", 0) < span["source_end"] - .05
+            or pair.get("clip_start", 0) > span["clip_start"] + .05
+            or pair.get("clip_end", 0) < span["clip_end"] - .05
+            for index, (pair, span) in enumerate(zip(source_pairs, paired_ranges))
+        ):
+            block("BLOCKED_AUDIO_VISUAL_RANGE_MISMATCH")
             continue
         try:
             # All source video, frame and sheet evidence must be intact BEFORE
@@ -215,7 +230,7 @@ def refine_reserved_cut_candidates(
             identity = _digest({
                 "clip_sha256": p["media_sha256"],
                 "audio_sha256": a["source_media_sha256"],
-                "coarse_anchors": a.get("anchors", []), "ranges": ranges,
+                "coarse_anchors": a.get("anchors", []), "ranges": paired_ranges,
                 "source_pair_sha256": [x["source_video_sha256"] for x in source_pairs],
                 "frame_manifest_sha256": evidence_hashes,
                 "visual_observations": visual_pairs,
@@ -232,7 +247,7 @@ def refine_reserved_cut_candidates(
             clip_features = fingerprint(Path(p["media_path"]), output / "fingerprints")
             original_features = fingerprint(Path(source_path), output / "fingerprints")
             refined = refine(
-                clip_features, original_features, ranges, max_points=max_points,
+                clip_features, original_features, paired_ranges, max_points=max_points,
             )
             if refined.get("status") not in {
                 "AUDIO_SUPPORTED_INTERVALS", "UNKNOWN_NO_UNIQUE_POINTS",
