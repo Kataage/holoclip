@@ -266,6 +266,7 @@ def _run_reserved_holdout_e2e_unlocked(
     policy_rules: list, max_clips: int = 3,
     preflight_only: bool = False, progress=None, runners=None,
     exclude_clip_ids: frozenset[str] = frozenset(),
+    selected_exact_ids: tuple[str, ...] | None = None,
 ) -> dict:
     """Single bounded call on *real* local media; checkpoint all stage outcomes."""
     if not 1 <= max_clips <= 20:
@@ -312,9 +313,24 @@ def _run_reserved_holdout_e2e_unlocked(
         return output
 
     try:
-        batch, remaining = _select_batch(
-            state, root, max_clips, exclude_clip_ids=exclude_clip_ids,
-        )
+        if selected_exact_ids is not None:
+            by_id = {
+                human_clip_identity(item.clip_url): item for item in candidates
+            }
+            if (not selected_exact_ids
+                    or len(selected_exact_ids) > max_clips
+                    or len(set(selected_exact_ids)) != len(selected_exact_ids)
+                    or not set(selected_exact_ids) <= by_id.keys()
+                    or set(selected_exact_ids) & exclude_clip_ids):
+                output["status"] = "BLOCKED_INVALID_EXACT_REPLAY_SELECTION"
+                save()
+                return output
+            batch = [by_id[clip_id] for clip_id in selected_exact_ids]
+            remaining = len(candidates) - len(batch)
+        else:
+            batch, remaining = _select_batch(
+                state, root, max_clips, exclude_clip_ids=exclude_clip_ids,
+            )
     except (ValueError, OSError):
         output["status"] = "BLOCKED_INVALID_PRIOR_CHECKPOINT"
         save()
@@ -433,10 +449,98 @@ def run_reserved_holdout_e2e(
         lock.unlink(missing_ok=True)
 
 
+
+def _holdout_policy_sha(policy_rules: list) -> str:
+    """Bind checkpoint reuse to exact ordered rules, not policy file path."""
+    document = [rule.model_dump(mode="json") for rule in policy_rules]
+    payload = json.dumps(document, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _holdout_stage_sha() -> str:
+    payload = json.dumps([
+        [stage.name, stage.version, stage.success] for stage in STAGES
+    ], separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _checkpoint_replay_batches(
+    path: Path, expected: dict, all_ids: set[str], max_batches: int,
+) -> list[list[str]]:
+    """Read ONLY safe checkpoint selection hints; rerun ALL nine stages.
+
+    Never trust an earlier `status=complete` on its own. The sole allowed
+    resumable entries are completed, independent, nine-stage-success batches.
+    A failed/deferred or structurally malformed checkpoint requires a fresh
+    run or investigation instead of silently hopping over a restricted clip.
+    """
+    if not path.is_file():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Invalid existing checkpoint")
+    exact_fields = (
+        "reservation_state_sha256", "policy_rules_sha256",
+        "stage_schema_sha256", "execution_mode",
+        "max_clips_per_batch", "continue_on_insufficient_audio",
+    )
+    if (data.get("version") != MULTI_BATCH_VERSION
+            or any(data.get(field) != expected[field] for field in exact_fields)
+            or any(data.get(flag) is not False for flag in (
+                "ready", "production_ready", "qualification_allowed",
+                "reviewed_gold_available", "benchmark_held_out",
+                "event_split_verified", "frame_accurate_cuts_verified",
+                "dense_output_source_map_verified",
+            ))):
+        raise ValueError("Stale/mismatched checkpoint provenance")
+    if data.get("status") not in {
+        "RUNNING", "BOUNDED_BATCH_LIMIT_REACHED",
+        "UNREVIEWED_ALL_BATCHES_COMPLETE", "SIMULATED_ALL_BATCHES_COMPLETE",
+    }:
+        raise ValueError("Checkpoint contains a failed or quarantined trial")
+    batches = data.get("batches")
+    if (not isinstance(batches, list) or len(batches) > max_batches
+            or data.get("deferred_audio_clip_ids") not in (None, [])):
+        raise ValueError("Unverifiable prior batches")
+    ids_seen: set[str] = set()
+    selections = []
+    for index, row in enumerate(batches, 1):
+        if not isinstance(row, dict) or row.get("number") != index:
+            raise ValueError("Invalid checkpoint batch index")
+        clip_ids = row.get("selected_clip_ids")
+        if (not isinstance(clip_ids, list) or not clip_ids
+                or len(clip_ids) > expected["max_clips_per_batch"]
+                or any(not isinstance(i, str) for i in clip_ids)
+                or len(set(clip_ids)) != len(clip_ids)
+                or set(clip_ids) & ids_seen
+                or not set(clip_ids) <= all_ids
+                or row.get("status") != (
+                    "UNREVIEWED_MEASUREMENTS_COMPLETE"
+                    if expected["execution_mode"] == "REAL_MEDIA"
+                    else "SIMULATED_STAGE_TEST_COMPLETE"
+                )
+                or row.get("completed_stage_count") != len(STAGES)):
+            raise ValueError("Untrusted checkpoint selected/success IDs")
+        counts = row.get("stage_status_counts")
+        if (not isinstance(counts, dict) or set(counts) != {s.name for s in STAGES}
+                or any(counts.get(st.name) != {st.success: len(clip_ids)}
+                       for st in STAGES)):
+            raise ValueError("Checkpoint missing exact stage success counts")
+        ids_seen.update(clip_ids)
+        selections.append(clip_ids)
+    if (data.get("processed_clip_ids") != sorted(ids_seen)
+            or data.get("processed_clips") != len(ids_seen)
+            or data.get("attempted_clip_ids") != sorted(ids_seen)
+            or data.get("attempted_clips") != len(ids_seen)):
+        raise ValueError("Inconsistent prior completion counts")
+    return selections
+
+
 def run_all_reserved_holdout_batches(
     provider, *, store: Path, state_path: Path, root: Path,
     policy_rules: list, max_clips: int = 3, max_batches: int = 8,
     progress=None, runners=None, continue_on_insufficient_audio: bool = False,
+    resume_checkpoint: bool = False,
 ) -> dict:
     """Bounded source trials; optionally defer insufficient-audio clips.
 
@@ -473,6 +577,8 @@ def run_all_reserved_holdout_batches(
         "configured_max_clips": max_clips,
         "max_clips_per_batch": effective_max_clips, "max_batches": max_batches,
         "continue_on_insufficient_audio": continue_on_insufficient_audio,
+        "resume_checkpoint": resume_checkpoint,
+        "revalidated_previous_batches": 0,
         "batches": [], "processed_clip_ids": [], "processed_clips": 0,
         "deferred_audio_clip_ids": [], "deferred_audio_clips": 0,
         "attempted_clip_ids": [], "attempted_clips": 0,
@@ -500,6 +606,11 @@ def run_all_reserved_holdout_batches(
         initial_state = state_path.read_bytes()
         reservation_hash = hashlib.sha256(initial_state).hexdigest()
         result["reservation_state_sha256"] = reservation_hash
+        result["policy_rules_sha256"] = _holdout_policy_sha(policy_rules)
+        result["stage_schema_sha256"] = _holdout_stage_sha()
+        result["execution_mode"] = (
+            "REAL_MEDIA" if runners is None else "SIMULATED_RUNNERS"
+        )
         state = CorpusGrowthState.model_validate_json(initial_state)
         candidates = _candidates(state)
         all_ids = {human_clip_identity(c.clip_url) for c in candidates}
@@ -512,6 +623,21 @@ def run_all_reserved_holdout_batches(
         if len(all_ids) != len(candidates):
             result["status"] = "BLOCKED_AMBIGUOUS_RESERVATION"
             save()
+            return result
+
+        try:
+            replay_batches = _checkpoint_replay_batches(
+                path, result, all_ids, max_batches,
+            ) if resume_checkpoint else []
+        except (ValueError, OSError, TypeError, json.JSONDecodeError):
+            # Never overwrite a questionable checkpoint. Keep the original
+            # for investigation, without leaking its contents to stdout.
+            result["status"] = "BLOCKED_UNSAFE_RESUME_CHECKPOINT"
+            result["resume_refusal_path"] = str(root / "holdout-e2e-resume-refusal.json")
+            atomic_json(root / "holdout-e2e-resume-refusal.json", {
+                "status": result["status"], "qualification_allowed": False,
+                "ready": False, "production_ready": False,
+            })
             return result
 
         seen: set[str] = set()
@@ -534,6 +660,10 @@ def run_all_reserved_holdout_batches(
                     max_clips=effective_max_clips,
                     progress=progress, runners=runners,
                     exclude_clip_ids=frozenset(seen | deferred_audio),
+                    selected_exact_ids=(
+                        tuple(replay_batches[number - 1])
+                        if number <= len(replay_batches) else None
+                    ),
                 )
             except Exception as exc:
                 # No remote/auth-bearing stderr or exception message persisted.
@@ -569,6 +699,18 @@ def run_all_reserved_holdout_batches(
                 result["failed_batch"] = number
                 save()
                 return result
+            if number <= len(replay_batches):
+                if (batch["status"] not in (
+                    "UNREVIEWED_MEASUREMENTS_COMPLETE",
+                    "SIMULATED_STAGE_TEST_COMPLETE",
+                ) or selected != replay_batches[number - 1]):
+                    # Recomputed evidence, not a status string in a saved
+                    # audit, must corroborate every previously done stage.
+                    result["status"] = "BLOCKED_RESUME_REVALIDATION_FAILED"
+                    result["failed_batch"] = number
+                    result["blocked_stage"] = batch.get("blocked_stage")
+                    save()
+                    return result
             summary = batch.get("observations", {})
             item = {
                 "number": number, "status": batch["status"],
@@ -627,6 +769,8 @@ def run_all_reserved_holdout_batches(
             result["remaining_clips"] = len(all_ids - seen - deferred_audio)
             for key in result["observed_totals"]:
                 result["observed_totals"][key] += item["observations"][key]
+            if number <= len(replay_batches):
+                result["revalidated_previous_batches"] += 1
             # Persist after every completed batch, not only at invocation exit.
             save()
 
