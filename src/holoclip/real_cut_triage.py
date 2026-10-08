@@ -137,7 +137,7 @@ def _triage_codes(row: dict) -> list[str]:
     """Independent diagnostic signals, NOT mutually exclusive quality grades."""
     visual_only = (
         ["OUTPUT_ONLY_VISUAL_SIGNAL_WITHOUT_ACOUSTIC_CANDIDATE"]
-        if row.get("output_only_visual_without_acoustic_count", 0) > 0
+        if (row.get("output_only_visual_without_acoustic_count") or 0) > 0
         else []
     )
     if row["status"] == "UNKNOWN_ACOUSTIC_SUPPORT":
