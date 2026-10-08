@@ -155,7 +155,8 @@ def describe_real_cut_observations(
     sides = side_row.get("transitions")
     if not isinstance(sides, list):
         result["two_sided_status"] = "INVALID_SIDE_SCHEMA"
-    elif len(sides) == 1 and sides[0].get("status") == "UNKNOWN_TRANSITION_BUDGET":
+    elif (len(sides) == 1 and isinstance(sides[0], dict)
+          and sides[0].get("status") == "UNKNOWN_TRANSITION_BUDGET"):
         result["two_sided_status"] = "UNKNOWN_TRANSITION_BUDGET"
     elif len(sides) != len(candidates) or any(
         not isinstance(side, dict)
