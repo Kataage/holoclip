@@ -23,8 +23,11 @@ from holoclip.visual_edit_evidence import _compare_features, _orb_features
 from holoclip.source_visual_refinement import (
     VERSION as REFINEMENT_VERSION, adaptive_refinement_starts, make_weak_hint,
 )
+from holoclip.source_visual_ledger import (
+    VERSION as EVIDENCE_VERSION, append_visual_observation, checked_ledger,
+)
 
-VERSION = "bounded-shortlist-video-probes-v2"
+VERSION = "bounded-shortlist-video-probes-v3"
 WINDOW_SECONDS = 12.
 MAX_CLIPS = 2
 MAX_CANDIDATES = 2
@@ -76,6 +79,32 @@ def _starts(duration: float, cursor: int = 0) -> list[float]:
     selected = order[cursor * SOURCE_WINDOWS:(cursor + 1) * SOURCE_WINDOWS]
     return [round((duration - WINDOW_SECONDS) * i / (slots - 1), 3)
             for i in selected]
+
+
+def _finished_starts(duration: float) -> list[float]:
+    """Prioritize center, then nonoverlapping output positions across visits."""
+    if (type(duration) not in (int, float) or not math.isfinite(duration)
+            or not WINDOW_SECONDS <= duration <= 180):
+        return []
+    last = duration - WINDOW_SECONDS
+    center = round(last / 2, 3)
+    # For short clips the centered window can block *all* independent
+    # alternatives. Prefer distinct edges whenever two windows fit.
+    candidates = (
+        [0., round(last, 3)] if WINDOW_SECONDS*2 <= duration < 36
+        else [center, 0., round(last, 3)]
+    )
+    for index in range(int(duration // WINDOW_SECONDS)):
+        candidates.append(round(index * WINDOW_SECONDS, 3))
+    selected = []
+    for candidate in candidates:
+        if (0 <= candidate <= last + .001
+                and all(abs(candidate - old) >= WINDOW_SECONDS - .001
+                        for old in selected)):
+            selected.append(candidate)
+        if len(selected) >= 6:
+            break
+    return selected
 
 
 def _measured_frames(window, max_frames: int) -> list:
@@ -265,6 +294,7 @@ def verify_pending_source_visual(
             "finished_video_sha256": None,
             "source_scan_method": "nonrepeating-breadth-first-with-one-local-refinement-v2",
             "refinement_method_version": REFINEMENT_VERSION,
+            "cross_run_evidence_method_version": EVIDENCE_VERSION,
             **_NO_GOLD,
         }
 
@@ -286,9 +316,31 @@ def verify_pending_source_visual(
                 or not 1 <= len(scout["candidate_sources"]) <= 4
                 or type(scout.get("visual_candidate_round", 0)) is not int
                 or scout.get("visual_candidate_round", 0) < 0
+                or type(scout.get("visual_finished_round", 0)) is not int
+                or scout.get("visual_finished_round", 0) < 0
+                or not all(isinstance(entry, dict)
+                           and isinstance(entry.get("source_stream_id"), str)
+                           for entry in scout["candidate_sources"])
                 or item.source_url is not None or item.source_stream_id is not None
                 or human_clip_identity(item.clip_url) in learned_clips):
             finish("BLOCKED_UNVERIFIED_SOURCE_QUEUE")
+            continue
+        clip_id = human_clip_identity(item.clip_url)
+        candidate_ids = [
+            entry["source_stream_id"]
+            for entry in scout["candidate_sources"]
+        ]
+        try:
+            ledger = checked_ledger(
+                scout.get("visual_evidence"),
+                clip_id=clip_id, candidate_ids=candidate_ids,
+            )
+        except ValueError:
+            finish("BLOCKED_INVALID_SOURCE_VISUAL_EVIDENCE")
+            continue
+        saved_refinements = scout.get("visual_refinements", {})
+        if not isinstance(saved_refinements, dict):
+            finish("BLOCKED_INVALID_REFINEMENT_QUEUE")
             continue
         try:
             clip = provider.probe(item.clip_url)
@@ -301,8 +353,29 @@ def verify_pending_source_visual(
                     ).decision is not PolicyDecision.ALLOW):
                 finish("BLOCKED_CLIP_IDENTITY_POLICY_OR_DURATION")
                 continue
-            clip_start = max(0., (clip.duration-WINDOW_SECONDS)/2)
-            clip_end = min(clip.duration, clip_start+WINDOW_SECONDS)
+            finished_starts = _finished_starts(clip.duration)
+            if not finished_starts:
+                finish("BLOCKED_NO_VALID_FINISHED_WINDOWS")
+                continue
+            finished_round = scout.get("visual_finished_round", 0)
+            if saved_refinements:
+                clip_start = scout.get(
+                    "visual_finished_focus_start", finished_starts[0],
+                )
+                if (type(clip_start) not in (int, float)
+                        or not math.isfinite(clip_start)
+                        or clip_start not in finished_starts):
+                    finish("BLOCKED_STALE_FINISHED_WINDOW_FOCUS")
+                    continue
+            else:
+                clip_start = finished_starts[
+                    finished_round % len(finished_starts)
+                ]
+            clip_end = clip_start + WINDOW_SECONDS
+            report["finished_sample_range"] = [clip_start, clip_end]
+            report["finished_sampling_method"] = (
+                "distinct-nonoverlapping-finished-windows-v1"
+            )
             allowed = evaluate_source_ranges(
                 clip, ranges=[(clip_start, clip_end)],
                 rules=policy_rules, operation=PolicyOperation.LEARN,
@@ -469,6 +542,24 @@ def verify_pending_source_visual(
                     observed["status"] = visual["status"]
                     observed["visual_correspondence"] = visual["status"]
                     observed["sampled_sequence"] = visual
+                    ledger, recorded = append_visual_observation(
+                        ledger, clip_id=clip_id,
+                        candidate_ids=candidate_ids,
+                        source_stream_id=source.external_id,
+                        finished_range=[clip_start, clip_end],
+                        source_ranges=[
+                            row["requested_range"]
+                            for row in observed["sampled_source_windows"]
+                        ],
+                        finished_sha=finished_sha,
+                        source_shas=[
+                            row["media_sha256"]
+                            for row in observed["sampled_source_windows"]
+                        ],
+                        observed=visual,
+                    )
+                    scout["visual_evidence"] = ledger
+                    observed["cross_run_visual_event_recorded"] = recorded
                 except Exception as exc:
                     observed["status"] = "UNKNOWN_BOUNDED_SOURCE_PROBE_FAILURE"
                     observed["error_class"] = type(exc).__name__
@@ -477,6 +568,17 @@ def verify_pending_source_visual(
                     persist()
             scout["visual_candidate_round"] = round_number + 1
             report["candidate_round_after"] = round_number + 1
+            if scout.get("visual_refinements"):
+                # All queued local checks must use the exact same finished
+                # media interval, otherwise the SHA-bound hints are stale.
+                scout["visual_finished_focus_start"] = clip_start
+                report["finished_round_after"] = finished_round
+            else:
+                scout.pop("visual_finished_focus_start", None)
+                scout["visual_finished_round"] = finished_round + 1
+                report["finished_round_after"] = finished_round + 1
+            scout["visual_evidence"] = ledger
+            report["cumulative_source_visual_support"] = ledger["summary"]
             matched = sum(
                 x["status"] == "VISUAL_SEQUENCE_CORROBORATED_NOT_SOURCE_GOLD"
                 for x in report["candidate_observations"]

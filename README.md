@@ -210,6 +210,26 @@ Previously measured v1 cut/source-side/time-map cache chains do not
 qualify as v2 measurements; rerun the already documented bounded holdout
 command to recompute them with current provenance guards.
 
+For missing-original discovery, each completed sample can now contribute to a
+**persistent reference-free visual evidence ledger**. A new corroboration
+record requires at least three distinct coherent output/original frame pairs
+and binds both 12-second sampled ranges, the original candidate ID and each
+sampled video SHA256. Repeating the same two media ranges cannot increase the
+count; changing bytes under an already counted range fails closed. An
+independent correspondence requires both a *different nonoverlapping output
+clip interval* and a *different nonoverlapping original stream interval*.
+Multiple seemingly matched originals remain explicitly ambiguous.
+
+To make independent evidence possible, finished-clip sampling now rotates
+through up to six distinct, nonoverlapping 12-second clip intervals, instead
+of always checking the clip center. When one-shot weak-match source
+refinement is pending, the original finished interval is pinned until
+completion so clip-byte checksum validation remains sound. Every
+candidate's ledger contains only `UNREVIEWED_...` hypotheses, no source
+identity proof, native PTS, learned original ID, held-out label, evaluated
+editorial accuracy or production gate promotion. Stale/corrupted/forged
+historical evidence blocks new media downloads before acquisition.
+
 Long-original visual discovery now uses an adaptive **coarse-to-fine**
 sampling policy. The original broad breadth-first source scan remains
 the default. If exactly one already-decoded original section supplies
