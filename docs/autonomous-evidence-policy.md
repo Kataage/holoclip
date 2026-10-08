@@ -1344,6 +1344,46 @@ source identity, source time-map, clipping truth, training/holdout
 assignment, precision/recall, or production readiness is asserted.
 The production router remains `ready=false`.
 
+## Increment 33: strict candidate-side visual evidence assessment (#149)
+
+A bounded `source_visual_assessment.py` evaluates PR #148's historical
+source/finished frame evidence into **auditably reproducible,
+reference-free candidate hypotheses**, not a source probability. It
+requires the full checked evidence ledger and the unchanged eligible
+shortlist, and returns for each original candidate:
+observed positive window count, independently nonoverlapping
+two-sided window lower bound, distinct sampled finished/original
+positive contexts, unreviewed support tier and explicit missing
+coverage/negative evidence disclaimers. The entire list remains
+eligible for unattended source probing.
+
+Candidate states are only `UNKNOWN_NO_SAVED_POSITIVE_SOURCE_EVIDENCE`,
+`UNREVIEWED_SINGLE_CONTEXT_ORIGINAL_HYPOTHESIS`,
+`UNREVIEWED_DIVERSE_SINGLE_ORIGINAL_HYPOTHESIS`, or
+`UNKNOWN_COMPETING_VISUAL_ORIGINALS`. The presence of two or more
+original candidates with *any* positive visual evidence forces
+`UNKNOWN_COMPETING_VISUAL_ORIGINALS`, even when one candidate has
+multiple independent windows. No match is not a negative label, and
+no fabricated calibrated probability, winner or selected original ID
+is emitted. Each status names a permissible **next autonomous
+verification task**, never an editorial decision.
+
+The saved assessment is derived deterministically from the checked
+ledger's canonical event digest and exact candidate roster. On the
+next run it must match that ledger *before any media download*;
+stale, altered, schema-invalid or positive-promoted snapshots are
+rejected. After each completed candidate probe, the ledger and its
+assessment persist together. The ledger additionally verifies that
+the same requested finished 12s section has identical SHA256 across
+ALL candidate originals, and the same original 12s section has
+identical bytes across ALL finished section comparisons (not only
+exact duplicated observation pairs).
+
+This is measured, sparse **positive-only** evidence; source video
+completion, native absolute PTS, reviewer source identity, reviewed
+editorial gold, event split, clip accuracy and production qualification
+remain unverified. Source IDs remain unset and `ready=false`.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
