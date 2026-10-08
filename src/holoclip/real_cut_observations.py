@@ -125,11 +125,25 @@ def describe_real_cut_observations(
         elif len(visual) == len(candidates) and all(
             isinstance(item, dict)
             and item.get("acoustic_interval") == transition["interval"]
+            and type(transition.get("offset_change_seconds")) in (int, float)
+            and math.isfinite(transition["offset_change_seconds"])
+            and item.get("acoustic_offset_change_seconds")
+                == transition["offset_change_seconds"]
             and item.get("verified_edit_cut") is False
+            and item.get("source_visual_transition_ruled_out") is False
             and item.get("native_frame_pts_verified") is False
-            and item.get("relation") in {
-                "CORROBORATING_OUTPUT_CHANGE", "UNRESOLVED_VISUAL_EVIDENCE",
+            and isinstance(item.get("visual_result"), dict)
+            and item["visual_result"].get("version")
+                == "bounded-output-visual-jumps-v1"
+            and item["visual_result"].get("status") in {
+                "VISUAL_JUMP_CANDIDATES", "UNKNOWN_NO_ISOLATED_JUMP",
+                "UNKNOWN_INSUFFICIENT_FRAMES", "UNKNOWN_BRACKET_TOO_WIDE",
             }
+            and item.get("relation") == (
+                "CORROBORATING_OUTPUT_CHANGE"
+                if item["visual_result"]["status"] == "VISUAL_JUMP_CANDIDATES"
+                else "UNRESOLVED_VISUAL_EVIDENCE"
+            )
             for item, (transition, _, _) in zip(visual, candidates)
         ):
             result["output_visual_corroborating_candidates"] = sum(
