@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from holoclip.audio_anchor_alignment import MATCH_SAMPLING_VERSION
 from holoclip.bounded_source_evidence import (
     _valid_ranges, measure_reserved_source_pairs,
 )
@@ -129,6 +130,7 @@ def test_audio_anchor_contract_disallows_invented_or_weak_ranges():
                 "correlation": .95, "uniqueness_margin": .15}
                for i in (0, 9, 18)]
     row = {"status": "PARTIAL_AUDIO_MATCH", "fingerprint_version": "audio-band-anchor-v1",
+           "match_sampling_version": MATCH_SAMPLING_VERSION,
            "anchors": anchors, "ranges": [{
                "clip_start": 0, "clip_end": 24, "source_start": 10, "source_end": 34,
                "anchors": 3, "min_correlation": .95,
@@ -259,3 +261,82 @@ def test_yt_dlp_range_command_and_source_namespace(tmp_path, monkeypatch):
     assert item2.media_path.parent != item.media_path.parent
     with pytest.raises(ValueError):
         provider.acquire_video_range(metadata.url, tmp_path / "ranges", start=80., end=240.)
+
+
+def test_legacy_sparse_audio_alignment_never_acquires_source_video(tmp_path):
+    underlying, store, state, prepared, audio_root = _source_evidence(tmp_path)
+    path = audio_root / "holdout-audio-alignment.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    clip = next(iter(doc["records"].values()))
+    clip["match_sampling_version"] = "bounded-eight-second-anchor-coverage-v2"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    provider = SectionProvider(underlying)
+    report = _execute(provider, store, state, prepared, audio_root)
+    assert report["counts"] == {"BLOCKED_UNVERIFIED_AUDIO_ANCHORS": 1}
+    assert provider.range_calls == []
+
+
+def test_anchored_range_cannot_bridge_unsupported_twenty_five_second_gap():
+    anchors = [
+        {"clip_start": t, "clip_end": t + 6,
+         "source_start": t + 20, "source_end": t + 26,
+         "correlation": .99, "uniqueness_margin": .18}
+        for t in (0, 18, 36)
+    ]
+    payload = {
+        "status": "PARTIAL_AUDIO_MATCH",
+        "fingerprint_version": "audio-band-anchor-v1",
+        "match_sampling_version": MATCH_SAMPLING_VERSION,
+        "anchors": anchors, "ranges": [{
+            "clip_start": 0, "clip_end": 42,
+            "source_start": 20, "source_end": 62,
+            "anchors": 3, "min_correlation": .99,
+        }],
+    }
+    assert not _valid_ranges(payload, 48, max_ranges=3)
+
+
+def test_audio_range_endpoints_and_per_anchor_counts_are_not_fabricated():
+    anchors = [
+        {"clip_start": t, "clip_end": t + 6,
+         "source_start": t + 20, "source_end": t + 26,
+         "correlation": .99, "uniqueness_margin": .18}
+        for t in (0, 8, 16)
+    ]
+    payload = {
+        "status": "PARTIAL_AUDIO_MATCH",
+        "fingerprint_version": "audio-band-anchor-v1",
+        "match_sampling_version": MATCH_SAMPLING_VERSION,
+        "anchors": anchors, "ranges": [{
+            "clip_start": 0, "clip_end": 22,
+            "source_start": 20, "source_end": 42,
+            "anchors": 3, "min_correlation": .99,
+        }],
+    }
+    assert len(_valid_ranges(payload, 30, max_ranges=3)) == 1
+    payload["ranges"][0]["source_end"] = 47
+    assert not _valid_ranges(payload, 30, max_ranges=3)
+    payload["ranges"][0]["source_end"] = 42
+    payload["ranges"][0]["anchors"] = 2
+    assert not _valid_ranges(payload, 30, max_ranges=3)
+
+
+def test_new_audio_sampling_method_invalidates_old_source_video_pair_cache(tmp_path):
+    underlying, store, state, prepared, audio_root = _source_evidence(tmp_path)
+    provider = SectionProvider(underlying)
+    first = _execute(provider, store, state, prepared, audio_root)
+    assert first["counts"] == {"MEASURED_UNREVIEWED_SOURCE_PAIRS": 1}
+    assert len(provider.range_calls) == 1
+    pairs_file = prepared / "source_pairs" / "holdout-source-pairs.json"
+    records = json.loads(pairs_file.read_text(encoding="utf-8"))
+    row = next(iter(records["records"].values()))
+    assert row["audio_sampling_version"] == MATCH_SAMPLING_VERSION
+    row["audio_sampling_version"] = "bounded-eight-second-anchor-coverage-v2"
+    pairs_file.write_text(json.dumps(records), encoding="utf-8")
+    again = _execute(provider, store, state, prepared, audio_root)
+    assert again["counts"] == {"MEASURED_UNREVIEWED_SOURCE_PAIRS": 1}
+    assert len(provider.range_calls) == 2
+    updated = json.loads(pairs_file.read_text(encoding="utf-8"))
+    row = next(iter(updated["records"].values()))
+    assert row["audio_sampling_version"] == MATCH_SAMPLING_VERSION
+    assert row["qualification_allowed"] is False
