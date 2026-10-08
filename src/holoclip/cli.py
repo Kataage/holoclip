@@ -800,6 +800,10 @@ def examples_validate_holdout_e2e(
             "diagnostic_report_path": diagnosis["report_path"],
             "next_action": diagnosis["next_action"],
             "first_blocker": diagnosis["first_blocker"],
+            "cut_signal_triage": diagnosis["cut_signal_triage"]["status"],
+            "cut_signal_counts": diagnosis["cut_signal_triage"].get(
+                "signal_counts", {},
+            ),
             "unattempted_clips": len(diagnosis["unattempted_clip_ids"]),
             "deferred_insufficient_audio_clips": report.get("deferred_audio_clips", 0),
         }, ensure_ascii=False, indent=2))
