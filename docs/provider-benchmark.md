@@ -113,6 +113,19 @@ not verified**. The output is a diagnostic evidence artifact, not reviewed
 gold or a legitimate `held_out=true` benchmark case. See
 [autonomous evidence policy](autonomous-evidence-policy.md).
 
+## Audio-conditioned original-vs-finished frame link measurements
+
+After `examples-calibrate-source-clocks`, the optional
+`examples-correlate-source-frames` stage measures sparse OpenCV
+source/output sampled-frame correspondence. Audio timing is a
+cross-check, never a learned label. Repeated/contradictory frames and
+invalid rights/source provenance are held UNKNOWN, while matching frame
+IDs, shot IDs, approximate offsets and RANSAC geometric evidence are
+retained for subsequent evaluation. This diagnostic cannot constitute
+independent HUMAN_GOLD, exact source native PTS, an `OutputSourceTimeMap`
+or production qualification. See
+[autonomous evidence policy](autonomous-evidence-policy.md).
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
