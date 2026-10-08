@@ -1023,9 +1023,10 @@ true human editor reference labels. The existing automatically executed
 from the saved single- or multi-batch trial audit **only after**
 reservation SHA, rights policy fingerprint and all stage-count checks.
 
-- Source identity and clip ID must be among the currently reserved
-  records; every completed batch must contain each selected clip
-  exactly once in its per-batch diagnostic map.
+- Cut clip IDs must match the selected clip IDs of the currently
+  reservation/policy-bound audit; every completed batch must contain each
+  selected clip exactly once in its per-batch diagnostic map. This
+  offline step does **not** re-prove media hashes or source identity.
 - Cumulative diagnostics must be exactly the union of completed-batch
   diagnostics; totals are independently recomputed from checked rows.
   Bogus promoted gold, impossible candidate count/width, invented
