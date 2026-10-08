@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 
 from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
+from holoclip.examples import human_clip_identity
 from holoclip.holdout_e2e_trial import run_reserved_holdout_e2e, STAGES
 from holoclip.holdout_diagnosis import diagnose_holdout_e2e
 from holoclip.scripted_cut_metrics import score_scripted_cut_report, REFERENCE_VERSION
@@ -199,7 +200,7 @@ def test_generated_ffmpeg_source_and_clip_through_all_nine_real_stages(tmp_path)
     control_score = score_scripted_cut_report({
         "version": REFERENCE_VERSION,
         "reference_kind": "SCRIPTED_FFMPEG_ONLY",
-        "clip_id": CLIP_ID, "duration_seconds": 45.,
+        "clip_id": human_clip_identity(CLIP_URL), "duration_seconds": 45.,
         "cut_seconds": [],
     }, cut_doc)
     assert control_score["scripted_cut_count"] == 0
