@@ -210,6 +210,24 @@ Previously measured v1 cut/source-side/time-map cache chains do not
 qualify as v2 measurements; rerun the already documented bounded holdout
 command to recompute them with current provenance guards.
 
+The existing ninth-stage local media audit now also performs a **bounded
+source-side visual crosscheck** for output-only changes that did not overlap
+acoustic cut candidates. It uses only already verified original-video
+sections and *two neighbouring same-group, continuous audio anchors* to
+derive an approximate local source-video time. Source section-clock quality,
+source/finished hashes and current clip policy are checked first.
+At most six output-only visual peaks are tested; if the probe budget or
+time correspondence fails, the result remains **UNKNOWN**, without
+decoding arbitrary original livestream sections.
+
+The source-side detector distinguishes `SOURCE_VISUAL_CHANGE_ALSO_OBSERVED`
+from `SOURCE_NO_ISOLATED_CHANGE_OBSERVED` as descriptive hypotheses,
+not a declaration of human-edit causation. The results are persisted in
+`independent_visual_source_checks`, included in the real-cut diagnostic
+totals and the existing offline triage. They do not provide verified
+native source-frame PTS, an exact cut time, or human/editor gold, and
+`ready=false` remains.
+
 The bounded holdout audio-cut stage also performs an **independent visual
 survey of the already-downloaded finished video**. Up to six short,
 deterministic FFmpeg windows (default six seconds each) are examined,
