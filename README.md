@@ -96,6 +96,22 @@ claiming that the old source assignment was validated.
 For minimal intervention, use `--all-batches` to process distinct
 reserved clips sequentially in one invocation, at most `--max-batches`
 (default 8; maximum 12) times the `--max-clips` per-batch budget.
+If a *single* clip lacks independently unique original audio evidence,
+the optional `--continue-on-insufficient-audio` flag can defer **only**
+`INSUFFICIENT_UNIQUE_ANCHORS` or `INSUFFICIENT_AUDIO` and examine another
+reserved clip without any automatic retry. For truthful clip attribution,
+this mode forces **one clip per batch**, regardless of `--max-clips`,
+and the finite `--max-batches` budget still applies (maximum 12).
+Source/clip rights restrictions, train/holdout split collision, original
+identity mismatches, corrupt files, missing reports, unexpected exceptions,
+and other failures remain immediate hard stops. Deferred clips remain
+**unverified**, appear by ID in both run and offline diagnosis audits, and
+never count as successful nine-stage measurements. The final status is
+`UNREVIEWED_INSUFFICIENT_AUDIO_RECORDED`, not a complete/ready state,
+if the bounded invocation examined every reservation but some audio
+correspondence was insufficient. For ordinary use, leave this opt-in
+disabled to retain the original fail-on-first-mismatch behavior.
+
 The run holds one exclusive lock across all batches, fails closed
 at the first blocked/quarantined/insufficient step, and never retries a
 failed batch indefinitely. It writes a **separate cumulative**
