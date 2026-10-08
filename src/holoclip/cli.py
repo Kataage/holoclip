@@ -688,6 +688,7 @@ def examples_diagnose_holdout_e2e(
     store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
     state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
     root: Path = typer.Option(Path("data/provider-benchmark/holdout")),
+    policy_file: Path = typer.Option(Path("data/policy/clip_rules.jsonl")),
     output: Path | None = typer.Option(
         None, help="Offline diagnostic output JSON; defaults inside --root",
     ),
@@ -695,6 +696,7 @@ def examples_diagnose_holdout_e2e(
     """Diagnose saved holdout stages offline, without acquiring any new media."""
     report = diagnose_holdout_e2e(
         store=store, state_path=state, root=root, output=output,
+        policy_rules=load_policy_rules(policy_file),
     )
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
     if report["status"] not in {"UNREVIEWED_TRIAL_RECORDED"}:
@@ -754,7 +756,7 @@ def examples_validate_holdout_e2e(
         # inexpensive, offline-only triage makes the first blocked stage
         # actionable without requiring a separate user command.
         diagnosis = diagnose_holdout_e2e(
-            store=store, state_path=state, root=root,
+            store=store, state_path=state, root=root, policy_rules=rules,
         )
         typer.echo(json.dumps({
             "offline_diagnosis": diagnosis["status"],
