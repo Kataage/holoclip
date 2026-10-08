@@ -8,6 +8,8 @@ from holoclip.audio_anchor_alignment import (
     VERSION, fingerprint_media, match_features,
 )
 from holoclip.examples import upsert_human_clip_examples
+from holoclip.corpus_growth import CorpusGrowthItem
+from holoclip.holdout_preparation import prioritize_unprocessed
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
 from test_editorial_profile import trusted_example
 from test_holdout_preparation import VideoProvider, files, run
@@ -179,3 +181,17 @@ def test_unreviewed_preparation_identity_must_match_reservation(tmp_path):
     report = _run_pipeline(provider, store, state, prepared)
     assert report["counts"] == {"BLOCKED_UNVERIFIED_FINISHED_VIDEO": 1}
     assert provider.calls == 1
+
+
+def test_unattended_queue_prioritizes_unprocessed_sources_over_cached_results():
+    candidates = [
+        CorpusGrowthItem(clip_url=f"https://youtu.be/{name}", query="test",
+                         status="holdout_reserved", source_stream_id=f"stream-{name}")
+        for name in ("cached", "failed", "new")
+    ]
+    report = {
+        "youtube:cached": {"status": "PREPARED_UNREVIEWED"},
+        "youtube:failed": {"status": "RETRYABLE_FAILURE"},
+    }
+    ordered = prioritize_unprocessed(candidates, report, {"PREPARED_UNREVIEWED"})
+    assert [row.clip_url.rsplit("/", 1)[-1] for row in ordered] == ["new", "failed", "cached"]
