@@ -74,12 +74,23 @@ def _probe_for(provider):
     return probe
 
 
+def measured_fixture(*args, **kwargs):
+    window = fake_measure(*args, **kwargs)
+    manifest = json.loads(
+        (Path(window.video_path).parent / "measurement.json").read_text(encoding="utf-8")
+    )
+    return SimpleNamespace(
+        video_path=window.video_path,
+        media_sha256=manifest["window"]["media_sha256"],
+    )
+
+
 def _execute(provider, store, state, prepared, audio_root, **kwargs):
     return measure_reserved_source_pairs(
         provider, store=store, state_path=state,
         prepared_root=prepared, audio_root=audio_root,
         output=prepared / "source_pairs", policy_rules=kwargs.pop("policy_rules", []),
-        max_clips=2, probe=_probe_for(provider), measure=fake_measure, **kwargs,
+        max_clips=2, probe=_probe_for(provider), measure=measured_fixture, **kwargs,
     )
 
 
@@ -142,7 +153,7 @@ def test_new_training_overlap_prevents_any_metadata_probe(tmp_path):
         NoNetwork(), store=store, state_path=state,
         prepared_root=prepared, audio_root=audio_root,
         output=prepared / "source_pairs", policy_rules=[],
-        measure=fake_measure,
+        measure=measured_fixture,
     )
     assert result["counts"] == {"BLOCKED_SPLIT_CONFLICT": 1}
 
@@ -197,7 +208,7 @@ def test_section_duration_mismatch_is_retryable_and_not_promoted(tmp_path):
     result = measure_reserved_source_pairs(
         provider, store=store, state_path=state, prepared_root=prepared,
         audio_root=audio_root, output=prepared / "source_pairs", policy_rules=[],
-        probe=bogus_probe, measure=fake_measure,
+        probe=bogus_probe, measure=measured_fixture,
     )
     assert result["counts"] == {"RETRYABLE_FAILURE": 1}
     assert result["qualification_allowed"] is False
