@@ -91,6 +91,13 @@ def link_measured_frames(
         if not within:
             rejected["audio_visual_disagreement"] += 1
             continue
+        # A substantially stronger geometric match at a different original
+        # source time contradicts the audio prediction. Do not cherry-pick the
+        # weaker image that happens to fall inside the expected time window.
+        if (ranked[0][1].id != within[0][1].id
+                and ranked[0][0] - within[0][0] >= ambiguity_margin):
+            rejected["audio_visual_disagreement"] += 1
+            continue
         score, best, source_seconds, geometry = within[0]
         distant_competitors = [
             row[0] for row in ranked
