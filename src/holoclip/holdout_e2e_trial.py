@@ -771,8 +771,11 @@ def run_all_reserved_holdout_batches(
                 result["observed_totals"][key] += item["observations"][key]
             if number <= len(replay_batches):
                 result["revalidated_previous_batches"] += 1
-            # Persist after every completed batch, not only at invocation exit.
-            save()
+            # During validation of the historical prefix, preserve the full
+            # original checkpoint. If Windows crashes midway through replay,
+            # next launch can still replay its complete original prefix.
+            if number > len(replay_batches):
+                save()
 
         if len(seen | deferred_audio) != len(all_ids):
             result["status"] = "BOUNDED_BATCH_LIMIT_REACHED"
