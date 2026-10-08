@@ -214,7 +214,7 @@ FFmpeg fixture with its scripted join at output t=22s:
 {
   "version": "scripted-ffmpeg-cut-reference-v1",
   "reference_kind": "SCRIPTED_FFMPEG_ONLY",
-  "clip_id": "aaaaaaaaaaa",
+  "clip_id": "youtube:aaaaaaaaaaa",
   "duration_seconds": 44,
   "cut_seconds": [22]
 }
