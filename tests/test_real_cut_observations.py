@@ -400,6 +400,14 @@ def test_visual_only_signal_survives_unknown_acoustic_support():
     with pytest.raises(ValueError):
         describe_real_cut_observations(forged)
 
+    forged = cut.copy()
+    forged["independent_output_visual_survey"] = {
+        **cut["independent_output_visual_survey"],
+        "sampled_windows": [[0., 3.]],
+    }
+    with pytest.raises(ValueError):
+        describe_real_cut_observations(forged)
+
 
 def test_unknown_visual_decode_keeps_unmeasured_counts_null():
     cut = cut_row(transitions=[], visual=[])
