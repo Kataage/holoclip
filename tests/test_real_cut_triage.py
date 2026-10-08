@@ -187,3 +187,21 @@ def test_normalized_tamper_rejected_without_media():
                        "status": "UNREVIEWED_MEASUREMENTS_COMPLETE"}],
             multi_batch=False,
         )
+
+
+def test_offline_triage_surfaces_visual_change_not_acoustically_explained():
+    from holoclip.real_cut_triage import _checked_row, _triage_codes
+    row = describe_real_cut_observations(cut_row())
+    row["output_only_visual_status"] = "MEASURED_UNREVIEWED_OUTPUT_ONLY_VISUAL_SIGNALS"
+    row["output_only_visual_change_count"] = 2
+    row["output_only_visual_without_acoustic_count"] = 1
+    row["output_only_visual_coverage_seconds"] = 12.
+    checked = _checked_row("youtube:aaaaaaaaaaa", row)
+    assert "OUTPUT_ONLY_VISUAL_SIGNAL_WITHOUT_ACOUSTIC_CANDIDATE" in _triage_codes(checked)
+    assert checked["editor_cut_recall"] is None
+    for forgery in (
+        {**row, "output_only_visual_without_acoustic_count": 3},
+        {**row, "reviewed_gold_available": True},
+    ):
+        with pytest.raises(ValueError):
+            _checked_row("youtube:aaaaaaaaaaa", forgery)
