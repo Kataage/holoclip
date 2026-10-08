@@ -735,6 +735,20 @@ def examples_validate_holdout_e2e(
             "PREFLIGHT_ONLY_NO_MEDIA_EXECUTED",
         }
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+    if all_batches:
+        # Media-heavy work has already completed or failed. A second,
+        # inexpensive, offline-only triage makes the first blocked stage
+        # actionable without requiring a separate user command.
+        diagnosis = diagnose_holdout_e2e(
+            store=store, state_path=state, root=root,
+        )
+        typer.echo(json.dumps({
+            "offline_diagnosis": diagnosis["status"],
+            "diagnostic_report_path": diagnosis["report_path"],
+            "next_action": diagnosis["next_action"],
+            "first_blocker": diagnosis["first_blocker"],
+            "unattempted_clips": len(diagnosis["unattempted_clip_ids"]),
+        }, ensure_ascii=False, indent=2))
     if report["status"] not in allowed:
         raise typer.Exit(code=3)
 
