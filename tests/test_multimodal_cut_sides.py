@@ -106,8 +106,8 @@ def test_missing_clocks_or_output_jumps_or_source_reordering_remain_unknown():
         jump, clip_duration=25., decode=forbidden,
     )["status"] == "UNKNOWN_SECTION_CLOCK"
     clocks[0]["status"] = "PARTIAL_SECTION_AUDIO_CLOCK"
-    refinement["points"][1]["source_start"] = 30.
-    refinement["points"][1]["source_end"] = 32.
+    refinement["points"][1]["source_start"] = 42.
+    refinement["points"][1]["source_end"] = 44.
     assert compare_transition_sides(
         Path("x"), sections, clocks, refinement, transition,
         jump, clip_duration=25., decode=forbidden,
