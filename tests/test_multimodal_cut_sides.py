@@ -10,6 +10,7 @@ import pytest
 
 from holoclip.clip_policy import ClipPolicyRule, PolicyDecision
 from holoclip.examples import upsert_human_clip_examples
+from test_editorial_profile import trusted_example
 from holoclip.holdout_cut_side_pipeline import inspect_reserved_cut_sides
 from holoclip.multimodal_cut_sides import (
     HEIGHT, WIDTH, compare_transition_sides, decode_short_frames,
@@ -129,7 +130,7 @@ def test_bounded_real_ffmpeg_decode_and_seek_guard(tmp_path):
     with pytest.raises(ValueError):
         decode_short_frames(video, center=0.2, duration=5.)
     with pytest.raises(ValueError):
-        decode_short_frames(video, center=30., duration=35.)
+        decode_short_frames(video, center=30., duration=31.)
 
 
 def _pipeline_fixture(tmp_path):
@@ -141,7 +142,7 @@ def _pipeline_fixture(tmp_path):
         "OBSERVED_UNREVIEWED_VISUAL_GEOMETRY": 1
     }
     def fake_refiner(*args, **kwargs):
-        section, clocks, refinement, transition, jump = supported_transition()
+        _, _, refinement, transition, _ = supported_transition()
         return {"status": "AUDIO_SUPPORTED_INTERVALS",
                 "points": refinement["points"], "transitions": [transition]}
     def fake_jump(*args):
