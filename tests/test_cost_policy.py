@@ -94,6 +94,21 @@ async def test_request_cannot_substitute_a_paid_wire_credential(tmp_path, provid
         assert db.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
 
 
+async def test_per_request_auth_cannot_override_verified_free_credential(tmp_path):
+    guard = guard_at(tmp_path / "quota.db", provider="groq")
+    entry = guard.registry["groq:openai/gpt-oss-120b"]
+    def handler(request):
+        pytest.fail("Unauthorized per-request auth reached HTTP")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(CostPolicyError, match="auth"):
+            await guard.post(client, provider=entry.provider, model=entry.model,
+                base_url=entry.base_url, key="test-key", operation="chat/completions",
+                estimate={"requests": 1}, public=True,
+                auth=httpx.BasicAuth("paid-user", "paid-key"))
+    with guard.ledger.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0
+
+
 @pytest.mark.parametrize("provider,model", [
     ("gemini", "gemini-3.8-flash"),
     ("groq", "openai/gpt-oss-120b"),
