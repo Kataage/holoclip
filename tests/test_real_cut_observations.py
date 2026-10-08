@@ -138,6 +138,17 @@ def test_reordered_or_promoted_side_is_not_verified():
     )["two_sided_multimodal_candidates"] is None
 
 
+def test_forged_output_visual_label_without_corresponding_measured_status_is_unknown():
+    row = cut_row()
+    row["output_visual_cut_evidence"][0]["visual_result"]["status"] = (
+        "UNKNOWN_NO_ISOLATED_JUMP"
+    )
+    result = describe_real_cut_observations(row, side_row())
+    assert result["output_visual_corroborating_candidates"] is None
+    # Source-side evidence is scored as its own observation, not a gold label.
+    assert result["two_sided_multimodal_candidates"] == 1
+
+
 def test_budget_and_missing_output_visual_are_not_zero():
     side = side_row()
     side["transitions"] = [{"status": "UNKNOWN_TRANSITION_BUDGET",
