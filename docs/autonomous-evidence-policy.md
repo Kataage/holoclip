@@ -170,6 +170,9 @@ Safety and scope:
   before downloading original audio.
 - Cache source and clip fingerprints by their media SHA-256. Reusing a saved
   alignment requires identical media bytes, method version and current policy.
+- Prioritize unseen holdout candidates ahead of retryable errors and already
+  cached successes in each bounded cycle, so repeated unattended invocations
+  continue through new streams rather than rescanning only the first records.
 - Save `data/provider-benchmark/holdout/holdout-audio-alignment.json`,
   including explicit unknowns, comparison scores and provenance. A weak/noisy
   audio match is **not silently repaired by model guesses**.
