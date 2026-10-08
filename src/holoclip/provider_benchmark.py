@@ -402,11 +402,19 @@ def derive_qualifications(report: dict, report_sha: str) -> list[Qualification]:
             expected_task = {"text": "text", "audio": "asr", "embedding": "embedding"}.get(summary["mode"], "video")
             expected_cases = [c for c in manifest.cases if c.task == expected_task]
             call_ids = [request["id"] for row in rows for request in row["requests"]]
-            complete = (len(gold) == len(rows) and len(rows) == len(expected_cases) * manifest.repeats
+            successful = [row for row in rows if row["status"] == "SUCCEEDED"]
+            # Review every successful response, never invent a gold score for a
+            # timeout/invalid output. Operational failures still count toward the
+            # separate success-rate floor and remain in immutable telemetry.
+            # The full planned attempt set must be present, including failures:
+            # dropping failed rows must never improve a provider's qualification.
+            complete = (len(rows) == len(expected_cases) * manifest.repeats
+                        and len(gold) == len(successful)
                         and all(a.consistency_facts for a in gold)
                         and all(cases[r["case_id"]].held_out for r in rows)
-                        and len({r["clip_id"] for r in rows}) >= 5
-                        and all(any(req["status"] == "http_200" for req in r["requests"]) for r in rows)
+                        and len({r["clip_id"] for r in successful}) >= 5
+                        and all(any(req["status"] == "http_200" for req in r["requests"])
+                                for r in successful)
                         and len(call_ids) == len(set(call_ids)))
             quality = min(a.quality_score for a in gold)  # weakest gold case, never vendor-wide inheritance
             q = Qualification(provider=summary["provider"], model=summary["model"], capability=cap,
