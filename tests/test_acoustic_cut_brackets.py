@@ -203,3 +203,35 @@ def test_rejected_visual_report_cannot_create_cut_brackets(tmp_path):
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ValueError):
         _run(provider, store, state, prepared, audio_root)
+
+
+def test_missing_original_video_span_does_not_inherit_visual_provenance(tmp_path):
+    provider, store, state, prepared, audio_root = _setup(tmp_path)
+    path = prepared / "source_pairs" / "holdout-source-pairs.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    next(iter(payload["records"].values()))["pairs"][0]["source_start"] = 45.
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    class NoNetwork:
+        def probe(self, url):
+            raise AssertionError("Uncovered source range must block before probing")
+
+    result = _run(NoNetwork(), store, state, prepared, audio_root)
+    assert result["attempted"] == 0
+    assert result["counts"] == {"BLOCKED_AUDIO_VISUAL_RANGE_MISMATCH": 1}
+
+
+def test_untrusted_visual_method_does_not_generate_cut_confidence(tmp_path):
+    provider, store, state, prepared, audio_root = _setup(tmp_path)
+    path = prepared / "visual_edits" / "holdout-visual-observations.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    next(iter(payload["records"].values()))["method_version"] = "unverified-model"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    class NoNetwork:
+        def probe(self, url):
+            raise AssertionError("Mismatched visual evidence must block before probing")
+
+    result = _run(NoNetwork(), store, state, prepared, audio_root)
+    assert result["attempted"] == 0
+    assert result["counts"] == {"BLOCKED_VISUAL_EVIDENCE_UNVERIFIED": 1}
