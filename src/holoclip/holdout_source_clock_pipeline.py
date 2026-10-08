@@ -189,6 +189,7 @@ def calibrate_reserved_section_clocks(
                     progress(f"source clock {clip_id}: reused checked section clocks")
                 continue
             calibrated = []
+            observed_policy_blocked = False
             for section in sections:
                 result = calibrate(
                     Path(section["source_video_path"]),
@@ -205,6 +206,7 @@ def calibrate_reserved_section_clocks(
                 if origin is not None and abs(origin - section["source_start"]) > 5:
                     result = {**result, "status": "UNKNOWN_REQUESTED_SEEK_DISAGREEMENT",
                               "origin_seconds": None,
+                              "approx_original_video_range": None,
                               "original_video_absolute_pts_verified": False}
                 observed = result.get("approx_original_video_range")
                 if observed is not None and result["status"] == "PARTIAL_SECTION_AUDIO_CLOCK":
@@ -217,7 +219,8 @@ def calibrate_reserved_section_clocks(
                         operation=PolicyOperation.LEARN, deferred_findings=sp.findings,
                     )
                     if policy.decision is not PolicyDecision.ALLOW:
-                        raise ValueError("Calibrated source range fails original clip policy")
+                        observed_policy_blocked = True
+                        break
                 calibrated.append({
                     "group": section["group"],
                     "requested_source_range": [
@@ -228,6 +231,9 @@ def calibrate_reserved_section_clocks(
                     "absolute_original_frame_pts_verified": False,
                     **result,
                 })
+            if observed_policy_blocked:
+                block("QUARANTINED_OBSERVED_RANGE_POLICY")
+                continue
             records[clip_id] = {
                 **base, "status": "MEASURED_SOURCE_SECTION_CLOCK_DIAGNOSTICS",
                 "fingerprint": identity, "method": CLOCK_VERSION,
