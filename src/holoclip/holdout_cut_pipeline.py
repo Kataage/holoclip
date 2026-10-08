@@ -26,6 +26,8 @@ from holoclip.provider_benchmark import atomic_json
 from holoclip.providers.cost import CostPolicyError
 from holoclip.providers.source.yt_dlp import choose_source_candidate
 from holoclip.video_measurement import checksum_file
+from holoclip.visual_cut_brackets import (VERSION as VISUAL_CUT_VERSION,
+                                           measure_visual_cut_bracket)
 
 VERSION = "reserved-acoustic-cut-brackets-v1"
 
@@ -39,6 +41,7 @@ def refine_reserved_cut_candidates(
     audio_root: Path, pairs_root: Path, visual_root: Path, output: Path,
     policy_rules: list, max_clips: int = 3, max_points: int = 480,
     progress=None, fingerprint=fingerprint_media, refine=refine_acoustic_cut_brackets,
+    measure_jump=measure_visual_cut_bracket,
 ) -> dict:
     """Revalidate actual input bytes, current policies and source split each run."""
     if not 1 <= max_clips <= 20 or not 10 <= max_points <= 1000:
@@ -235,6 +238,7 @@ def refine_reserved_cut_candidates(
                 "frame_manifest_sha256": evidence_hashes,
                 "visual_observations": visual_pairs,
                 "max_points": max_points, "method": BRACKET_VERSION,
+                "visual_cut_method": VISUAL_CUT_VERSION,
                 "audio_version": AUDIO_VERSION,
             })
             cached = records.get(clip_id, {})
@@ -254,12 +258,50 @@ def refine_reserved_cut_candidates(
                 "UNKNOWN_SAMPLING_BUDGET", "UNKNOWN_NO_SUPPORTED_RANGES",
             }:
                 raise ValueError("Unexpected acoustic cut refinement status")
+            # No silent truncation of candidate intervals: if an edit contains
+            # too many discontinuities, mark visual corroboration unknown.
+            transitions = refined.get("transitions", [])
+            candidates = [t for t in transitions
+                          if t.get("status") == "CUT_INTERVAL_CANDIDATE"]
+            jump_evidence = []
+            if len(candidates) > 8:
+                jump_evidence = [{
+                    "status": "UNKNOWN_VISUAL_BRACKET_BUDGET",
+                    "unresolved_candidates": len(candidates),
+                }]
+            else:
+                for candidate in candidates:
+                    observed = measure_jump(
+                        Path(p["media_path"]), candidate["interval"],
+                    )
+                    if observed.get("status") not in {
+                        "VISUAL_JUMP_CANDIDATES", "UNKNOWN_NO_ISOLATED_JUMP",
+                        "UNKNOWN_INSUFFICIENT_FRAMES", "UNKNOWN_BRACKET_TOO_WIDE",
+                    }:
+                        raise ValueError("Unexpected visual cut observation status")
+                    jump_evidence.append({
+                        "acoustic_interval": candidate["interval"],
+                        "acoustic_offset_change_seconds": (
+                            candidate["offset_change_seconds"]
+                        ),
+                        "visual_result": observed,
+                        "relation": (
+                            "CORROBORATING_OUTPUT_CHANGE"
+                            if observed["status"] == "VISUAL_JUMP_CANDIDATES"
+                            else "UNRESOLVED_VISUAL_EVIDENCE"
+                        ),
+                        "verified_edit_cut": False,
+                        "source_visual_transition_ruled_out": False,
+                        "native_frame_pts_verified": False,
+                    })
             records[clip_id] = {
                 **base, "status": "MEASURED_UNREVIEWED_CUT_BRACKETS",
                 "fingerprint": identity, "method": BRACKET_VERSION,
                 "audio_source_sha256": a["source_media_sha256"],
                 "finished_media_sha256": p["media_sha256"],
                 "refinement": refined, "visual_pair_summary": visual_counts,
+                "output_visual_cut_evidence": jump_evidence,
+                "visual_cut_method_version": VISUAL_CUT_VERSION,
                 "visual_cut_boundary_confirmed": False,
                 "source_absolute_seek_verified": False,
                 "policy_clip": cp.model_dump(mode="json"),

@@ -53,6 +53,12 @@ evidence, without additional downloads or paid AI inference. Acoustic
 silence, ambiguous matches, visual-only edits and unavailable absolute
 source timestamps remain explicit unknowns.
 
+The audio cut-interval command now additionally performs **bounded,
+finished-video visual jump checks** (8 fps, max 10-second padded interval)
+as weak corroboration. Results include explicit unknowns for natural source
+scene changes, exact frame PTS and unmatched or visually continuous edits;
+no verified gold or edit-frame timestamp is asserted.
+
 After the sparse source/finished visual observations, candidate cut
 intervals can be refined using denser local acoustic correlations without a
 paid inference service, manually provided timestamps, or full-source video:

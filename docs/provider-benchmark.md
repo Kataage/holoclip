@@ -90,6 +90,17 @@ evidence. This does not supply HUMAN_GOLD, `held_out=true` cases, independent
 event grouping or production model approval. See
 [autonomous evidence policy](autonomous-evidence-policy.md).
 
+## Local visual jump corroboration, still diagnostic
+
+The cut-bracket stage also samples bounded finished-video frames near each
+acoustic cut interval. It compares filtered adjacent grayscale frames and
+retains only isolated strong changes, with a measured approximate interval,
+while recording `UNKNOWN` for uniform motion, unobserved sections and
+ambiguous cases. Because source stream footage may naturally switch scenes,
+a measured output jump is **not proof of a human editor cut**, reviewed
+gold or production readiness. The source-to-finished temporal map is
+still incomplete; see [autonomous evidence policy](autonomous-evidence-policy.md).
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
