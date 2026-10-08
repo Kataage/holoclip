@@ -1088,6 +1088,42 @@ cut-time accuracy. It does not change source rights, approval,
 reviewed editor gold, production route eligibility, native frame
 PTS verification, or source/finished dense mapping.
 
+## Increment 26: independent bounded output visual survey (#142)
+
+Before this change, sampled visual discontinuity detection was used only
+*after* acoustic cut candidates had been proposed. An editor cut masked
+by BGM, a muted segment or transient audio could therefore have no
+corresponding output-video observation even when it was visually obvious.
+
+The reserved human clip's already-downloaded finished-video bytes are now
+scanned independently in up to six bounded deterministic **output-only**
+windows (six seconds each). Windows overlap when the finite per-video
+budget permits; all windows and actual successfully decoded seconds are
+recorded, and the unexamined duration remains explicit. The existing
+FFmpeg grayscale isolated-change detector supplies the signals. Multiple
+windows observing one timestamp-nearby peak deduplicate conservatively.
+Peaks are classified as overlapping or **not overlapping** an acoustic
+candidate interval; the latter is *not* evidence of an actual missed
+human edit. The survey is performed even with no acoustic cut
+candidates, provided the protected pipeline reached the audio-cut stage.
+
+The `holdout-cut-brackets` record now has
+`independent_output_visual_survey` and a bound survey method version.
+The unreviewed real-cut observation summary and offline diagnosis also
+report signal coverage and unmatched output-only peaks, but do **not**
+add those peaks as `CUT_INTERVAL_CANDIDATE` or source-side
+`OutputSourceTimeMap` segments. Strict numeric/count/version checks
+reject unsupported promoted or contradictory survey statistics.
+A decode error or inadequate samples are UNKNOWN, with measured peak
+count NULL. Stage-cache identity includes the survey method, so older
+audio-cut reports cannot silently stand in for this independent scan.
+
+The scan can miss long-range or gradual transitions and natural
+original-source scene changes can create false signals. Full source
+video comparison, original native frame timestamps, independent editor
+gold and Hololive accuracy remain **unverified**. All gold, production
+and route qualification gates remain false; `ready=false`.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
