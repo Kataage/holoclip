@@ -9,6 +9,9 @@ import json
 import math
 from pathlib import Path
 
+from holoclip.audio_anchor_alignment import (
+    MATCH_SAMPLING_VERSION, MAX_UNOBSERVED_GAP_SECONDS,
+)
 from holoclip.clip_policy import (
     PolicyDecision, PolicyOperation, evaluate_source_metadata, evaluate_source_ranges,
 )
@@ -30,6 +33,7 @@ def _valid_ranges(audio: dict, duration: float, *, max_ranges: int) -> list[dict
     """Reject altered/non-grounded alignment; no model may invent these ranges."""
     if (audio.get("status") != "PARTIAL_AUDIO_MATCH"
             or audio.get("fingerprint_version") != AUDIO_VERSION
+            or audio.get("match_sampling_version") != MATCH_SAMPLING_VERSION
             or not audio.get("anchors") or len(audio["anchors"]) < 3
             or not isinstance(audio.get("ranges"), list)):
         return []
@@ -64,7 +68,21 @@ def _valid_ranges(audio: dict, duration: float, *, max_ranges: int) -> list[dict
                  and a["clip_end"] <= item["clip_end"] + .5
                  and abs((a["source_start"] - a["clip_start"])
                          - (item["source_start"] - item["clip_start"])) <= .75]
-        if len(group) < item["anchors"]:
+        # Strong acoustic matches at the *ends* do not prove the middle:
+        # an obsolete 25s-gap matcher could have produced a claimed range
+        # over a silent narration replacement. The stage's own cache check
+        # alone is insufficient for direct downstream command invocation.
+        group.sort(key=lambda a: a["clip_start"])
+        if (len(group) != item["anchors"]
+                or len({a["clip_start"] for a in group}) != len(group)
+                or abs(group[0]["clip_start"] - item["clip_start"]) > .5
+                or abs(group[-1]["clip_end"] - item["clip_end"]) > .5
+                or abs(group[0]["source_start"] - item["source_start"]) > .75
+                or abs(group[-1]["source_end"] - item["source_end"]) > .75
+                or any(
+                    nxt["clip_start"] > prev["clip_end"] + MAX_UNOBSERVED_GAP_SECONDS
+                    for prev, nxt in zip(group, group[1:])
+                )):
             return []
         last_end = item["clip_end"]
         if len(chosen) < max_ranges:
@@ -87,6 +105,7 @@ def _reusable(old: dict, audio: dict, *, clips_sha: str, source_sha: str,
             or old.get("audio_source_sha256") != source_sha
             or old.get("finished_media_sha256") != clips_sha
             or old.get("audio_method") != AUDIO_VERSION
+            or old.get("audio_sampling_version") != MATCH_SAMPLING_VERSION
             or old.get("max_ranges") != max_ranges
             or old.get("padding_seconds") != padding
             or not old.get("pairs")):
@@ -324,6 +343,7 @@ def measure_reserved_source_pairs(
             records[clip_id] = {
                 **base, "status": "MEASURED_UNREVIEWED_SOURCE_PAIRS",
                 "pairs": pairs, "plans": plans, "audio_method": AUDIO_VERSION,
+                "audio_sampling_version": MATCH_SAMPLING_VERSION,
                 "audio_source_sha256": audio_item["source_media_sha256"],
                 "finished_media_sha256": prepared_item["media_sha256"],
                 "max_ranges": max_ranges, "padding_seconds": padding_seconds,

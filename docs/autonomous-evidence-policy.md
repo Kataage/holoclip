@@ -899,6 +899,39 @@ total (replayed plus new) batches, quota constraints, no-Docker/no-paid
 services and `ready=false` safeguards remain. No independently
 reviewed editor accuracy or native original video PTS is inferred.
 
+## Increment 21: validate audio evidence again at original-video boundary (#137)
+
+Audit found a direct-entry safety gap: `align_reserved_holdouts` correctly
+invalidates old audio records whenever the unique anchor matcher and
+coverage policy changes, but `measure_reserved_source_pairs` accepted
+audio records containing only the original `fingerprint_version`, not the
+new `match_sampling_version`. An older sparse saved range spanning
+up to 25 seconds of unobserved audio could therefore pass downstream
+`_valid_ranges` when a source-pair command is invoked directly or
+under unusual stale-cache conditions, even though the matcher has
+explicitly refused such interpolation since the ~8-second sampling
+and <=4-second grouping fixes.
+
+The source-video boundary now requires exact
+`match_sampling_version=bounded-observed-audio-islands-v3`, and
+reconstructs every reported range from independently scored,
+uniquely located six-second source/clip anchors: claimed range
+first/last endpoints must be grounded, number of supporting anchors
+must match exactly, anchors must not repeat, and every intervening
+unobserved gap must stay <=4 seconds. Long unsupported narration,
+mute or BGM replacements remain unknown instead of becoming assumed
+video-time alignment or new source downloads. Saved source-video
+pair records now also pin `audio_sampling_version`; earlier caches
+without it are not reused even when both media SHA values are unchanged.
+
+Regression tests include old-method report rejection **before any**
+source-video acquisition, fabricated 25-second bridge, altered anchor
+counts/endpoints, and forced remeasurement of an outdated source-pair
+cache. Existing actual encoded FFmpeg cut/BGM and 3-piece nine-stage
+regression suites remain mandatory. No synthetic fixture fact becomes
+reviewer gold or production-ready status. Real human-edited Hololive
+quality and native video absolute PTS remain unmeasured.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
