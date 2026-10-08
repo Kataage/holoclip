@@ -353,3 +353,71 @@ def test_multi_batch_persists_all_distinct_real_cut_descriptions(tmp_path):
     assert persisted["real_cut_observation_totals"] == result[
         "real_cut_observation_totals"
     ]
+
+
+def test_visual_only_signal_survives_unknown_acoustic_support():
+    cut = cut_row(transitions=[], visual=[])
+    cut["refinement"]["status"] = "UNKNOWN_SAMPLING_BUDGET"
+    cut["visual_survey_method_version"] = "bounded-output-only-visual-survey-v1"
+    cut["independent_output_visual_survey"] = {
+        "version": "bounded-output-only-visual-survey-v1",
+        "status": "MEASURED_UNREVIEWED_OUTPUT_ONLY_VISUAL_SIGNALS",
+        "source": "FINISHED_OUTPUT_ONLY_UNREVIEWED",
+        "duration_seconds": 12., "sampled_coverage_seconds": 12.,
+        "unsampled_duration_seconds": 0.,
+        "sampled_windows": [[0., 6.], [2., 8.], [6., 12.]],
+        "observed_visual_peaks": 1,
+        "without_acoustic_candidate": 1,
+        "observed_peaks": [{
+            "time_bracket_seconds": [5.95, 6.05],
+            "relation": "NO_ACOUSTIC_CANDIDATE_AT_SAMPLED_TIME",
+            "verified_edit_cut": False,
+            "source_scene_change_ruled_out": False,
+        }],
+        "verified_edit_cut": False,
+        "reviewed_gold_available": False,
+        "frame_accurate_cuts_verified": False,
+        "qualification_allowed": False,
+    }
+    result = describe_real_cut_observations(cut)
+    assert result["status"] == "UNKNOWN_ACOUSTIC_SUPPORT"
+    assert result["cut_candidate_count"] is None
+    assert result["output_only_visual_change_count"] == 1
+    assert result["output_only_visual_without_acoustic_count"] == 1
+    assert result["output_only_visual_coverage_seconds"] == 12.
+    summary = aggregate_real_cut_observations({"clip": result})
+    assert summary["described_clips"] == 0
+    assert summary["clips_with_measured_output_only_visual_survey"] == 1
+    assert summary["output_only_visual_without_acoustic_candidates"] == 1
+    assert summary["editor_cut_precision"] is None
+
+    forged = cut.copy()
+    forged["independent_output_visual_survey"] = {
+        **cut["independent_output_visual_survey"],
+        "verified_edit_cut": True,
+    }
+    import pytest
+    with pytest.raises(ValueError):
+        describe_real_cut_observations(forged)
+
+
+def test_unknown_visual_decode_keeps_unmeasured_counts_null():
+    cut = cut_row(transitions=[], visual=[])
+    cut["visual_survey_method_version"] = "bounded-output-only-visual-survey-v1"
+    cut["independent_output_visual_survey"] = {
+        "version": "bounded-output-only-visual-survey-v1",
+        "status": "UNKNOWN_BOUNDED_VISUAL_DECODE",
+        "source": "FINISHED_OUTPUT_ONLY_UNREVIEWED",
+        "duration_seconds": 12., "sampled_coverage_seconds": 0.,
+        "unsampled_duration_seconds": 12.,
+        "sampled_windows": [],
+        "observed_visual_peaks": None, "without_acoustic_candidate": None,
+        "verified_edit_cut": False,
+        "reviewed_gold_available": False,
+        "frame_accurate_cuts_verified": False,
+        "qualification_allowed": False,
+    }
+    result = describe_real_cut_observations(cut)
+    assert result["output_only_visual_status"] == "UNKNOWN_BOUNDED_VISUAL_DECODE"
+    assert result["output_only_visual_change_count"] is None
+    assert result["output_only_visual_without_acoustic_count"] is None
