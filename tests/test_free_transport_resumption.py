@@ -107,7 +107,11 @@ def test_eventual_success_does_not_erase_timeout_or_invalid_json():
                                {"status": "SUCCEEDED", "structured_valid": True, "latency_seconds": 1}]}
     result = summarize([row])[0]
     assert result["eventual_completion_rate"] == 1
-    assert result["success_rate"] == result["json_validity"] == .5
+    assert result["success_rate"] == .5 and result["json_validity"] == 1
+    # A timeout is an availability failure, not a malformed JSON reply.
+    row["attempt_history"][0].update(status="FAILED", error_class="ValueError")
+    invalid = summarize([row])[0]
+    assert invalid["success_rate"] == .5 and invalid["json_validity"] == .5
     assert result["timeouts"] == 1 and result["p50_latency"] == 90
 
 
