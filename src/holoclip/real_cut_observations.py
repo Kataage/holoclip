@@ -10,6 +10,7 @@ import statistics
 from collections import Counter
 
 from holoclip.visual_only_survey import VERSION as VISUAL_SURVEY_VERSION
+from holoclip.visual_source_crosscheck import VERSION as SOURCE_VISUAL_VERSION
 
 VERSION = "unreviewed-real-cut-observations-v1"
 ACOUSTIC_VERSION = "bounded-acoustic-cut-brackets-v2"
@@ -141,6 +142,92 @@ def _describe_independent_visual_survey(row: dict) -> dict:
     return result
 
 
+
+def _describe_source_visual_checks(cut_row: dict, side_row: dict) -> dict:
+    """Only same-identity source-side evidence, never verified cut causation."""
+    result = {
+        "source_visual_check_status": "NOT_MEASURED_OR_UNVERIFIED",
+        "source_visual_change_also_observed": None,
+        "source_visual_no_isolated_change_observed": None,
+        "source_visual_unknown_correspondence": None,
+    }
+    source = side_row.get("independent_visual_source_checks")
+    if source is None:
+        return result
+    if (not isinstance(source, dict)
+            or side_row.get("source_visual_method_version") != SOURCE_VISUAL_VERSION
+            or source.get("version") != SOURCE_VISUAL_VERSION
+            or any(source.get(flag) is not False for flag in (
+                "verified_edit_cut", "source_scene_change_ruled_out",
+                "original_video_absolute_pts_verified",
+                "reviewed_gold_available", "qualification_allowed",
+            ))):
+        raise ValueError("Unsupported or promoted source visual observations")
+    status = source.get("status")
+    checked = source.get("checked_visual_peaks")
+    seen = source.get("source_change_also_observed")
+    absent = source.get("source_no_isolated_change_observed")
+    unknown = source.get("unknown_source_correspondence")
+    observations = source.get("peak_observations")
+    if (status not in {
+            "UNKNOWN_NO_VERIFIED_VISUAL_SURVEY",
+            "UNKNOWN_SOURCE_VISUAL_PROBE_BUDGET",
+            "MEASURED_UNREVIEWED_SOURCE_VISUAL_CHECKS",
+        } or any(type(v) is not int or not 0 <= v <= 18
+                 for v in (checked, seen, absent, unknown))
+            or not isinstance(observations, list)
+            or len(observations) != checked
+            or seen + absent + unknown != (
+                checked if status == "MEASURED_UNREVIEWED_SOURCE_VISUAL_CHECKS"
+                else unknown
+            )):
+        raise ValueError("Contradictory original/finished visual statistics")
+    survey = cut_row.get("independent_output_visual_survey", {})
+    output_peaks = survey.get("observed_peaks", []) if isinstance(survey, dict) else []
+    unmatched = [
+        p["time_bracket_seconds"] for p in output_peaks
+        if isinstance(p, dict)
+        and p.get("relation") == "NO_ACOUSTIC_CANDIDATE_AT_SAMPLED_TIME"
+    ]
+    if status == "MEASURED_UNREVIEWED_SOURCE_VISUAL_CHECKS":
+        if checked != len(unmatched):
+            raise ValueError("Source visual checks do not cover output-only peaks")
+        values = {
+            "SOURCE_VISUAL_CHANGE_ALSO_OBSERVED",
+            "SOURCE_NO_ISOLATED_CHANGE_OBSERVED",
+            "UNKNOWN_NO_TWO_SIDED_AUDIO_ANCHORS",
+            "UNKNOWN_SOURCE_VISUAL_DECODE",
+        }
+        if any(
+            not isinstance(record, dict)
+            or record.get("output_interval") != output
+            or record.get("status") not in values
+            or record.get("verified_edit_cut") is not False
+            or record.get("source_scene_change_ruled_out") is not False
+            for record, output in zip(observations, unmatched)
+        ) or (
+            seen != sum(p["status"] == "SOURCE_VISUAL_CHANGE_ALSO_OBSERVED"
+                        for p in observations)
+            or absent != sum(
+                p["status"] == "SOURCE_NO_ISOLATED_CHANGE_OBSERVED"
+                for p in observations
+            )
+        ):
+            raise ValueError("Inconsistent linked output/source peak identities")
+        result.update({
+            "source_visual_change_also_observed": seen,
+            "source_visual_no_isolated_change_observed": absent,
+            "source_visual_unknown_correspondence": unknown,
+        })
+    elif (checked or seen or absent or observations
+          or (status == "UNKNOWN_NO_VERIFIED_VISUAL_SURVEY" and unknown)
+          or (status == "UNKNOWN_SOURCE_VISUAL_PROBE_BUDGET"
+              and unknown != len(unmatched))):
+        raise ValueError("Unknown original visual survey was promoted")
+    result["source_visual_check_status"] = status
+    return result
+
+
 def describe_real_cut_observations(
     cut_row: dict, side_row: dict | None = None, *,
     maximum_bracket_seconds: float = 8.,
@@ -167,6 +254,10 @@ def describe_real_cut_observations(
         "two_sided_multimodal_candidates": None,
         "two_sided_unresolved_candidates": None,
         "two_sided_status": "NOT_MEASURED_OR_UNVERIFIED",
+        "source_visual_check_status": "NOT_MEASURED_OR_UNVERIFIED",
+        "source_visual_change_also_observed": None,
+        "source_visual_no_isolated_change_observed": None,
+        "source_visual_unknown_correspondence": None,
         "output_only_visual_status": "NOT_MEASURED_OR_UNVERIFIED",
         "output_only_visual_change_count": None,
         "output_only_visual_without_acoustic_count": None,
@@ -276,6 +367,7 @@ def describe_real_cut_observations(
         result["two_sided_status"] = "UNVERIFIED_CROSS_STAGE_PROVENANCE"
         return result
 
+    result.update(_describe_source_visual_checks(cut_row, side_row))
     sides = side_row.get("transitions")
     if not isinstance(sides, list):
         result["two_sided_status"] = "INVALID_SIDE_SCHEMA"
@@ -343,6 +435,18 @@ def aggregate_real_cut_observations(rows: dict[str, dict]) -> dict:
         ),
         "output_only_visual_without_acoustic_candidates": sum(
             x.get("output_only_visual_without_acoustic_count") or 0
+            for x in rows.values()
+        ),
+        "clips_with_measured_source_visual_crosscheck": sum(
+            x.get("source_visual_change_also_observed") is not None
+            for x in rows.values()
+        ),
+        "source_visual_changes_also_observed": sum(
+            x.get("source_visual_change_also_observed") or 0
+            for x in rows.values()
+        ),
+        "source_no_isolated_change_observed": sum(
+            x.get("source_visual_no_isolated_change_observed") or 0
             for x in rows.values()
         ),
         "human_editor_accuracy_available": False,
