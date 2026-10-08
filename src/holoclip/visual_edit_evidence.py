@@ -6,7 +6,6 @@ cannot establish exact cut boundaries or semantic editing intent.
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 VERSION = "visual-orb-affine-v1"
 
