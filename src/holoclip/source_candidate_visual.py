@@ -259,7 +259,8 @@ def verify_pending_source_visual(
         if (not isinstance(scout, dict)
                 or scout.get("version") != SCOUT_VERSION
                 or scout.get("status") != "UNVERIFIED_PUBLIC_SOURCE_SHORTLIST"
-                or not 1 <= len(scout.get("candidate_sources", [])) <= 4
+                or not isinstance(scout.get("candidate_sources"), list)
+                or not 1 <= len(scout["candidate_sources"]) <= 4
                 or item.source_url is not None or item.source_stream_id is not None
                 or human_clip_identity(item.clip_url) in learned_clips):
             finish("BLOCKED_UNVERIFIED_SOURCE_QUEUE")
@@ -298,7 +299,18 @@ def verify_pending_source_visual(
                 measure=measure, probe=probe,
             )
             report["finished_video_sha256"] = finished_sha
-            for index, candidate in enumerate(scout["candidate_sources"][:max_candidates]):
+            available = scout["candidate_sources"]
+            round_number = scout.get("visual_candidate_round", 0)
+            if type(round_number) is not int or round_number < 0:
+                raise ValueError("Invalid saved candidate rotation cursor")
+            selection = [
+                (round_number*max_candidates + i) % len(available)
+                for i in range(min(max_candidates, len(available)))
+            ]
+            report["candidate_round_before"] = round_number
+            report["unprobed_shortlist_candidates"] = len(available) - len(selection)
+            for index in selection:
+                candidate = available[index]
                 observed = {
                     "source_url": candidate.get("source_url"),
                     "source_stream_id": candidate.get("source_stream_id"),
@@ -391,6 +403,8 @@ def verify_pending_source_visual(
                 finally:
                     item.source_scout["visual_probe"] = report
                     persist()
+            scout["visual_candidate_round"] = round_number + 1
+            report["candidate_round_after"] = round_number + 1
             matched = sum(
                 x["status"] == "VISUAL_SEQUENCE_CORROBORATED_NOT_SOURCE_GOLD"
                 for x in report["candidate_observations"]
