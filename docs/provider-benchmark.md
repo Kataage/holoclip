@@ -35,6 +35,18 @@ and no confirmed multi-POV event isolation. They cannot set `held_out=true` or
 promote any model. Do not conflate this with the existing training-corpus
 `corpus-run` command.
 
+## Source-to-finished alignment evidence
+
+`examples-align-holdout` automatically acquires audio-only original streams for
+previously prepared reserved finished clips and computes CPU-only source/clip
+audio anchors. Unlike transcript alignment, it requires no cloud ASR qualification
+or user-supplied timestamps. The measured anchor confidence/uniqueness and
+partial source-to-clip ranges can support downstream *diagnostic* reference
+construction. Insufficient/ambiguous anchors remain unknown. This output is
+**not verified source-event independence, semantic gold or frame-accurate cuts**
+and cannot be promoted to `held_out=true` benchmark cases. Consult
+[autonomous evidence policy](autonomous-evidence-policy.md).
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.

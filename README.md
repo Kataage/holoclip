@@ -32,6 +32,20 @@ with preserved artifacts. See [production provider setup](docs/production-provid
 
 ## Unattended data and evaluation policy
 
+For measured clip-to-original correspondence (no cloud AI inference),
+the optional `media` extra provides NumPy alongside PySceneDetect and OpenCV:
+
+```powershell
+uv run --extra media holoclip examples-grow-corpus --discover-only
+uv run --extra media holoclip examples-prepare-holdout --max-clips 3
+uv run --extra media holoclip examples-align-holdout --max-clips 3
+```
+
+`examples-align-holdout` downloads original-stream **audio**, rechecks
+rights/source identity, then records unique FFT-matched audio anchors and
+approximate clip-to-source ranges. It rejects ambiguous matches; it does
+not claim frame-accurate edit cuts, visual truth or reviewed gold.
+
 Once new holdout source streams have been reserved by
 `examples-grow-corpus --discover-only`, run:
 

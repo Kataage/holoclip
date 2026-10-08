@@ -143,6 +143,53 @@ original-source ranges**, verify multi-POV/event overlap and exact corresponding
 edits before constructing a true held-out benchmark. Availability/policy errors
 do not grant exceptions or trigger paid endpoints.
 
+## Increment 3: automatic approximate clip-to-original audio anchors (#119)
+
+Run the new CPU-only, zero-cloud-key source-audio correspondence step after
+the existing discovery and finished-video preparation. It downloads the **original
+stream's audio only** through the managed source provider, not the entire original
+video archive, and creates compact, streamed multiband FFmpeg fingerprints.
+
+```powershell
+uv run --extra media holoclip examples-grow-corpus --discover-only
+uv run --extra media holoclip examples-prepare-holdout --max-clips 3
+uv run --extra media holoclip examples-align-holdout --max-clips 3
+```
+
+The aligner searches each well-supported finished-audio fragment across the entire
+original stream using FFT correlation. A candidate must exceed **both** a minimum
+absolute correlation and a uniqueness margin over distant competing matches.
+Silent/ambiguous/synthetic/unmatched fragments are rejected; the output retains
+the exact measured fragment positions, scores, correlation margins and approximate
+source-offset groups. These measured *audio matches* can expose multi-cut
+discontinuities without relying on a clip URL timestamp hint or cloud ASR.
+
+Safety and scope:
+- Re-check current public/ended clip/source status, original-link identity,
+  source policy, training-stream collisions and verified finished-video bytes
+  before downloading original audio.
+- Cache source and clip fingerprints by their media SHA-256. Reusing a saved
+  alignment requires identical media bytes, method version and current policy.
+- Prioritize unseen holdout candidates ahead of retryable errors and already
+  cached successes in each bounded cycle, so repeated unattended invocations
+  continue through new streams rather than rescanning only the first records.
+- Save `data/provider-benchmark/holdout/holdout-audio-alignment.json`,
+  including explicit unknowns, comparison scores and provenance. A weak/noisy
+  audio match is **not silently repaired by model guesses**.
+- Audio matches only support **approximate** original-source time ranges; cut
+  transitions may happen between matched anchors. They do NOT measure visual
+  reframing, mute sections, captions, overlays, identity of speaking characters
+  or exact frame-level editorial cut positions. BGM, soundtrack overlap,
+  repeated segments and heavy audio processing can make alignment inconclusive.
+- This output **remains unreviewed**: `benchmark_held_out=false`,
+  `event_split_verified=false`, `qualification_allowed=false` and
+  `reviewed_gold_available=false`. No train dataset is modified and no
+  production provider is promoted.
+
+**Next:** source-range-only original video extraction once acoustic windows are
+measured; independent cross-stream/same-event leakage checks; finer cut
+localization from bounded video/audio; and calibrated independent semantic gold.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
