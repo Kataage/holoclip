@@ -75,6 +75,10 @@ class FreeModel(BaseModel):
     max_video_seconds: float = 120
     max_request_tokens: int | None = Field(default=None, gt=0)
     available: bool = True
+    # Operator-reviewed official pricing proof; never inferred from a successful
+    # inference or model-discovery response.
+    free_status_evidence: str | None = None
+    free_status_verified_by: str | None = None
 
     @field_serializer("operations", "capabilities")
     def sorted_sets(self, value):
@@ -83,6 +87,18 @@ class FreeModel(BaseModel):
     @property
     def identity(self) -> str:
         return f"{self.provider}:{self.model}"
+
+
+class FreeModelReverification(BaseModel):
+    """Explicit evidence from current official pricing review, not inference health."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    provider: str
+    model: str
+    verified_at: datetime
+    official_reference: str = Field(min_length=1)
+    reviewed_by: str = Field(min_length=1)
+    confirmed_no_charge: Literal[True]
+    paid_fallback_allowed: Literal[False] = False
 
 
 class AccountEvidence(BaseModel):
@@ -382,13 +398,46 @@ class CostGuard:
         self.clock = clock or (lambda: datetime.now(UTC))
         self.policy = CostPolicy.ZERO_COST_ONLY
 
+    def apply_free_reverification(self, rows: list[FreeModelReverification]) -> None:
+        """Refresh only the date of existing officially whitelisted free models.
+
+        This is an explicit operator-attested trust boundary, not automatic
+        verification. It cannot introduce hosts, operations, models or paid paths.
+        Account-level billing-disabled proof is independently required.
+        """
+        replacements = {}
+        for proof in rows:
+            entry = self.registry.get(f"{proof.provider}:{proof.model}")
+            if entry is None or not entry.available:
+                raise CostPolicyError("Free proof cannot add or revive an unapproved endpoint")
+            if proof.official_reference not in entry.verification_references:
+                raise CostPolicyError("Free proof must reference an approved official model/pricing source")
+            if not _fresh(proof.verified_at, self.clock(), timedelta(days=7)):
+                raise CostPolicyError("Free proof timestamp is missing, future or expired")
+            if entry.identity in replacements:
+                raise CostPolicyError("Duplicate proof for one model")
+            replacements[entry.identity] = FreeModel.model_validate(entry.model_dump() | {
+                "verified_at": proof.verified_at,
+                "free_status_evidence": proof.official_reference,
+                "free_status_verified_by": proof.reviewed_by,
+            })
+        self.registry.update(replacements)
+
     @classmethod
     def from_env(cls):
         path = Path(os.getenv("HOLOCLIP_FREE_ACCOUNTS", "data/providers/free-accounts.json"))
         raw = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
         accounts = [AccountEvidence.model_validate(row) for row in raw]
-        return cls(QuotaLedger(Path(os.getenv("HOLOCLIP_QUOTA_LEDGER", "data/providers/quota.db"))),
-                   accounts)
+        guard = cls(QuotaLedger(Path(os.getenv("HOLOCLIP_QUOTA_LEDGER", "data/providers/quota.db"))),
+                    accounts)
+        verified_path = Path(os.getenv("HOLOCLIP_FREE_MODEL_EVIDENCE",
+                                       "data/providers/free-model-evidence.json"))
+        if verified_path.exists():
+            proofs = json.loads(verified_path.read_text(encoding="utf-8"))
+            if not isinstance(proofs, list):
+                raise CostPolicyError("Free model proof file must be a JSON list")
+            guard.apply_free_reverification([FreeModelReverification.model_validate(x) for x in proofs])
+        return guard
 
     def model(self, provider: str, model: str, base_url: str) -> FreeModel:
         entry = self.registry.get(f"{provider}:{model}")
