@@ -519,6 +519,50 @@ brackets with independently observed native timestamps and visual
 disagreement metrics, then real media accuracy calibration, multi-POV
 event isolation, OCR/subtitles and rendering/edit-profile evaluation.
 
+## Increment 10: independent bounded video comparison on both sides of acoustic cuts (#126)
+
+After `examples-refine-cut-candidates` (#122–123),
+`examples-calibrate-source-clocks` (#124) and
+`examples-correlate-source-frames` (#125), use:
+
+```powershell
+uv run --extra media holoclip examples-compare-cut-sides --max-clips 3
+```
+
+This compares **actual source and finished image pixels on both sides** of
+each acoustically observed source-offset discontinuity. Each side is selected
+from independently unique short acoustic anchors and a positively calibrated
+bounded original-video section; the comparator decodes only a 1.5-second
+source section and a 1.5-second finished-video sample per side at 8fps,
+640×360 grayscale, up to 16 frames per bounded window. Frame geometry
+uses local OpenCV ORB and RANSAC, requires at least two increasing
+source-to-finished matches on **each** side, and actively tests the
+opposite source side as a repeated-content confounder.
+
+A `MULTIMODAL_EDIT_JUMP_CANDIDATE` requires a nonzero source-audio time
+jump, a previous isolated output visual change and independent visual
+correspondence on both sides. It reports the candidate gap and measured
+frame-pair geometry, but **never** certifies that the output jump was
+introduced by the human editor. Same-scene repeats, source
+time continuity, reordered source, unsupported section clock, and
+source/output visual mismatch remain explicit `UNKNOWN` states.
+
+The stage enforces current rights/policy on source and finished clips,
+both requested and audio-observed source ranges, current public/ended
+source identity, reservation/split isolation, source/finished media and
+all stored frame/sheet SHA-256, upstream source clock hash and 8-transition
+sampling budget before cache reuse. It neither downloads more source media
+nor calls an LLM. It persists only unreviewed diagnostic evidence at
+`data/provider-benchmark/holdout/cut_sides/holdout-cut-side-evidence.json`.
+
+**Still unverified:** original native absolute frame time, cross-video AV
+priming delay, an exact edited cut frame, full piecewise time map, a semantic
+editing decision, independent multi-POV event split, reviewed gold, and
+actual Hololive media quality. Every production/held-out, reviewed-gold,
+event-split, frame-accurate and dense-map flag remains **false**.
+Synthetic pixel tests and bounded FFmpeg decoder tests do not
+establish real-world acceptance accuracy.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
