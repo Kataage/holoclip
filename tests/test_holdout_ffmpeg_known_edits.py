@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
+from holoclip.examples import human_clip_identity
 from holoclip.holdout_e2e_trial import run_reserved_holdout_e2e
 from holoclip.scripted_cut_metrics import score_scripted_cut_report, REFERENCE_VERSION
 from test_holdout_real_ffmpeg_chain import (
@@ -127,7 +128,7 @@ def test_full_measured_pipeline_on_real_encoded_noncontiguous_edit(tmp_path, bac
     synthetic_score = score_scripted_cut_report({
         "version": REFERENCE_VERSION,
         "reference_kind": "SCRIPTED_FFMPEG_ONLY",
-        "clip_id": CLIP_URL.split("v=")[-1],
+        "clip_id": human_clip_identity(CLIP_URL),
         "duration_seconds": EDITED_DURATION,
         "cut_seconds": [SCRIPTED_CUT_SECOND],
     }, cut_doc)
