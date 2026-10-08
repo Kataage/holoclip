@@ -31,6 +31,7 @@ from holoclip.holdout_frame_links_pipeline import correlate_reserved_source_fram
 from holoclip.holdout_cut_side_pipeline import inspect_reserved_cut_sides
 from holoclip.holdout_partial_time_map_pipeline import build_reserved_partial_maps
 from holoclip.holdout_diagnosis import diagnose_holdout_e2e
+from holoclip.scripted_cut_metrics import score_scripted_cut_files
 from holoclip.holdout_e2e_trial import (
     run_all_reserved_holdout_batches, run_reserved_holdout_e2e,
 )
@@ -681,6 +682,42 @@ def evaluation_leak_check(
     )
     if report.suspected_overlap:
         raise typer.Exit(5)
+
+
+@app.command("examples-score-scripted-cuts")
+def examples_score_scripted_cuts(
+    reference: Path = typer.Option(
+        ..., exists=True, readable=True,
+        help="Known synthetic FFmpeg construction boundaries JSON",
+    ),
+    cut_report: Path = typer.Option(
+        Path("data/provider-benchmark/holdout/cut_brackets/holdout-cut-brackets.json"),
+        exists=True, readable=True,
+        help="Measured unreviewed cut-brackets JSON from the nine-stage trial",
+    ),
+    output: Path = typer.Option(
+        Path("data/provider-benchmark/holdout/scripted-cut-scores.json"),
+        help="New isolated synthetic cut metrics; never overwrites original audit",
+    ),
+    tolerance_seconds: float = typer.Option(0., min=0., max=1.),
+    max_bracket_seconds: float = typer.Option(8., min=.01, max=12.),
+) -> None:
+    """Score scripted artificial cuts only, never human-gold editor accuracy."""
+    try:
+        scored = score_scripted_cut_files(
+            reference_path=reference, report_path=cut_report, output_path=output,
+            tolerance_seconds=tolerance_seconds,
+            max_bracket_seconds=max_bracket_seconds,
+        )
+    except (ValueError, OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        # Public errors are fixed, avoiding contents from arbitrary supplied
+        # files and any measured-source/provider exception body.
+        typer.echo(json.dumps({
+            "status": "BLOCKED_INVALID_SCRIPTED_CUT_EVIDENCE",
+            "error_class": type(exc).__name__, "ready": False,
+        }), err=True)
+        raise typer.Exit(code=3) from exc
+    typer.echo(json.dumps(scored, ensure_ascii=False, indent=2))
 
 
 @app.command("examples-diagnose-holdout-e2e")

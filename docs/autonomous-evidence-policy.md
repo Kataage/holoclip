@@ -932,6 +932,48 @@ regression suites remain mandatory. No synthetic fixture fact becomes
 reviewer gold or production-ready status. Real human-edited Hololive
 quality and native video absolute PTS remain unmeasured.
 
+## Increment 22: explicitly scripted cut-candidate precision/recall (#138)
+
+Previously real encoded FFmpeg integration cases checked whether each
+test-authored cut time was enclosed by at least one acoustic candidate
+interval. This is incomplete: a hugely broad candidate could enclose
+multiple cuts, duplicates could inflate counts, and unwanted extra
+candidates were not penalized.
+
+The new standalone **media-free** `examples-score-scripted-cuts` scorer
+uses strictly declared `scripted-ffmpeg-cut-reference-v1` construction
+markers (clip ID, finished duration and strictly ordered known synthetic
+cut times) with a version-checked `holdout-cut-brackets.json`. It
+performs deterministic one-to-one maximal matching between known
+scripted boundaries and eligible acoustic `CUT_INTERVAL_CANDIDATE`
+intervals. Brackets wider than 8 seconds default to false positives
+even if they enclose the scripted cut. Reported measurements include
+matched count, unmatched candidates, missed known cuts,
+scripted-interval precision/recall/F1, center-time absolute
+error and bracket widths. `UNKNOWN_WIDE_GAP` and
+`UNKNOWN_CONTRADICTORY_AUDIO` do not become positive candidates
+or negative truth. Empty denominators remain `null`, not perfect
+scores.
+
+Tests run this measurement against three genuinely decoded,
+independently reencoded *synthetic* FFmpeg cases: an unedited
+45-second negative control, the 44-second two-piece hard edit
+both without and with artificial BGM (one scripted cut at 22s),
+and a 48-second three-piece edit (two known cuts at 16s and 32s).
+All existing nine real decoder/FFT/image/mapping stages are retained.
+The scorer rejects malformed references, wrong measured clip IDs,
+unsupported evidence versions, promoted flags and attempts to
+overwrite the original source reports.
+
+These are **construction-defined synthetic interval metrics ONLY**.
+They are not genuine Hololive editor intent labels, human-gold cut
+precision/recall, a frame-accurate time map or proof of held-out
+production reliability. Corresponding `editor_cut_precision` and
+`editor_cut_recall` remain `null`, `ready=false`,
+`qualification_allowed=false` regardless of numerical score.
+Actual locally reserved Hololive source/finished media and independent
+reviewer reference annotations remain the blocking next work.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished

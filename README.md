@@ -194,6 +194,46 @@ Prior source-video pair caches lacking the sampling-method stamp are
 invalidated and remeasured under current source rights and hash checks.
 This protects direct CLI stage execution, not just the nine-stage runner.
 
+For quantitative validation of known **synthetic FFmpeg edit scripts**,
+the offline `examples-score-scripted-cuts` command now compares scripted
+hard-cut output times with saved unreviewed acoustic cut intervals. It
+counts one-to-one matched scripted cuts, unmatched candidate
+**false positives**, missed scripted **false negatives**, per-candidate
+bracket width and absolute midpoint error. A broad interval over 8s is
+counted as an **unmatched false positive**, even if it covers a true
+scripted boundary; a single interval may never count as multiple hits.
+A continuous, unedited synthetic excerpt provides a zero-cut negative
+control. A missing denominator is reported as `null`, not perfect
+precision or recall.
+
+The reference file must explicitly declare its **synthetic construction**
+origin. For example, on an actual locally executed 44-second two-piece
+FFmpeg fixture with its scripted join at output t=22s:
+
+```json
+{
+  "version": "scripted-ffmpeg-cut-reference-v1",
+  "reference_kind": "SCRIPTED_FFMPEG_ONLY",
+  "clip_id": "youtube:aaaaaaaaaaa",
+  "duration_seconds": 44,
+  "cut_seconds": [22]
+}
+```
+
+Save that exact file separately as a `scripted-reference.json` only when
+the media was in fact constructed by that script, then run:
+
+```powershell
+uv run holoclip examples-score-scripted-cuts --reference scripted-reference.json --cut-report data/provider-benchmark/holdout/cut_brackets/holdout-cut-brackets.json --output data/provider-benchmark/holdout/scripted-cut-scores.json
+```
+
+This scorer performs **no downloads, model inference, FFmpeg or media**
+processing, does not mutate the saved media audit or training corpus, and
+**never reports human editor-gold precision/recall, production readiness
+or native frame-exact cut positions**. Existing real Hololive clips still
+require independent manual/editor-reference annotations for genuine
+held-out quality estimation.
+
 The acoustic matcher refuses to call an entire passage supported merely
 because two 6-second independently matching fragments have the same
 original-source offset: gaps exceeding four seconds without a verified

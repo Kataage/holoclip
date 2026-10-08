@@ -16,8 +16,10 @@ import numpy as np
 import pytest
 
 from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
+from holoclip.examples import human_clip_identity
 from holoclip.holdout_e2e_trial import run_reserved_holdout_e2e, STAGES
 from holoclip.holdout_diagnosis import diagnose_holdout_e2e
+from holoclip.scripted_cut_metrics import score_scripted_cut_report, REFERENCE_VERSION
 from holoclip.providers.source.base import (
     AcquiredSource, AcquiredVideoRange, AcquisitionProfile,
     SourceCandidate, SourceMetadata,
@@ -188,6 +190,24 @@ def test_generated_ffmpeg_source_and_clip_through_all_nine_real_stages(tmp_path)
     assert observed["editor_cut_recall"] is None
     assert observed["native_timestamp_error_seconds"] is None
     assert observed["event_holdout_accuracy"] is None
+    # A continuous 45-second reencoded source excerpt has ZERO constructed
+    # hard-cut boundaries; test the actual scored false-positive count.
+    cut_doc = json.loads(
+        (report_root / "cut_brackets" / "holdout-cut-brackets.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    control_score = score_scripted_cut_report({
+        "version": REFERENCE_VERSION,
+        "reference_kind": "SCRIPTED_FFMPEG_ONLY",
+        "clip_id": human_clip_identity(CLIP_URL), "duration_seconds": 45.,
+        "cut_seconds": [],
+    }, cut_doc)
+    assert control_score["scripted_cut_count"] == 0
+    assert control_score["false_positive_candidates"] == 0
+    assert control_score["scripted_interval_recall"] is None
+    assert control_score["editor_cut_precision"] is None
+    assert control_score["ready"] is False
     # This control is a simple unedited excerpt. Do not call missing image
     # links/candidate maps a verified cut or a successful editor learning task.
     for field in ("reviewed_gold_available", "benchmark_held_out",
