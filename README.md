@@ -210,6 +210,29 @@ Previously measured v1 cut/source-side/time-map cache chains do not
 qualify as v2 measurements; rerun the already documented bounded holdout
 command to recompute them with current provenance guards.
 
+Saved original-stream comparisons now also have an **automatic candidate
+evidence assessment**. Instead of ranking candidate originals by naive
+image-match count, it recomputes each candidate's independent *two-sided*
+finished/original window support from the strictly validated ledger:
+`NO_SAVED_POSITIVE_VISUAL_WINDOWS`,
+`SINGLE_DISTINCT_WINDOW_UNREVIEWED`, or
+`MULTIPLE_DISTINCT_WINDOWS_UNREVIEWED`. Multiple matched original
+candidates remain explicitly `UNKNOWN_COMPETING_VISUAL_ORIGINALS`,
+even if one has more matches than the others. A missing match never
+rejects an original; a more supported candidate is *not selected*.
+No learned probability, source identity, human cut label, or confidence
+number is fabricated.
+
+This assessment is stored after each probe and revalidated against the
+exact original video evidence and candidate roster before any new video
+acquisition. It includes a checksum of the bounded observed event list,
+distinct finished/source sampled contexts, missing-coverage limitations
+and a concrete *autonomous next evidence step*. The raw ledger now also
+rejects changes to one finished video's sampled bytes across different
+candidate originals, and changes to one original video's sampled bytes
+across finished sample intervals. None of this relaxes source rights,
+learning/holdout isolation or the `ready=false` production gate.
+
 For missing-original discovery, each completed sample can now contribute to a
 **persistent reference-free visual evidence ledger**. A new corroboration
 record requires at least three distinct coherent output/original frame pairs

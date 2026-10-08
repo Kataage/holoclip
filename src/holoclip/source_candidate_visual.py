@@ -26,8 +26,12 @@ from holoclip.source_visual_refinement import (
 from holoclip.source_visual_ledger import (
     VERSION as EVIDENCE_VERSION, append_visual_observation, checked_ledger,
 )
+from holoclip.source_visual_assessment import (
+    VERSION as ASSESSMENT_VERSION, assess_visual_candidates,
+    checked_visual_candidate_assessment,
+)
 
-VERSION = "bounded-shortlist-video-probes-v3"
+VERSION = "bounded-shortlist-video-probes-v4"
 WINDOW_SECONDS = 12.
 MAX_CLIPS = 2
 MAX_CANDIDATES = 2
@@ -295,6 +299,7 @@ def verify_pending_source_visual(
             "source_scan_method": "nonrepeating-breadth-first-with-one-local-refinement-v2",
             "refinement_method_version": REFINEMENT_VERSION,
             "cross_run_evidence_method_version": EVIDENCE_VERSION,
+            "candidate_assessment_method_version": ASSESSMENT_VERSION,
             **_NO_GOLD,
         }
 
@@ -337,6 +342,14 @@ def verify_pending_source_visual(
             )
         except ValueError:
             finish("BLOCKED_INVALID_SOURCE_VISUAL_EVIDENCE")
+            continue
+        try:
+            assessment = checked_visual_candidate_assessment(
+                scout.get("visual_candidate_assessment"), ledger,
+                clip_id=clip_id, candidate_ids=candidate_ids,
+            )
+        except ValueError:
+            finish("BLOCKED_INVALID_OR_STALE_VISUAL_CANDIDATE_ASSESSMENT")
             continue
         saved_refinements = scout.get("visual_refinements", {})
         if not isinstance(saved_refinements, dict):
@@ -558,7 +571,11 @@ def verify_pending_source_visual(
                         ],
                         observed=visual,
                     )
+                    assessment = assess_visual_candidates(
+                        ledger, clip_id=clip_id, candidate_ids=candidate_ids,
+                    )
                     scout["visual_evidence"] = ledger
+                    scout["visual_candidate_assessment"] = assessment
                     observed["cross_run_visual_event_recorded"] = recorded
                 except Exception as exc:
                     observed["status"] = "UNKNOWN_BOUNDED_SOURCE_PROBE_FAILURE"
@@ -578,7 +595,9 @@ def verify_pending_source_visual(
                 scout["visual_finished_round"] = finished_round + 1
                 report["finished_round_after"] = finished_round + 1
             scout["visual_evidence"] = ledger
+            scout["visual_candidate_assessment"] = assessment
             report["cumulative_source_visual_support"] = ledger["summary"]
+            report["candidate_assessment"] = assessment
             matched = sum(
                 x["status"] == "VISUAL_SEQUENCE_CORROBORATED_NOT_SOURCE_GOLD"
                 for x in report["candidate_observations"]
