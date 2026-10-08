@@ -14,7 +14,8 @@ from typing import Callable
 from holoclip.video_measurement import checksum_file
 
 VERSION = "audio-band-anchor-v1"
-MATCH_SAMPLING_VERSION = "bounded-eight-second-anchor-coverage-v2"
+MATCH_SAMPLING_VERSION = "bounded-observed-audio-islands-v3"
+MAX_UNOBSERVED_GAP_SECONDS = 4.0
 RATE = 4000
 HOP = 0.25
 SAMPLES = int(RATE * HOP)
@@ -150,11 +151,16 @@ def match_features(clip, source, *, anchor_seconds=6.0, max_anchors=24,
                          "correlation": round(score, 5),
                          "uniqueness_margin": round(margin, 5)})
     # These ranges are *supported spans*, not complete editorial cut positions.
-    # Only join close adjacent anchors which exhibit stable clip-to-source offset.
+    # Do NOT bridge distant matching anchors just because they have the same
+    # source offset. An editor may replace the intervening audio with silence,
+    # narration or BGM; those seconds have no acoustic evidence. The 8-second
+    # sampling cadence produces <=~3-second gaps between matching 6-second
+    # anchors, so permit at most four uncovered seconds as a conservative
+    # grouping tolerance. No range may claim 25 unobserved seconds.
     ranges = []
     for anchor in accepted:
         offset = anchor["source_start"] - anchor["clip_start"]
-        if (ranges and anchor["clip_start"] <= ranges[-1]["clip_end"] + 25
+        if (ranges and anchor["clip_start"] <= ranges[-1]["clip_end"] + MAX_UNOBSERVED_GAP_SECONDS
                 and abs(offset - ranges[-1]["offset_seconds"]) <= HOP * 2):
             item = ranges[-1]
             item["clip_end"] = max(item["clip_end"], anchor["clip_end"])
