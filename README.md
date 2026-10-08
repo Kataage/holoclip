@@ -89,6 +89,20 @@ that lock, inspect the process before removing it. If the original
 reservation state changes during processing, the batch stops instead of
 claiming that the old source assignment was validated.
 
+For minimal intervention, use `--all-batches` to process distinct
+reserved clips sequentially in one invocation, at most `--max-batches`
+(default 8; maximum 12) times the `--max-clips` per-batch budget.
+The run holds one exclusive lock across all batches, fails closed
+at the first blocked/quarantined/insufficient step, and never retries a
+failed batch indefinitely. It writes a **separate cumulative**
+`data/provider-benchmark/holdout/holdout-e2e-all-batches.json`
+checkpoint after every successful batch, recording all selected clip IDs,
+remaining reservations, each batch's stage statuses and candidate-only
+observed totals. If the configured invocation budget cannot cover all
+reservations, the status is `BOUNDED_BATCH_LIMIT_REACHED` (not success).
+Use `--preflight-only` separately, before full media execution.
+This is an evidence/diagnostic trial, not a production qualification.
+
 The local `data/provider-benchmark/holdout/holdout-e2e-audit.json` records
 each stage's *actual* per-clip status, observed candidate coverage, frame
 links, candidate edit discontinuities and blockers. Precision/recall,
