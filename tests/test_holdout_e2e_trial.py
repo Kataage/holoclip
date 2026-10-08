@@ -57,6 +57,7 @@ def make_runners(root, *, override=None, calls=None):
             path.write_text(json.dumps({
                 "version": _stage.version, "qualification_allowed": False,
                 "event_split_verified": False, "reviewed_gold_available": False,
+                "benchmark_held_out": False,
                 "records": records,
             }), encoding="utf-8")
             return {"counts": {status: len(selected)}, "report_path": str(path)}
@@ -345,3 +346,59 @@ def test_existing_lock_blocks_duplicate_run(tmp_path):
     )
     assert result["status"] == "BLOCKED_CONCURRENT_RUN"
     assert (root / ".holdout-e2e.lock").read_text(encoding="utf-8") == "owner"
+
+
+def test_preflight_keeps_existing_full_run_report_intact(tmp_path):
+    store, state, root = files(tmp_path)
+    original = run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=make_runners(root),
+    )
+    assert original["status"] == "SIMULATED_STAGE_TEST_COMPLETE"
+    full_path = root / "holdout-e2e-audit.json"
+    full_bytes = full_path.read_bytes()
+    preview = run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, preflight_only=True,
+    )
+    assert preview["status"] == "PREFLIGHT_ONLY_NO_MEDIA_EXECUTED"
+    assert preview["report_path"].endswith("holdout-e2e-preflight.json")
+    assert full_path.read_bytes() == full_bytes
+    assert (root / "holdout-e2e-preflight.json").exists()
+
+
+def test_duplicate_clip_reservations_fail_before_any_acquisition(tmp_path):
+    store, state, root = files(tmp_path)
+    original = CorpusGrowthState.model_validate_json(state.read_text(encoding="utf-8"))
+    duplicated = next(iter(original.items.values())).model_copy(deep=True)
+    original.items["second-reservation-same-clip"] = duplicated
+    state.write_text(original.model_dump_json(), encoding="utf-8")
+    def must_not_call(*args, **kwargs):
+        raise AssertionError("Ambiguous reservation cannot enter media stages")
+    report = run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=3, runners={stage.name: must_not_call for stage in STAGES},
+    )
+    assert report["status"] == "BLOCKED_AMBIGUOUS_RESERVATION"
+    assert report["stages"] == []
+    assert not (root / ".holdout-e2e.lock").exists()
+
+
+def test_postflight_state_change_does_not_claim_e2e_completed(tmp_path):
+    store, state, root = files(tmp_path)
+    runners = make_runners(root)
+    last = runners["partial_time_map"]
+    def mutate_after_last_stage(provider, **kwargs):
+        result = last(provider, **kwargs)
+        data = CorpusGrowthState.model_validate_json(state.read_text(encoding="utf-8"))
+        data.cursors["modified-while-finishing"] = 3
+        state.write_text(data.model_dump_json(), encoding="utf-8")
+        return result
+    runners["partial_time_map"] = mutate_after_last_stage
+    report = run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root,
+        policy_rules=[], max_clips=1, runners=runners,
+    )
+    assert report["status"] == "BLOCKED_CHANGED_RESERVATION_STATE"
+    assert report["blocked_stage"] == "postflight"
+    assert not report["real_media_run_completed"]
