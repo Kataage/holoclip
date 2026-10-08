@@ -116,6 +116,28 @@ if the bounded invocation examined every reservation but some audio
 correspondence was insufficient. For ordinary use, leave this opt-in
 disabled to retain the original fail-on-first-mismatch behavior.
 
+If Windows restarts or a finite `--max-batches` budget is reached,
+`--resume-checkpoint` can recover the last completed-batch selection
+order from the prior `holdout-e2e-all-batches.json`. Crucially, it
+**replays all nine real stage checks for every historical completed
+batch**, including media SHA/policy/source guardrails, before attempting
+a new reservation. Successful cached expensive work may be reused by
+individual stages only after their own integrity checks. This is
+**not** blind trust of the JSON audit or a shortcut to reviewer gold.
+
+Checkpoint replay refuses changed reservation-state SHA, changed ordered
+rights/policy rules, mismatched stage schema/execution mode, forged stage
+tallies, duplicate clip IDs, or previous failed/deferred batches. Existing
+audits from before this feature lack the policy digest and therefore must
+be rerun normally; unsafe resume does **not** overwrite the saved audit
+and writes `holdout-e2e-resume-refusal.json` instead. During replay of
+prior successful batches, the full original checkpoint stays intact so
+an unexpected second interruption does not erase it. The maximum of
+12 batches applies to the *total revalidated + newly executed* batch
+count; increase `--max-batches` only within that fixed upper bound.
+When the checkpoint has failed/deferred clips, use normal diagnosis and
+a fresh strict trial rather than skipping over them.
+
 The run holds one exclusive lock across all batches, fails closed
 at the first blocked/quarantined/insufficient step, and never retries a
 failed batch indefinitely. It writes a **separate cumulative**
