@@ -45,6 +45,18 @@ class AcquiredSource(BaseModel):
     info_json_path: Path | None = None
     reused: bool = False
 
+class AcquiredVideoRange(BaseModel):
+    """A bounded download, whose absolute source timestamp is only a request."""
+    metadata: SourceMetadata
+    media_path: Path
+    requested_start: float = Field(ge=0)
+    requested_end: float = Field(gt=0)
+    reused: bool = False
+
+    @property
+    def requested_duration(self) -> float:
+        return self.requested_end - self.requested_start
+
 
 class SourceProvider(Protocol):
     def probe(self, url: str) -> SourceMetadata: ...
@@ -61,3 +73,7 @@ class SourceProvider(Protocol):
         *,
         profile: AcquisitionProfile = AcquisitionProfile.TRAINING_AUDIO,
     ) -> AcquiredSource: ...
+
+    def acquire_video_range(
+        self, url: str, output_root: Path, *, start: float, end: float
+    ) -> AcquiredVideoRange: ...
