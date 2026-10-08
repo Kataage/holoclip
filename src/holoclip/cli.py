@@ -22,6 +22,7 @@ from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings
 from holoclip.corpus_growth import grow_corpus
 from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
+from holoclip.holdout_audio_pipeline import align_reserved_holdouts
 from holoclip.editorial_planning import plan_candidate_boundaries
 from holoclip.editorial_evaluation import run_editorial_ab
 from holoclip.example_batch import (
@@ -669,6 +670,25 @@ def evaluation_leak_check(
     )
     if report.suspected_overlap:
         raise typer.Exit(5)
+
+
+@app.command("examples-align-holdout")
+def examples_align_holdout(
+    store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
+    state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
+    prepared_root: Path = typer.Option(Path("data/provider-benchmark/holdout")),
+    output: Path = typer.Option(Path("data/provider-benchmark/holdout")),
+    policy_file: Path = typer.Option(Path("data/policy/clip_rules.jsonl")),
+    max_clips: int = typer.Option(3, min=1, max=20),
+) -> None:
+    """Find conservative audio anchors in original source; never certify exact cuts."""
+    provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
+    report = align_reserved_holdouts(
+        provider, store=store, state_path=state, prepared_root=prepared_root,
+        output=output, policy_rules=load_policy_rules(policy_file),
+        max_clips=max_clips, progress=typer.echo,
+    )
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 @app.command("examples-prepare-holdout")
