@@ -120,8 +120,48 @@ async def test_quota_restart_resume_and_cached_success(tmp_path, free_cost_guard
     async def success(route, payload):
         return {"ok": True}
     result = await router.run(contract(), {"measured_id": "f1"}, success)
-    router.guard.registry = {}
     assert await router.run(contract(), {"measured_id": "f1"}, blocked) == result
+    # Historical responses are preserved, but a disabled provider is not
+    # authorized to influence a current production decision from cache.
+    router.guard.registry = {}
+    with pytest.raises(MeshDeferred, match="unchanged quality floor"):
+        await router.run(contract(), {"measured_id": "f1"}, blocked)
+
+
+
+async def test_cached_success_rejected_after_qualification_expires(tmp_path, free_cost_guard):
+    cache = StageArtifactCache(SQLiteCanonicalRepository(tmp_path / "stages.db"), tmp_path / "artifacts")
+    router = router_for(free_cost_guard, cache=cache)
+    calls = []
+    async def success(route, payload):
+        calls.append(route.entry.identity)
+        return {"ok": True}
+    await router.run(contract(), {"source": "same"}, success)
+    assert len(calls) == 1
+    await router.run(contract(), {"source": "same"}, success)
+    assert len(calls) == 1
+
+    router.qualifications = [q.model_copy(update={"evaluated_at": NOW - timedelta(days=15)})
+                             for q in router.qualifications]
+    with pytest.raises(MeshDeferred, match="unchanged quality floor"):
+        await router.run(contract(), {"source": "same"}, success)
+    assert len(calls) == 1
+
+
+async def test_cached_success_rejected_when_benchmark_report_changes(tmp_path, free_cost_guard):
+    cache = StageArtifactCache(SQLiteCanonicalRepository(tmp_path / "stages.db"), tmp_path / "artifacts")
+    router = router_for(free_cost_guard, cache=cache)
+    calls = []
+    async def success(route, payload):
+        calls.append(route.entry.identity)
+        return {"ok": True}
+    await router.run(contract(), {"source": "same"}, success)
+    assert len(calls) == 1
+
+    router.qualifications = [q.model_copy(update={"report_sha256": "c" * 64})
+                             for q in router.qualifications]
+    await router.run(contract(), {"source": "same"}, success)
+    assert len(calls) == 2
 
 
 def test_deprecation_requires_complete_model_list(free_cost_guard):
