@@ -143,7 +143,7 @@ def test_unavailable_audio_is_not_zero_cut_or_faked_success():
     row = describe_real_cut_observations({
         **cut_row(),
         "refinement": {
-            "version": "bounded-acoustic-cut-brackets-v1",
+            "version": "bounded-acoustic-cut-brackets-v2",
             "status": "UNKNOWN_SAMPLING_BUDGET",
             "transitions": [],
         },
