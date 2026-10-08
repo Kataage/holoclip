@@ -141,6 +141,22 @@ def test_malformed_or_promoted_surveys_fail_closed():
         inspect_visual_only_source_changes(bad, sections, clocks, refinement)
 
 
+
+def test_source_decoder_error_is_unknown_and_does_not_promote():
+    sections, clocks, refinement = evidence()
+    def failed(*args):
+        raise subprocess.CalledProcessError(1, ["ffmpeg"])
+    measured = inspect_visual_only_source_changes(
+        survey(), sections, clocks, refinement, measure=failed,
+    )
+    assert measured["status"] == "MEASURED_UNREVIEWED_SOURCE_VISUAL_CHECKS"
+    assert measured["unknown_source_correspondence"] == 1
+    assert measured["peak_observations"][0]["status"] == (
+        "UNKNOWN_SOURCE_VISUAL_DECODE"
+    )
+    assert measured["verified_edit_cut"] is False
+
+
 def test_missing_output_survey_is_unknown_not_zero_or_gold():
     sections, clocks, refinement = evidence()
     outcome = inspect_visual_only_source_changes(
