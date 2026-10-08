@@ -24,6 +24,7 @@ from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
 from holoclip.bounded_source_evidence import measure_reserved_source_pairs
+from holoclip.holdout_visual_pipeline import inspect_reserved_visual_edits
 from holoclip.editorial_planning import plan_candidate_boundaries
 from holoclip.editorial_evaluation import run_editorial_ab
 from holoclip.example_batch import (
@@ -671,6 +672,31 @@ def evaluation_leak_check(
     )
     if report.suspected_overlap:
         raise typer.Exit(5)
+
+
+@app.command("examples-inspect-visual-edits")
+def examples_inspect_visual_edits(
+    store: Path = typer.Option(Path("data/examples/human_clips.jsonl")),
+    state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
+    prepared_root: Path = typer.Option(Path("data/provider-benchmark/holdout")),
+    audio_root: Path = typer.Option(Path("data/provider-benchmark/holdout")),
+    pairs_root: Path = typer.Option(Path("data/provider-benchmark/holdout/source_pairs")),
+    output: Path = typer.Option(Path("data/provider-benchmark/holdout/visual_edits")),
+    policy_file: Path = typer.Option(Path("data/policy/clip_rules.jsonl")),
+    max_clips: int = typer.Option(3, min=1, max=20),
+    max_frames: int = typer.Option(64, min=1, max=64),
+    time_tolerance: float = typer.Option(4.0, min=.25, max=10),
+) -> None:
+    """Measure sparse source/finished visual geometry; never claim gold or exact cuts."""
+    provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
+    result = inspect_reserved_visual_edits(
+        provider, store=store, state_path=state, prepared_root=prepared_root,
+        audio_root=audio_root, pairs_root=pairs_root, output=output,
+        policy_rules=load_policy_rules(policy_file),
+        max_clips=max_clips, max_frames=max_frames, time_tolerance=time_tolerance,
+        progress=typer.echo,
+    )
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 @app.command("examples-measure-source-pairs")
