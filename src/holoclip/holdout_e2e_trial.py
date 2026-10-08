@@ -609,6 +609,10 @@ def run_all_reserved_holdout_batches(
         "deferred_audio_clip_ids": [], "deferred_audio_clips": 0,
         "attempted_clip_ids": [], "attempted_clips": 0,
         "remaining_clips": 0,
+        # Preserve per-clip descriptive diagnostics across bounded batches.
+        # This is NEVER editorial gold, even for real-media execution.
+        "real_cut_observations": {},
+        "real_cut_observation_totals": aggregate_real_cut_observations({}),
         "observed_totals": {
             "clips_with_unique_original_audio_matches": 0,
             "sampled_source_finished_frame_links": 0,
@@ -747,6 +751,7 @@ def run_all_reserved_holdout_batches(
                 "observations": {
                     k: summary.get(k, 0) for k in result["observed_totals"]
                 },
+                "real_cut_observations": summary.get("real_cut_observations", {}),
             }
             result["batches"].append(item)
             attempted.update(selected)
@@ -795,6 +800,10 @@ def run_all_reserved_holdout_batches(
             result["remaining_clips"] = len(all_ids - seen - deferred_audio)
             for key in result["observed_totals"]:
                 result["observed_totals"][key] += item["observations"][key]
+            result["real_cut_observations"].update(item["real_cut_observations"])
+            result["real_cut_observation_totals"] = (
+                aggregate_real_cut_observations(result["real_cut_observations"])
+            )
             if number <= len(replay_batches):
                 result["revalidated_previous_batches"] += 1
             # During validation of the historical prefix, preserve the full
