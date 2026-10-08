@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from holoclip.corpus_growth import CorpusGrowthState
+from holoclip.examples import human_clip_identity
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
 from holoclip.holdout_cut_pipeline import refine_reserved_cut_candidates
 from holoclip.holdout_cut_side_pipeline import inspect_reserved_cut_sides
@@ -47,7 +48,7 @@ STAGES = (
                   "MEASURED_UNREVIEWED_SOURCE_PAIRS", measure_reserved_source_pairs),
     EvidenceStage("sampled_visual_geometry",
                   "visual_edits/holdout-visual-observations.json",
-                  "reserved-holdout-visual-edits-v1",
+                  "reserved-visual-observations-v1",
                   "OBSERVED_UNREVIEWED_VISUAL_GEOMETRY", inspect_reserved_visual_edits),
     EvidenceStage("acoustic_cut_brackets", "cut_brackets/holdout-cut-brackets.json",
                   "reserved-acoustic-cut-brackets-v1",
@@ -81,15 +82,15 @@ def _kwargs(stage: str, *, store: Path, state: Path, root: Path,
         return {**args, "output": root}
     args["audio_root"] = root
     paths = {
-        "source_video_pairs": ("source_pairs",),
-        "sampled_visual_geometry": ("source_pairs", "visual_edits"),
-        "acoustic_cut_brackets": ("source_pairs", "visual_edits", "cut_brackets"),
-        "source_audio_clocks": ("source_pairs", "source_clocks"),
-        "sampled_frame_links": ("source_pairs", "source_clocks", "frame_links"),
+        "source_video_pairs": (),
+        "sampled_visual_geometry": ("source_pairs",),
+        "acoustic_cut_brackets": ("source_pairs", "visual_edits"),
+        "source_audio_clocks": ("source_pairs",),
+        "sampled_frame_links": ("source_pairs", "source_clocks"),
         "two_sided_cut_evidence": ("source_pairs", "source_clocks",
-                                   "frame_links", "cut_brackets", "cut_sides"),
+                                   "frame_links", "cut_brackets"),
         "partial_time_map": ("source_pairs", "source_clocks", "frame_links",
-                             "cut_brackets", "cut_sides", "partial_time_maps"),
+                             "cut_brackets", "cut_sides"),
     }
     for folder in paths[stage]:
         key = {
@@ -247,9 +248,7 @@ def run_reserved_holdout_e2e(
     if preflight_only:
         return output
 
-    ids = {__import__("holoclip.examples", fromlist=["human_clip_identity"]).human_clip_identity(
-        x.clip_url
-    ) for x in candidates}
+    ids = {human_clip_identity(x.clip_url) for x in candidates}
     for stage in STAGES:
         if progress:
             progress(f"reserved media trial: {stage.name}")
