@@ -1014,6 +1014,45 @@ related non-promotion flags. Artificial/simulated run data never
 becomes real media proof; actual Hololive clip calibration still
 requires authorized local Windows media execution.
 
+## Increment 24: fail-closed offline cut-signal anomaly triage (#140)
+
+Real cut interval descriptions from #139 are useful for identifying
+which *measurement signals* remain weak, but must not be mistaken for
+true human editor reference labels. The existing automatically executed
+`examples-diagnose-holdout-e2e` step now extracts these descriptions
+from the saved single- or multi-batch trial audit **only after**
+reservation SHA, rights policy fingerprint and all stage-count checks.
+
+- Cut clip IDs must match the selected clip IDs of the currently
+  reservation/policy-bound audit; every completed batch must contain each
+  selected clip exactly once in its per-batch diagnostic map. This
+  offline step does **not** re-prove media hashes or source identity.
+- Cumulative diagnostics must be exactly the union of completed-batch
+  diagnostics; totals are independently recomputed from checked rows.
+  Bogus promoted gold, impossible candidate count/width, invented
+  original+finished corroboration counts or unsupported audio counted as
+  zero cuts are rejected as `BLOCKED_INVALID_AUDIT`.
+- The saved `cut_signal_triage` reports fixed, independently coexisting
+  signals such as `ACOUSTIC_SUPPORT_UNKNOWN`,
+  `OVERBROAD_ACOUSTIC_INTERVALS`,
+  `UNRESOLVED_ACOUSTIC_TRANSITIONS`,
+  `OUTPUT_VISUAL_EVIDENCE_UNKNOWN`, and
+  `SOURCE_SIDE_EVIDENCE_UNKNOWN`. A report can indicate a signal gap;
+  **it does not prove a false edit, ground truth, or candidate accuracy**.
+- Earlier version audits without these fields are still diagnosable,
+  but report `LEGACY_NO_CUT_OBSERVATIONS`. A half-written or
+  contradictory new audit fails closed, rather than being silently
+  interpreted as legacy.
+- The normal stage blocker, split/rights checks, original report and
+  production routing are unchanged. The extra summary is read-only
+  metadata inspection: no FFmpeg, downloads, manual URLs, labeling,
+  automatic threshold training or paid providers.
+
+All real-Hololive cut gold, source original absolute native frame PTS,
+full time mapping, independent event/POV isolation, and production
+quality calibration remain **unverified**; `ready=false` and
+`editor_cut_precision/recall=null` by construction.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
