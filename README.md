@@ -53,6 +53,19 @@ evidence, without additional downloads or paid AI inference. Acoustic
 silence, ambiguous matches, visual-only edits and unavailable absolute
 source timestamps remain explicit unknowns.
 
+After the bounded source-section clock has been checked, local ORB/RANSAC
+can compare real original/finished **sampled image frames** against the
+independent audio timeline and reject repeated visual content or time
+contradictions:
+
+```powershell
+uv run --extra media holoclip examples-correlate-source-frames --max-clips 3
+```
+
+Partial links retain exact measured frame IDs and *approximate* source/
+clip time evidence, not a dense source-to-output time map, confirmed cut
+frames, human-reviewed gold or production readiness.
+
 After original-video sections are captured and measured, their **actual
 audio** can be independently matched against the source stream's cached
 full-audio fingerprint, with bounded section native-frame PTS inspection:

@@ -467,6 +467,58 @@ independence and live quality calibration remain open. All existing false
 qualification, event-split, frame-cut, held-out and reviewed-gold flags
 are retained.
 
+## Increment 9: audio-conditioned source↔finished measured frame links (#125)
+
+After source-section clocks are independently calibrated by
+`examples-calibrate-source-clocks` (#124), the
+`examples-correlate-source-frames` stage compares **actual decoded and
+checksum-verified original and finished frame images** (#120). Local OpenCV
+ORB keypoints + RANSAC similarity geometry are evaluated against both
+**independent acoustic time predictions** and visual duplicate alternatives.
+The candidate with the highest visual score is not arbitrarily overridden
+by a much weaker in-window match. If a visually identical source frame
+appears at different times, uniqueness must be measured; ambiguous repeats
+cannot qualify even for a partial link.
+
+```powershell
+uv run --extra media holoclip examples-calibrate-source-clocks --max-clips 3
+uv run --extra media holoclip examples-correlate-source-frames --max-clips 3
+```
+
+For up to 64 measured frames per side (at most 4,096 comparisons), the
+inspector measures candidate frame IDs, shot IDs, decoded **window-local**
+PTS, estimated clip/source positions, acoustic time residual,
+geometric RANSAC coverage, zoom/reframe candidate, competing visual
+match margins and rejected/conflicting observations. At least two
+temporally separated, monotonically increasing visual links with broadly
+consistent offsets are required before a group is reported as
+`PARTIAL_AUDIO_VISUAL_FRAME_LINKS`. Unknown, contradictory, single-frame,
+budget-exceeded and repeated visual matches are retained as `UNKNOWN`.
+
+The source clock from #124 remains **audio-relative and approximate**;
+the measured source frames were themselves extracted from a
+**re-encoded bounded section**. Original livestream native frame PTS,
+source A/V priming, actual editor-cut frame, scene transition cause,
+audio drift and complete OutputSourceTimeMap remain **unverified**. A
+partial link must never be extrapolated through gaps or converted into
+training gold. The output
+`data/provider-benchmark/holdout/frame_links/holdout-frame-links.json`
+is a diagnostic report and cannot qualify production AI.
+
+The stage recomputes the previous clock input fingerprint and re-checks
+the original section, source/full-audio media, finished clip, sampled
+frame and contact-sheet checksums, train/holdout reservation conflicts,
+source-link uniqueness, latest public/ended visibility and clip/source
+LEARN policies **including both requested and audio-observed source
+ranges** before processing or cache reuse. Every qualification,
+reviewed-gold, independent-held-out, true original native-frame,
+frame-cut and dense-time-map flag remains **false**.
+
+Next: direct source/output decoding at bounded acoustic transition
+brackets with independently observed native timestamps and visual
+disagreement metrics, then real media accuracy calibration, multi-POV
+event isolation, OCR/subtitles and rendering/edit-profile evaluation.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
