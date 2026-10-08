@@ -53,6 +53,19 @@ evidence, without additional downloads or paid AI inference. Acoustic
 silence, ambiguous matches, visual-only edits and unavailable absolute
 source timestamps remain explicit unknowns.
 
+After gathering grounded original↔finished frame and cut evidence,
+create a **strictly diagnostic** partial output/source time map. Short
+interval candidates must be supported by independently unique audio
+and two ordered visual frame links, while uncertain gaps are retained:
+
+```powershell
+uv run --extra media holoclip examples-build-partial-time-map --max-clips 3
+```
+
+The output is not a verified dense OutputSourceTimeMap and is never
+used as frame-accurate edit instructions, learning gold or production
+provider evidence. No manual clip URL/timestamps or paid AI models.
+
 To distinguish strong candidate edit discontinuities from unsupported
 scene-change guesses, inspect the *actual bounded original and finished
 video pixels* on both sides of the previously observed acoustic cut:
