@@ -53,6 +53,11 @@ def run_images(finished=None, originals=None):
         finished or measured("clip"),
         originals if originals is not None else [measured("source")],
         extract=lambda locator: locator, compare=compare,
+        confirm_sequence=lambda _pairs: {
+            "status": "PIXEL_TEMPORAL_SEQUENCE_CORROBORATED_NOT_GOLD",
+            "source_identity_verified": False, "reviewed_gold_available": False,
+            "qualification_allowed": False,
+        },
     )
 
 
