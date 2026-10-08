@@ -79,8 +79,6 @@ def _records_from_audit(audit: dict, reserved: set[str]) -> tuple[list, str]:
     else:
         raise ValueError("Unsupported holdout audit schema")
 
-    result["cut_signal_triage"] = cut_triage
-
     seen: set[str] = set()
     deferred_audio: list[str] = []
     cleaned = []
@@ -282,6 +280,8 @@ def diagnose_holdout_e2e(
         result["next_action"] = "INSPECT_AND_REBUILD_INVALID_AUDIT"
         save()
         return result
+
+    result["cut_signal_triage"] = cut_triage
 
     seen: set[str] = set()
     counts = {s.name: Counter() for s in STAGES}
