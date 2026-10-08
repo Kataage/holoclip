@@ -216,8 +216,11 @@ verification worker** during ordinary `examples-grow-corpus` cycles.
 for diagnosis. It refreshes public/ended status and source-range
 policy, samples at most two proposed originals per pending clip,
 and requests only 12-second beginning/middle/end sections from each
-candidate original plus one short finished-clip section. The range
-fetcher never falls back to full-original acquisition. CPU ORB/RANSAC
+candidate original plus one short finished-clip section. The range fetcher never falls back to full-original acquisition.
+A durable per-original breadth-first scan cursor chooses new non-overlapping
+12-second positions on subsequent cycles (initially start/middle/end), so
+repeated autonomous runs expand real sampled coverage instead of endlessly
+re-decoding the same three timestamps. CPU ORB/RANSAC
 matches at least three distinct, time-advancing image pairs within
 one bounded original source section; repeated, static and ambiguous
 matches remain UNKNOWN. Media SHA256, requested range and per-candidate
