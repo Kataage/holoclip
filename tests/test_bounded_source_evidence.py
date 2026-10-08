@@ -246,6 +246,13 @@ def test_yt_dlp_range_command_and_source_namespace(tmp_path, monkeypatch):
         metadata.url, tmp_path / "ranges", start=80., end=94.
     ).reused is True
     assert len(observed) == 1
+    item.media_path.write_bytes(b"damaged cached section")
+    repaired = provider.acquire_video_range(
+        metadata.url, tmp_path / "ranges", start=80., end=94.
+    )
+    assert repaired.reused is False
+    assert len(observed) == 2
+    assert item.media_path.read_bytes() == b"short requested section"
     item2 = provider.acquire_video_range(
         metadata.url, tmp_path / "ranges", start=100., end=112.
     )
