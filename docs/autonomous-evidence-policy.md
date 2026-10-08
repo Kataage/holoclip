@@ -612,6 +612,51 @@ cross-video A/V delay, reliable speed/freeze, full piecewise timeline,
 subtitles and precise edit cuts, independently reviewed event-isolated
 gold and real Hololive clips remain unfinished.
 
+## Increment 12: one-command real-media holdout execution and measurement audit (#128)
+
+Nine existing stage commands (#118–127) can be executed in the correct
+dependency order, without the operator manually supplying original video
+URLs, source timestamps or repeating every stage invocation:
+
+```powershell
+uv run --extra media holoclip examples-validate-holdout-e2e --preflight-only
+uv run --extra media holoclip examples-validate-holdout-e2e --max-clips 3
+```
+
+The preflight validates that local `corpus_growth.json` contains reserved
+unreviewed stream/clip records, checks historical training/reservation
+conflicts and refuses to silently select a different subset if there
+are more reservations than the bounded `max-clips` budget.
+The preflight makes no network calls or video downloads. A full run uses
+only public/ended source pairs and the local free FFmpeg/OpenCV environment,
+and reuses each previous stage's SHA- and policy-validated checkpoint.
+Every stage checks independent source identity, current LEARN restrictions,
+strict sample budgets and no train/holdout source conflicts. A blocked,
+quarantined, insufficient or failed prerequisite stops subsequent work;
+errors reported in the audit include only safe error-class names and
+never remote stderr/auth details.
+
+The `holdout-e2e-audit.json` report records actual stage statuses for
+every reserved clip, which clips reached all nine stages, measured
+source↔finished frame links, source audio matches, multimodal cut candidates,
+local candidate time-map coverage and unknown map outcomes.
+**Metrics that require independently reviewed gold are explicitly null**:
+editor-cut precision/recall, absolute native frame timestamp error and
+event-held-out accuracy. Successful completion says only
+`UNREVIEWED_MEASUREMENTS_COMPLETE`, never `ready=true`,
+`qualification_allowed=true` or `benchmark_held_out=true`.
+Tests using injected/fake stage runners are stamped
+`SIMULATED_STAGE_TEST_COMPLETE` and cannot claim a real media run.
+
+**Important external-data dependency:** the GitHub repository contains
+only example metadata and unit/FFmpeg test fixtures, not the user's
+local acquired Hololive videos, original audio, corpus reservations,
+or real held-out checkpoint evidence. CI passing does not constitute
+real-video calibration. To measure meaningful real-video results, the
+command must run against the user's existing reserved sources and local
+download cache in a permitted, network-connected Windows environment.
+Do not report acceptance rates or unseen clip precision without that run.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
