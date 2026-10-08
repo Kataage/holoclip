@@ -54,6 +54,36 @@ def _checked_row(clip_id: str, value: object) -> dict:
         raise ValueError("Promoted or unsupported real cut observation")
     if value.get("clip_id", clip_id) != clip_id:
         raise ValueError("Misattributed cut observation identity")
+    survey_status = value.get("output_only_visual_status", "NOT_MEASURED_OR_UNVERIFIED")
+    survey_count = value.get("output_only_visual_change_count")
+    survey_unmatched = value.get("output_only_visual_without_acoustic_count")
+    survey_coverage = value.get("output_only_visual_coverage_seconds")
+    if survey_status not in {
+        "NOT_MEASURED_OR_UNVERIFIED",
+        "MEASURED_UNREVIEWED_OUTPUT_ONLY_VISUAL_SIGNALS",
+        "UNKNOWN_BOUNDED_VISUAL_DECODE",
+        "UNKNOWN_INSUFFICIENT_VISUAL_SAMPLING",
+        "UNKNOWN_VISUAL_PEAK_BUDGET",
+    }:
+        raise ValueError("Unsupported output-only visual observation status")
+    if survey_status == "MEASURED_UNREVIEWED_OUTPUT_ONLY_VISUAL_SIGNALS":
+        if (not _count(survey_count, ceiling=18)
+                or not _count(survey_unmatched, ceiling=18)
+                or survey_unmatched > survey_count
+                or type(survey_coverage) not in (int, float)
+                or not math.isfinite(survey_coverage)
+                or not 0 <= survey_coverage <= 86400):
+            raise ValueError("Impossible output-only visual survey totals")
+    elif (survey_count is not None or survey_unmatched is not None
+          or (survey_status == "NOT_MEASURED_OR_UNVERIFIED"
+              and survey_coverage is not None)):
+        raise ValueError("Unknown visual survey was promoted to measured")
+    elif survey_coverage is not None and (
+        type(survey_coverage) not in (int, float)
+        or not math.isfinite(survey_coverage)
+        or not 0 <= survey_coverage <= 86400
+    ):
+        raise ValueError("Malformed visual survey coverage")
     if value["status"] != "UNREVIEWED_REFERENCE_FREE_OBSERVATIONS":
         if (any(value.get(field) is not None for field in (
                 *_NONNEGATIVE, "candidate_median_width_seconds",
@@ -105,11 +135,16 @@ def _checked_rows(value: object, expected: set[str]) -> dict[str, dict]:
 
 def _triage_codes(row: dict) -> list[str]:
     """Independent diagnostic signals, NOT mutually exclusive quality grades."""
+    visual_only = (
+        ["OUTPUT_ONLY_VISUAL_SIGNAL_WITHOUT_ACOUSTIC_CANDIDATE"]
+        if row.get("output_only_visual_without_acoustic_count", 0) > 0
+        else []
+    )
     if row["status"] == "UNKNOWN_ACOUSTIC_SUPPORT":
-        return ["ACOUSTIC_SUPPORT_UNKNOWN"]
+        return ["ACOUSTIC_SUPPORT_UNKNOWN", *visual_only]
     if row["status"] != "UNREVIEWED_REFERENCE_FREE_OBSERVATIONS":
-        return ["CUT_MEASUREMENT_UNVERIFIED"]
-    codes = []
+        return ["CUT_MEASUREMENT_UNVERIFIED", *visual_only]
+    codes = visual_only
     if row["cut_candidate_count"] == 0:
         codes.append("NO_ACOUSTIC_CANDIDATES_OBSERVED")
     if row["overbroad_candidate_count"]:
