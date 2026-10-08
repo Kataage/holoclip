@@ -974,6 +974,46 @@ production reliability. Corresponding `editor_cut_precision` and
 Actual locally reserved Hololive source/finished media and independent
 reviewer reference annotations remain the blocking next work.
 
+## Increment 23: reference-free measured real-clip cut descriptions (#139)
+
+The existing bounded `examples-validate-holdout-e2e` trial can collect
+actual locally downloaded public human-edited clip/source evidence, but
+the new #138 precision/recall/F1 scorer requires *synthetic FFmpeg
+construction boundaries* and must not be used to rate genuine edited cuts.
+
+The nine-stage real-media audit now automatically summarizes only the
+acoustic cut reports and cut-side reports **executed for the same selected
+clip in the current run**. New fields
+`observations.real_cut_observations` and
+`observations.real_cut_observation_totals` provide:
+- per-clip candidate and UNKNOWN audio transition counts, median/P90
+  bracket width, and number of brackets wider than 8 seconds;
+- number of candidates with measured output-only visual change evidence,
+  separately from candidates corroborated by two-sided original/finished
+  acoustic/visual geometry;
+- explicit UNKNOWN for unmeasured acoustic support or exhausted sampling
+  budget (not zero detected candidates); missing cut schema, mismatched clip, original
+  stream, finished media hash, source audio hash, unexecuted stages,
+  unsafely promoted flags, missing side evidence, or exhausted budgets;
+- schema and interval validation that rejects malformed acoustic
+  transitions instead of writing plausible descriptive measurements.
+
+Multi-batch runs preserve the per-batch records and accumulate only
+fully completed nine-stage selected clips in
+`holdout-e2e-all-batches.json`, with complete replay recomputing the
+summary rather than trusting a previous checkpoint's quality claims.
+
+No real-video true-positive/false-positive/missed cut metric is
+fabricated, because a candidate can correspond to a natural scene
+change, an inserted audio edit, or an actual editor cut. These
+numbers are **reference-free diagnostics**, not independent human
+editor gold or verified native video frame PTS. The report preserves
+`editor_cut_precision=null`, `editor_cut_recall=null`,
+`ready=false`, `qualification_allowed=false` and all
+related non-promotion flags. Artificial/simulated run data never
+becomes real media proof; actual Hololive clip calibration still
+requires authorized local Windows media execution.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
