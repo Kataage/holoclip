@@ -1384,6 +1384,39 @@ completion, native absolute PTS, reviewer source identity, reviewed
 editorial gold, event split, clip accuracy and production qualification
 remain unverified. Source IDs remain unset and `ready=false`.
 
+## Increment 34: independent pixel/temporal countercheck (#150)
+
+The source visual scanner previously used only ORB geometry to
+nominate all three temporally coherent source/output frames in a
+positive result. The new CPU-only `source_visual_pixel_check.py`
+independently loads each measured decoded frame (up to six pairs),
+requires saved frame SHA256 equivalence, and computes 63-bit
+low-frequency grayscale DCT fingerprints over bounded scale/crop
+views. It requires each proposed source-output diagonal to remain
+perceptually close, and each pair to be distinctly closer than the
+other sampled-time alternatives; both source and finished trajectories
+must exhibit measurable visual change. An identity-like cached still,
+a repeated shot, incorrectly assigned source images, corrupt PNGs,
+or more frames than the budget now yield `UNKNOWN` even if ORB
+geometry proposed a positive sequence.
+
+The independent gate runs **before** returning
+`VISUAL_SEQUENCE_CORROBORATED_NOT_SOURCE_GOLD` and therefore before
+new observations can enter the historical ledger. It is not a source
+probability or classifier; valid editor zoom, reframe, overlay or
+aspect ratio edits can still cause false UNKNOWN (reduced recall).
+No absence of an independent match is proof a candidate is wrong.
+
+Preexisting historical ORB-only observations are retained as
+unreviewed evidence, **not retroactively labeled as DCT-confirmed**.
+Automated local synthetic video/image fixtures exercise true matching
+content (PNG/JPEG with minor overlay), completely different frames,
+stationary views and checksum tampering; such fixtures are regression
+tests rather than actual Hololive editorial precision/recall.
+`source_identity_verified=false`, no native stream PTS,
+`reviewed_gold_available=false`, and production `ready=false`
+remain mandatory.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished

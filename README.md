@@ -210,6 +210,28 @@ Previously measured v1 cut/source-side/time-map cache chains do not
 qualify as v2 measurements; rerun the already documented bounded holdout
 command to recompute them with current provenance guards.
 
+Real source/finished frame matches now have a **second independent
+pixel-domain temporal check** before the visual scout records them as
+a positive correspondence. ORB/RANSAC first proposes three or more
+time-advancing image pairs; the CPU checker then independently reads
+their checksum-verified PNG/JPEG bytes and compares low-frequency DCT
+perceptual fingerprints (with bounded crop/scale views), verifies
+non-static content across time, and checks each proposed aligned
+frame against off-diagonal alternative frames. A proposed ORB match
+that fails any additional check becomes explicit
+`UNKNOWN_INDEPENDENT_PIXEL_NOT_CORROBORATED`, not a source match or
+a negative label. Corrupt/deleted measured frame bytes likewise
+fail closed. The independent check does not require an LLM, GPU,
+network service, Docker or user-provided footage.
+
+This is conservative: aggressive cropping/overlays can produce
+UNKNOWN even for truly related imagery, and perceptual hashes alone
+do not prove a source identity. Prior historical ledger observations
+were ORB-only and are **not retroactively claimed** to have passed
+the new pixel test. Actual real Hololive held-out precision/recall,
+original native stream PTS, reviewer labels and production readiness
+remain unverified (`ready=false`).
+
 Saved original-stream comparisons now also have an **automatic candidate
 evidence assessment**. Instead of ranking candidate originals by naive
 image-match count, it recomputes each candidate's independent *two-sided*
