@@ -57,6 +57,17 @@ absolute seek-time frames, or certify multi-POV held-out independence.
 The work is tracked in the [autonomous evidence policy](autonomous-evidence-policy.md).
 The output is diagnostic and must not be fed directly into `providers qualify`.
 
+## Conservative source-vs-finished geometric observations
+
+`examples-inspect-visual-edits` interprets previously measured original/
+finished frame pairs via CPU-only ORB/RANSAC similarity geometry. It can
+describe candidate zoom and reframe changes using referenced frame IDs with
+image checksums and explicit geometric diagnostics. It does not prove
+frame-accurate cuts, subtitle role, edit intention, narrative quality, or
+independent reviewed gold; see the
+[autonomous evidence policy](autonomous-evidence-policy.md).
+Never promote this diagnostic report as a benchmark qualification.
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
