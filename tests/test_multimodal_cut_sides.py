@@ -209,6 +209,11 @@ def test_integrated_cut_side_checkpoint_and_resumption(tmp_path):
     row = next(iter(report["records"].values()))
     assert row["transitions"][0]["candidate"]["status"] == "MULTIMODAL_EDIT_JUMP_CANDIDATE"
     assert row["transitions"][0]["editorial_gold"] is False
+    assert row["source_visual_method_version"] == (
+        "bounded-output-source-visual-crosscheck-v1"
+    )
+    assert row["independent_visual_source_checks"]["verified_edit_cut"] is False
+    assert row["independent_visual_source_checks"]["reviewed_gold_available"] is False
     assert len(calls) == 1
     def no_decode(*args, **kwargs):
         raise AssertionError("Unmodified checked frame evidence should be reused")

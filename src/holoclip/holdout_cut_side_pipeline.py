@@ -26,6 +26,9 @@ from holoclip.provider_benchmark import atomic_json
 from holoclip.providers.cost import CostPolicyError
 from holoclip.providers.source.yt_dlp import choose_source_candidate
 from holoclip.video_measurement import checksum_file
+from holoclip.visual_source_crosscheck import (
+    VERSION as SOURCE_VISUAL_VERSION, inspect_visual_only_source_changes,
+)
 
 VERSION = "reserved-multimodal-cut-side-evidence-v1"
 
@@ -35,6 +38,7 @@ def inspect_reserved_cut_sides(
     audio_root: Path, pairs_root: Path, clocks_root: Path,
     frame_links_root: Path, cuts_root: Path, output: Path, policy_rules: list,
     max_clips: int = 3, progress=None, compare=compare_transition_sides,
+    crosscheck=inspect_visual_only_source_changes,
 ) -> dict:
     """Observe source jump versus edited output; never certify human editing gold."""
     if not 1 <= max_clips <= 20:
@@ -258,6 +262,7 @@ def inspect_reserved_cut_sides(
                 "version": VERSION, "method": METHOD, "prepared_sha": p["media_sha256"],
                 "source_video_sha": media_hashes, "manifest_sha": manifests,
                 "clock_report": clock, "frame_links": linked, "cut_report": cut,
+                "source_visual_method": SOURCE_VISUAL_VERSION,
                 "full_audio_sha": a["source_media_sha256"],
             }, sort_keys=True).encode()).hexdigest()
             cached = records.get(clip_id, {})
@@ -307,11 +312,33 @@ def inspect_reserved_cut_sides(
                         "acoustic_interval": transition["interval"],
                         "candidate": measured, "editorial_gold": False,
                     })
+            # The independent output survey may contain a screen change
+            # with no acoustic cut. Inspect only source-video sections already
+            # validated for hashes, rights, stream ID and partial audio clock.
+            visual_source = crosscheck(
+                cut.get("independent_output_visual_survey"),
+                segments, clocks_for_sections, cut["refinement"],
+            )
+            if (not isinstance(visual_source, dict)
+                    or visual_source.get("version") != SOURCE_VISUAL_VERSION
+                    or visual_source.get("status") not in {
+                        "UNKNOWN_NO_VERIFIED_VISUAL_SURVEY",
+                        "UNKNOWN_SOURCE_VISUAL_PROBE_BUDGET",
+                        "MEASURED_UNREVIEWED_SOURCE_VISUAL_CHECKS",
+                    }
+                    or any(visual_source.get(k) is not False for k in (
+                        "verified_edit_cut", "source_scene_change_ruled_out",
+                        "original_video_absolute_pts_verified",
+                        "reviewed_gold_available", "qualification_allowed",
+                    ))):
+                raise ValueError("Unreviewed output/source visual crosscheck was promoted")
             records[clip_id] = {
                 **base, "status": "MEASURED_UNREVIEWED_CUT_SIDE_EVIDENCE",
                 "fingerprint": identity, "method": METHOD,
                 "source_clock_fingerprint": clock["fingerprint"],
                 "transitions": details,
+                "independent_visual_source_checks": visual_source,
+                "source_visual_method_version": SOURCE_VISUAL_VERSION,
                 "audio_source_sha256": a["source_media_sha256"],
                 "finished_media_sha256": p["media_sha256"],
                 "source_section_sha256": media_hashes,

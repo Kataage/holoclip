@@ -1124,6 +1124,49 @@ video comparison, original native frame timestamps, independent editor
 gold and Hololive accuracy remain **unverified**. All gold, production
 and route qualification gates remain false; `ready=false`.
 
+## Increment 27: bounded source-video checks of output-only changes (#143)
+
+After the independent finished-video scan (#142), a visual change
+could represent either original gameplay/camera content or an editor
+transition. New protected source-side observations reduce that uncertainty
+*only when there is strong local evidence for a source clock*.
+
+During the existing two-sided cut stage, after the usual reservation,
+rights-policy, finished/source checksum, original bounded section-clock
+and frame-link provenance checks, output-only peaks are examined
+against the original downloaded bounded video sections. Only a peak
+strictly between **adjacent unique audio anchors in the same group**
+with a continuous stable source offset (<=0.25s disagreement),
+<=4-second unsupported gap, unique section mapping and sufficient
+source-video margins may trigger an extra short original-video seek.
+The approximate original-video check is additionally padded by
+375 ms on each side to tolerate finite FFmpeg sampling and local clock
+uncertainty; this is **not** an original native PTS or exact output cut
+error bound. Other peaks remain `UNKNOWN_NO_TWO_SIDED_AUDIO_ANCHORS`. At most
+six peaks may be probed per finished clip; crossing this cap leaves all
+unprobed evidence UNKNOWN rather than privileging early peaks.
+
+Results are observations, never independent cut truth:
+`SOURCE_VISUAL_CHANGE_ALSO_OBSERVED` means a discontinuity
+was also found near an *approximate* audio-derived original time,
+not that an original camera event caused the finished visual change.
+`SOURCE_NO_ISOLATED_CHANGE_OBSERVED` does not prove that the
+editor inserted the cut, because sampling, transcoding, compression,
+overlays or clock errors can hide original source transitions.
+Original native frame timestamps remain unverified; no source-scene
+exclusion, editorial positive/negative label or dense
+OutputSourceTimeMap is established.
+
+Evidence uses `bounded-output-source-visual-crosscheck-v1` and a new
+source-side cache fingerprint dependency, with strict non-promotion,
+per-peak interval, original/finished identity and cumulative count
+validation. The automatic real-cut summary and offline diagnosis
+surface separate **non-causal** source visual categories. Synthetic
+bounded FFmpeg controls test a natural source transition and a
+source without isolated change; they cannot certify actual Hololive
+editor gold, true cut precision/recall or production readiness.
+`ready=false` and all qualification gates remain unchanged.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished

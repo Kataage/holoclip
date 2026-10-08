@@ -84,6 +84,25 @@ def _checked_row(clip_id: str, value: object) -> dict:
         or not 0 <= survey_coverage <= 86400
     ):
         raise ValueError("Malformed visual survey coverage")
+    source_status = value.get("source_visual_check_status",
+                              "NOT_MEASURED_OR_UNVERIFIED")
+    source_cols = (
+        value.get("source_visual_change_also_observed"),
+        value.get("source_visual_no_isolated_change_observed"),
+        value.get("source_visual_unknown_correspondence"),
+    )
+    if source_status == "MEASURED_UNREVIEWED_SOURCE_VISUAL_CHECKS":
+        if (any(not _count(n, ceiling=18) for n in source_cols)
+                or sum(source_cols) != (
+                    value.get("output_only_visual_without_acoustic_count")
+                )):
+            raise ValueError("Contradictory output/source visual crosscheck totals")
+    elif (source_status not in {
+        "NOT_MEASURED_OR_UNVERIFIED",
+        "UNKNOWN_NO_VERIFIED_VISUAL_SURVEY",
+        "UNKNOWN_SOURCE_VISUAL_PROBE_BUDGET",
+    } or any(n is not None for n in source_cols)):
+        raise ValueError("Unverified source-side visual evidence was counted")
     if value["status"] != "UNREVIEWED_REFERENCE_FREE_OBSERVATIONS":
         if (any(value.get(field) is not None for field in (
                 *_NONNEGATIVE, "candidate_median_width_seconds",
@@ -145,6 +164,10 @@ def _triage_codes(row: dict) -> list[str]:
     if row["status"] != "UNREVIEWED_REFERENCE_FREE_OBSERVATIONS":
         return ["CUT_MEASUREMENT_UNVERIFIED", *visual_only]
     codes = visual_only
+    if (row.get("source_visual_change_also_observed") or 0) > 0:
+        codes.append("SOURCE_VISUAL_CHANGE_ALSO_OBSERVED_NOT_GOLD")
+    if (row.get("source_visual_no_isolated_change_observed") or 0) > 0:
+        codes.append("SOURCE_CHANGE_NOT_OBSERVED_NOT_PROOF_OF_EDIT")
     if row["cut_candidate_count"] == 0:
         codes.append("NO_ACOUSTIC_CANDIDATES_OBSERVED")
     if row["overbroad_candidate_count"]:

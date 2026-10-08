@@ -429,3 +429,73 @@ def test_unknown_visual_decode_keeps_unmeasured_counts_null():
     assert result["output_only_visual_status"] == "UNKNOWN_BOUNDED_VISUAL_DECODE"
     assert result["output_only_visual_change_count"] is None
     assert result["output_only_visual_without_acoustic_count"] is None
+
+
+def test_pinned_source_visual_hypothesis_reported_without_editor_gold():
+    import pytest
+
+    cut = cut_row()
+    cut["visual_survey_method_version"] = "bounded-output-only-visual-survey-v1"
+    cut["independent_output_visual_survey"] = {
+        "version": "bounded-output-only-visual-survey-v1",
+        "status": "MEASURED_UNREVIEWED_OUTPUT_ONLY_VISUAL_SIGNALS",
+        "source": "FINISHED_OUTPUT_ONLY_UNREVIEWED",
+        "duration_seconds": 45., "sampled_coverage_seconds": 6.,
+        "unsampled_duration_seconds": 39.,
+        "sampled_windows": [[4., 10.]],
+        "observed_visual_peaks": 1, "without_acoustic_candidate": 1,
+        "observed_peaks": [{
+            "time_bracket_seconds": [6.4, 6.6],
+            "relation": "NO_ACOUSTIC_CANDIDATE_AT_SAMPLED_TIME",
+            "verified_edit_cut": False,
+            "source_scene_change_ruled_out": False,
+        }],
+        "verified_edit_cut": False, "reviewed_gold_available": False,
+        "frame_accurate_cuts_verified": False, "qualification_allowed": False,
+    }
+    side = side_row()
+    side["source_visual_method_version"] = (
+        "bounded-output-source-visual-crosscheck-v1"
+    )
+    cross = {
+        "version": "bounded-output-source-visual-crosscheck-v1",
+        "status": "MEASURED_UNREVIEWED_SOURCE_VISUAL_CHECKS",
+        "checked_visual_peaks": 1, "source_change_also_observed": 1,
+        "source_no_isolated_change_observed": 0,
+        "unknown_source_correspondence": 0,
+        "peak_observations": [{
+            "output_interval": [6.4, 6.6],
+            "status": "SOURCE_VISUAL_CHANGE_ALSO_OBSERVED",
+            "verified_edit_cut": False,
+            "source_scene_change_ruled_out": False,
+        }],
+        "verified_edit_cut": False, "source_scene_change_ruled_out": False,
+        "original_video_absolute_pts_verified": False,
+        "reviewed_gold_available": False, "qualification_allowed": False,
+    }
+    side["independent_visual_source_checks"] = cross
+    observed = describe_real_cut_observations(cut, side)
+    assert observed["source_visual_check_status"] == (
+        "MEASURED_UNREVIEWED_SOURCE_VISUAL_CHECKS"
+    )
+    assert observed["source_visual_change_also_observed"] == 1
+    assert observed["source_visual_no_isolated_change_observed"] == 0
+    assert observed["editor_cut_precision"] is None
+    assert observed["qualification_allowed"] is False
+    totals = aggregate_real_cut_observations({"clip": observed})
+    assert totals["source_visual_changes_also_observed"] == 1
+
+    from holoclip.real_cut_triage import _checked_row, _triage_codes
+    checked = _checked_row("youtube:aaaaaaaaaaa", observed)
+    assert "SOURCE_VISUAL_CHANGE_ALSO_OBSERVED_NOT_GOLD" in _triage_codes(checked)
+
+    promoted = dict(cross)
+    promoted["source_scene_change_ruled_out"] = True
+    side["independent_visual_source_checks"] = promoted
+    with pytest.raises(ValueError):
+        describe_real_cut_observations(cut, side)
+    forged = dict(cross)
+    forged["checked_visual_peaks"] = 2
+    side["independent_visual_source_checks"] = forged
+    with pytest.raises(ValueError):
+        describe_real_cut_observations(cut, side)
