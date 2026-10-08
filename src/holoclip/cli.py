@@ -715,12 +715,18 @@ def examples_validate_holdout_e2e(
         False,
         help="Isolate each clip; defer only uniquely insufficient original audio evidence",
     ),
+    resume_checkpoint: bool = typer.Option(
+        False,
+        help="Revalidate saved complete batches before resuming; never trust cached success alone",
+    ),
 ) -> None:
     """Run local-source video evidence with fail-closed checkpoints."""
     if all_batches and preflight_only:
         raise typer.BadParameter("Use --preflight-only without --all-batches")
     if continue_on_insufficient_audio and not all_batches:
         raise typer.BadParameter("--continue-on-insufficient-audio requires --all-batches")
+    if resume_checkpoint and not all_batches:
+        raise typer.BadParameter("--resume-checkpoint requires --all-batches")
     provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
     rules = load_policy_rules(policy_file)
     if all_batches:
@@ -729,6 +735,7 @@ def examples_validate_holdout_e2e(
             policy_rules=rules, max_clips=max_clips, max_batches=max_batches,
             progress=typer.echo,
             continue_on_insufficient_audio=continue_on_insufficient_audio,
+            resume_checkpoint=resume_checkpoint,
         )
         allowed = {"UNREVIEWED_ALL_BATCHES_COMPLETE"}
     else:
