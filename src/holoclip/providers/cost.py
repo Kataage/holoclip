@@ -234,9 +234,35 @@ class QuotaLedger:
             db.execute("CREATE TABLE IF NOT EXISTS request_observations (request_id INTEGER PRIMARY KEY, "
                        "scope TEXT, usage TEXT, rate_headers TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS request_errors (request_id INTEGER PRIMARY KEY, metadata TEXT)")
+            db.execute("CREATE TABLE IF NOT EXISTS inference_leases ("
+                       "fingerprint TEXT PRIMARY KEY, holder TEXT NOT NULL, expires_at REAL NOT NULL)")
 
     def connect(self):
         return sqlite3.connect(self.path, timeout=30)
+
+    def claim_inference(self, fingerprint: str, holder: str, now: datetime, *, ttl=600) -> bool:
+        """Cross-process claim for one identical upstream inference unit.
+
+        No request is sent by a duplicate claimant. A crashed owner's claim
+        eventually expires; accepted asynchronous NIM requests remain protected
+        separately by pending_responses and their stored request IDs.
+        """
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT expires_at FROM inference_leases WHERE fingerprint=?",
+                             (fingerprint,)).fetchone()
+            if row and row[0] > now.timestamp():
+                return False
+            db.execute("INSERT INTO inference_leases VALUES (?,?,?) ON CONFLICT(fingerprint) "
+                       "DO UPDATE SET holder=excluded.holder,expires_at=excluded.expires_at",
+                       (fingerprint, holder, now.timestamp() + ttl))
+            return True
+
+    def release_inference(self, fingerprint: str, holder: str) -> None:
+        # A stale owner must never release a replacement claimant's lease.
+        with self.connect() as db:
+            db.execute("DELETE FROM inference_leases WHERE fingerprint=? AND holder=?",
+                       (fingerprint, holder))
 
     def reserve(self, account: str, model: str, limits: dict, estimate: dict, now: datetime) -> int:
         if not estimate or estimate.get("requests") != 1:

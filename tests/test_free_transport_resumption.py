@@ -1,12 +1,15 @@
+import asyncio
 from datetime import timedelta
 
 import httpx
 import pytest
 
+from holoclip.execution import StageArtifactCache
 from holoclip.provider_benchmark import summarize
 from holoclip.providers.cloud import CloudAdapters
-from holoclip.providers.cost import Capability, CostPolicyError, reset_delay, request_scope
+from holoclip.providers.cost import Capability, CostPolicyError, QuotaBlocked, reset_delay, request_scope
 from holoclip.providers.mesh import CapabilityRouter, ExecutionMode, Route
+from holoclip.repository import SQLiteCanonicalRepository
 from holoclip.video_semantics import MeasuredFrame, MeasuredVideoWindow, VideoUnderstandingProvider
 from test_cost_policy import NOW
 from test_provider_mesh import qualification
@@ -25,6 +28,55 @@ def test_next_daily_reset_does_not_inherently_require_new_attestation(free_cost_
     free_cost_guard.accounts = [a.model_copy(update={"evidence_ttl_seconds": 60}) for a in free_cost_guard.accounts]
     with pytest.raises(CostPolicyError, match="stale"):
         free_cost_guard.authorize(entry.provider, entry.model, entry.base_url, "test-key", public=True)
+
+
+def test_inference_lease_is_atomic_and_stale_owner_cannot_release_replacement(free_cost_guard):
+    ledger = free_cost_guard.ledger
+    assert ledger.claim_inference("identical-unit", "first", NOW)
+    assert not ledger.claim_inference("identical-unit", "second", NOW)
+    assert ledger.claim_inference("identical-unit", "second", NOW + timedelta(seconds=601))
+    ledger.release_inference("identical-unit", "first")
+    assert not ledger.claim_inference("identical-unit", "third", NOW + timedelta(seconds=601))
+    ledger.release_inference("identical-unit", "second")
+    assert ledger.claim_inference("identical-unit", "third", NOW + timedelta(seconds=601))
+
+
+async def test_two_workers_never_post_same_inference_at_the_same_time(tmp_path, free_cost_guard):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def handler(request):
+        nonlocal calls
+        assert request.method == "POST"
+        calls += 1
+        started.set()
+        await release.wait()
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"ok":true}'}}]})
+
+    route = Route(entry=free_cost_guard.registry["groq:openai/gpt-oss-120b"],
+                  mode=ExecutionMode.TEXT, qualification=())
+    first_db = SQLiteCanonicalRepository(tmp_path / "stages.db")
+    second_db = SQLiteCanonicalRepository(tmp_path / "stages.db")
+    try:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            first = CloudAdapters(free_cost_guard, {"groq": "test-key"}, client=client,
+                cache=StageArtifactCache(first_db, tmp_path / "artifacts"))
+            second = CloudAdapters(free_cost_guard, {"groq": "test-key"}, client=client,
+                cache=StageArtifactCache(second_db, tmp_path / "artifacts"))
+            first_task = asyncio.create_task(first.call_json(route, "same unit", public=True))
+            await asyncio.wait_for(started.wait(), timeout=2)
+            with pytest.raises(QuotaBlocked):
+                await second.call_json(route, "same unit", public=True)
+            assert calls == 1
+            release.set()
+            assert await first_task == {"ok": True}
+            assert await second.call_json(route, "same unit", public=True) == {"ok": True}
+            assert calls == 1
+    finally:
+        release.set()
+        first_db.close()
+        second_db.close()
 
 
 async def test_old_unknown_429_block_repaired_without_refunding_reservations(free_cost_guard):

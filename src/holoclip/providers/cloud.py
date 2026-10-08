@@ -6,6 +6,7 @@ import json
 import asyncio
 import re
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 
@@ -125,59 +126,74 @@ class CloudAdapters:
         args = dict(stage="provider_response", subject_type="inference_unit", subject_id=fingerprint,
                     input_fingerprint=fingerprint, stage_version="cloud-v2", provider=entry.provider,
                     model=entry.model, prompt_version="cloud-json-v1")
+        # Even a cached raw observation must have current no-charge entitlement.
+        self.guard.authorize(entry.provider, entry.model, entry.base_url, key, public=public)
         cached = self.cache.reusable_json(**args) if self.cache else None
         if cached is not None:
             return cached
-        run = self.cache.start(**args) if self.cache else None
+        holder = uuid4().hex
+        if not self.guard.ledger.claim_inference(fingerprint, holder, self.guard.clock()):
+            # Another worker already owns this exact unit. Deferring avoids a
+            # second chargeable-looking attempt and lets quota-aware workers retry.
+            raise QuotaBlocked(15)
         try:
-            with self.guard.ledger.connect() as db:
-                pending = db.execute("SELECT identity,request_id,reservation_id FROM pending_responses "
-                                     "WHERE fingerprint=?", (fingerprint,)).fetchone()
-            if pending:
-                if pending[0] != entry.identity:
-                    raise CostPolicyError("Pending request belongs to a different model")
-                response = await self.poll(route, pending[1], pending[2], public=public)
-            else:
-                response = await self.guard.post(self.client, provider=entry.provider, model=entry.model,
-                    base_url=entry.base_url, key=key, operation=operation, estimate=estimate,
-                    public=public, headers=headers, json=body)
-                if response.status_code == 202:
-                    request_id = response.headers.get("nvcf-reqid", "")
-                    if entry.provider != "nvidia" or not re.fullmatch(r"[a-fA-F0-9-]{36}", request_id):
-                        raise CostPolicyError("No verified asynchronous status request ID")
-                    reservation = response.extensions["holoclip_reservation_id"]
-                    with self.guard.ledger.connect() as db:
-                        db.execute("INSERT OR REPLACE INTO pending_responses VALUES (?,?,?,?)",
-                                   (fingerprint, entry.identity, request_id, reservation))
-                    response = await self.poll(route, request_id, reservation, public=public)
-            if response.status_code == 429:
-                if quota_error_metadata(response).get("request_too_large"):
-                    raise CostPolicyError("Request exceeds actual Free TPM ceiling; waiting or paid upgrade cannot repair this unit")
-                delay = reset_delay(response.headers, self.guard.clock())
-                raise QuotaBlocked(delay)
-            response.raise_for_status()
-            raw = response.json()
+            # Close the race with a worker that committed between the first
+            # cache lookup and our acquisition of the atomic SQLite lease.
+            cached = self.cache.reusable_json(**args) if self.cache else None
+            if cached is not None:
+                return cached
+            run = self.cache.start(**args) if self.cache else None
             try:
-                if entry.provider == "gemini":
-                    value = "".join(p.get("text", "") for p in raw["candidates"][0]["content"]["parts"]
-                                    if not p.get("thought"))
-                elif entry.provider == "cloudflare":
-                    value = raw["result"]["response"]
+                with self.guard.ledger.connect() as db:
+                    pending = db.execute("SELECT identity,request_id,reservation_id FROM pending_responses "
+                                         "WHERE fingerprint=?", (fingerprint,)).fetchone()
+                if pending:
+                    if pending[0] != entry.identity:
+                        raise CostPolicyError("Pending request belongs to a different model")
+                    response = await self.poll(route, pending[1], pending[2], public=public)
                 else:
-                    value = raw["choices"][0]["message"]["content"]
-            except (KeyError, IndexError, TypeError) as exc:
-                raise ValueError("Provider response envelope is invalid") from exc
-            output = parse_object(value)
-        except BaseException as exc:
+                    response = await self.guard.post(self.client, provider=entry.provider, model=entry.model,
+                        base_url=entry.base_url, key=key, operation=operation, estimate=estimate,
+                        public=public, headers=headers, json=body)
+                    if response.status_code == 202:
+                        request_id = response.headers.get("nvcf-reqid", "")
+                        if entry.provider != "nvidia" or not re.fullmatch(r"[a-fA-F0-9-]{36}", request_id):
+                            raise CostPolicyError("No verified asynchronous status request ID")
+                        reservation = response.extensions["holoclip_reservation_id"]
+                        with self.guard.ledger.connect() as db:
+                            db.execute("INSERT OR REPLACE INTO pending_responses VALUES (?,?,?,?)",
+                                       (fingerprint, entry.identity, request_id, reservation))
+                        response = await self.poll(route, request_id, reservation, public=public)
+                if response.status_code == 429:
+                    if quota_error_metadata(response).get("request_too_large"):
+                        raise CostPolicyError("Request exceeds actual Free TPM ceiling; waiting or paid upgrade cannot repair this unit")
+                    delay = reset_delay(response.headers, self.guard.clock())
+                    raise QuotaBlocked(delay)
+                response.raise_for_status()
+                raw = response.json()
+                try:
+                    if entry.provider == "gemini":
+                        value = "".join(p.get("text", "") for p in raw["candidates"][0]["content"]["parts"]
+                                        if not p.get("thought"))
+                    elif entry.provider == "cloudflare":
+                        value = raw["result"]["response"]
+                    else:
+                        value = raw["choices"][0]["message"]["content"]
+                except (KeyError, IndexError, TypeError) as exc:
+                    raise ValueError("Provider response envelope is invalid") from exc
+                output = parse_object(value)
+            except BaseException as exc:
+                if run:
+                    from holoclip.execution import StageStatus
+                    self.cache.fail(run, status=StageStatus.FAILED_RETRYABLE, error=exc)
+                raise
             if run:
-                from holoclip.execution import StageStatus
-                self.cache.fail(run, status=StageStatus.FAILED_RETRYABLE, error=exc)
-            raise
-        if run:
-            self.cache.succeed_json(run, output, kind="provider_structured_response")
-        with self.guard.ledger.connect() as db:
-            db.execute("DELETE FROM pending_responses WHERE fingerprint=?", (fingerprint,))
-        return output
+                self.cache.succeed_json(run, output, kind="provider_structured_response")
+            with self.guard.ledger.connect() as db:
+                db.execute("DELETE FROM pending_responses WHERE fingerprint=?", (fingerprint,))
+            return output
+        finally:
+            self.guard.ledger.release_inference(fingerprint, holder)
 
     async def poll(self, route, request_id, reservation, *, public=False):
         # Official NIM status endpoint, same verified host. Never follow Location
