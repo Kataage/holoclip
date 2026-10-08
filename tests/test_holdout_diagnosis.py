@@ -241,3 +241,55 @@ def test_missing_stage_report_explained_instead_of_invalid_audit(tmp_path):
         "MISSING_REPORT": 1,
     }
     assert diagnosis["next_action"] == "VERIFY_PINNED_MEDIA_AND_REPORT_CHECKSUMS"
+
+
+def test_offline_diagnosis_cli_reads_metadata_without_provider(tmp_path):
+    from typer.testing import CliRunner
+    from holoclip.cli import app
+
+    store, state, root = files(tmp_path)
+    run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=make_runners(root),
+    )
+    outcome = CliRunner().invoke(app, [
+        "examples-diagnose-holdout-e2e",
+        "--store", str(store),
+        "--state", str(state),
+        "--root", str(root),
+    ])
+    # A synthetic test is not a successful production media audit.
+    assert outcome.exit_code == 3, outcome.output
+    assert '"status": "SIMULATED_TRIAL_ONLY"' in outcome.output
+    assert (root / "holdout-e2e-diagnosis.json").is_file()
+
+
+def test_all_batches_cli_emits_offline_diagnosis_without_extra_media(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+    import holoclip.cli as cli
+
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=2)
+    # Test the public CLI wiring on injected fake runners; never instantiate a
+    # real provider or imply that generated stage records are real A/V proof.
+    monkeypatch.setattr(cli, "YtDlpSourceProvider", lambda **kwargs: None)
+    monkeypatch.setattr(cli, "load_policy_rules", lambda path: [])
+
+    def fake_local_batches(provider, **kwargs):
+        assert provider is None
+        return run_all_reserved_holdout_batches(
+            provider, **kwargs, runners=make_runners(root),
+        )
+
+    monkeypatch.setattr(cli, "run_all_reserved_holdout_batches", fake_local_batches)
+    outcome = CliRunner().invoke(cli.app, [
+        "examples-validate-holdout-e2e", "--all-batches",
+        "--store", str(store), "--state", str(state),
+        "--root", str(root), "--max-clips", "1", "--max-batches", "2",
+    ])
+    assert outcome.exit_code == 3, outcome.output
+    assert '"offline_diagnosis": "SIMULATED_TRIAL_ONLY"' in outcome.output
+    assert '"unattempted_clips": 0' in outcome.output
+    assert '"diagnostic_report_path"' in outcome.output
+    assert (root / "holdout-e2e-all-batches.json").is_file()
+    assert (root / "holdout-e2e-diagnosis.json").is_file()
