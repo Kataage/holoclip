@@ -53,6 +53,20 @@ evidence, without additional downloads or paid AI inference. Acoustic
 silence, ambiguous matches, visual-only edits and unavailable absolute
 source timestamps remain explicit unknowns.
 
+After original-video sections are captured and measured, their **actual
+audio** can be independently matched against the source stream's cached
+full-audio fingerprint, with bounded section native-frame PTS inspection:
+
+```powershell
+uv run --extra media holoclip examples-calibrate-source-clocks --max-clips 3
+```
+
+This removes blind reliance on yt-dlp's requested source seek position when
+building *approximate* source-to-finished time provenance. Audio/video codec
+offsets, absolute original native frame PTS, exact edit-cut time and editor
+intent still require independent validation. The command does not certify
+them or create semantic gold.
+
 The audio cut-interval command now additionally performs **bounded,
 finished-video visual jump checks** (8 fps, max 10-second padded interval)
 as weak corroboration. Results include explicit unknowns for natural source
