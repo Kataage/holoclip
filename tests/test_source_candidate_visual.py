@@ -222,6 +222,36 @@ def test_subsequent_cycles_scan_different_video_windows_and_persist_cursor(tmp_p
     assert item.source_url is None and item.source_stream_id is None
 
 
+
+
+def test_candidate_round_robin_eventually_reaches_all_shortlisted_origins(tmp_path):
+    candidate_d = "https://www.youtube.com/watch?v=DDDDDDDDDDD"
+    make_state(tmp_path/"state.json", candidates=[A, B, candidate_d])
+
+    class ThreeOriginals(Provider):
+        def probe(self, url):
+            if url == candidate_d:
+                return meta(url)
+            return super().probe(url)
+
+    provider = ThreeOriginals()
+    first = verify(provider, tmp_path)
+    assert first["attempted"] == 1
+    assert {call[0] for call in provider.calls} == {CLIP, A, B}
+    provider.calls.clear()
+    second = verify(provider, tmp_path)
+    assert second["attempted"] == 1
+    assert {call[0] for call in provider.calls} == {CLIP, A, candidate_d}
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    scout = state.items["candidate"].source_scout
+    assert scout["visual_candidate_round"] == 2
+    assert scout["visual_probe"]["unprobed_shortlist_candidates"] == 1
+    assert scout["visual_probe"]["candidate_round_after"] == 2
+    assert state.items["candidate"].source_url is None
+
+
 def test_source_scan_exhaustion_is_unknown_not_negative_gold(tmp_path):
     make_state(tmp_path/"state.json")
     state = CorpusGrowthState.model_validate_json(
