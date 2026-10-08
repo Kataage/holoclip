@@ -194,6 +194,27 @@ Prior source-video pair caches lacking the sampling-method stamp are
 invalidated and remeasured under current source rights and hash checks.
 This protects direct CLI stage execution, not just the nine-stage runner.
 
+For **actual unreviewed human-edited holdout clips**, the existing
+`examples-validate-holdout-e2e` nine-stage command now also emits
+`observations.real_cut_observations` (per selected clip) and
+`observations.real_cut_observation_totals` inside its saved
+`holdout-e2e-audit.json`. This describes *measured candidate signals*:
+acoustic candidate counts, unknown audio transitions, median/P90 bracket
+width, overbroad brackets (>8s), output-video change corroboration, and
+independently matched original/finished two-sided visual candidates.
+A missing/old method or stale/mismatched stage provenance gives a
+separate unverified/null result, **never a zero or a perfect score**.
+Only reports for stages executed in the current invocation are included,
+so an old successful visual result cannot validate a new cut result.
+
+These real-video descriptive counts are **not** measured human-editing
+precision/recall, independent reviewer gold or frame-accurate cut time;
+they leave `editor_cut_precision`, `editor_cut_recall`,
+`ready`, and all production/gold claims null or false. They do not
+require a user-provided URL, manually labeled cut list, additional
+download, extra model call, or a new Windows command. See the
+[autonomous evidence policy](docs/autonomous-evidence-policy.md).
+
 For quantitative validation of known **synthetic FFmpeg edit scripts**,
 the offline `examples-score-scripted-cuts` command now compares scripted
 hard-cut output times with saved unreviewed acoustic cut intervals. It
