@@ -291,6 +291,8 @@ def test_all_batches_cli_emits_offline_diagnosis_without_extra_media(tmp_path, m
     assert '"offline_diagnosis": "SIMULATED_TRIAL_ONLY"' in outcome.output
     assert '"unattempted_clips": 0' in outcome.output
     assert '"diagnostic_report_path"' in outcome.output
+    assert '"cut_signal_triage": "REFERENCE_FREE_SIGNAL_TRIAGE"' in outcome.output
+    assert '"CUT_MEASUREMENT_UNVERIFIED": 2' in outcome.output
     assert (root / "holdout-e2e-all-batches.json").is_file()
     assert (root / "holdout-e2e-diagnosis.json").is_file()
 
