@@ -167,6 +167,24 @@ def _run(provider, store, state, prepared, audio_root, **kwargs):
     )
 
 
+
+def test_legacy_acoustic_refinement_blocked_before_provider_call(tmp_path):
+    _, store, state, prepared, audio_root = _pipeline_fixture(tmp_path)
+    path = prepared / "cut_brackets" / "holdout-cut-brackets.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    record = next(iter(payload["records"].values()))
+    record["refinement"]["version"] = "bounded-acoustic-cut-brackets-v1"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    class NoNetwork:
+        def probe(self, url):
+            raise AssertionError("Stale v1 measurement must be rejected before probing")
+
+    report = _run(NoNetwork(), store, state, prepared, audio_root)
+    assert report["counts"] == {"BLOCKED_UPSTREAM_PROVENANCE": 1}
+
+
+
 def test_integrated_cut_side_checkpoint_and_resumption(tmp_path):
     provider, store, state, prepared, audio_root = _pipeline_fixture(tmp_path)
     calls = []
