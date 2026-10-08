@@ -136,7 +136,7 @@ async def test_growth_saves_shortlist_without_assigning_unknown_source(tmp_path)
     assert result["attempted"] == 0
     assert len(state.items) == 1
     item = next(iter(state.items.values()))
-    assert item.status == "review"
+    assert item.status == "source_visual_pending"
     assert item.source_url is None
     assert item.source_stream_id is None
     assert item.source_scout["source_identity_verified"] is False
@@ -164,6 +164,6 @@ async def test_growth_rejects_ambiguous_description_links_without_visual_proof(t
         (tmp_path / "growth.json").read_text(encoding="utf-8")
     )
     item = next(iter(state.items.values()))
-    assert item.status == "review"
+    assert item.status == "source_visual_pending"
     assert len(item.source_scout["candidate_sources"]) == 2
     assert item.source_url is None and item.source_stream_id is None
