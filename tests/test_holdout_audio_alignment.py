@@ -13,6 +13,7 @@ from holoclip.holdout_preparation import prioritize_unprocessed
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
 from test_editorial_profile import trusted_example
 from test_holdout_preparation import VideoProvider, files, run
+from holoclip.providers.source.base import AcquiredSource, AcquisitionProfile
 
 
 def _features(count, seed=14):
@@ -103,9 +104,25 @@ def _fake_audio_align(clip, source, root):
             "fingerprint_version": VERSION}
 
 
+class AudioVideoProvider(VideoProvider):
+    """Fixture that supports both finished-video and original-audio acquisition."""
+
+    def acquire(self, url, root, *, profile):
+        if profile is AcquisitionProfile.EDITING_VIDEO:
+            return super().acquire(url, root, profile=profile)
+        assert profile is AcquisitionProfile.TRAINING_AUDIO
+        self.calls += 1
+        media = root / "source" / "training_audio" / "media.webm"
+        media.parent.mkdir(parents=True, exist_ok=True)
+        media.write_bytes(b"source audio bytes - deterministic fixture")
+        return AcquiredSource(
+            metadata=self.probe(url), profile=profile, media_path=media,
+        )
+
+
 def _pipeline(tmp_path, provider=None, align=_fake_audio_align):
     store, state, prepared_root = files(tmp_path)
-    provider = provider or VideoProvider()
+    provider = provider or AudioVideoProvider()
     assert run(provider, store, state, prepared_root)["counts"] == {
         "PREPARED_UNREVIEWED": 1
     }
