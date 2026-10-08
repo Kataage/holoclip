@@ -385,6 +385,41 @@ discrimination, subtitle/overlay observation and cross-stream event isolation.
 Real Hololive clip quality and free-provider production qualification remain
 unverified by fixture CI.
 
+## Increment 7: bounded visual cross-check of acoustic cut intervals (#123)
+
+The `examples-refine-cut-candidates` stage now also inspects the finished
+human-edited video **only around acoustically supported cut brackets**. Using
+local FFmpeg and OpenCV, it samples no more than a 10-second padded window,
+at 8 grayscale frames/s at 256×144, and records isolated, high-change visual
+peaks in the acoustic interval. The evidence is a sampled clock **interval**,
+not an original frame PTS. A strong isolated output visual change may be
+labeled `CORROBORATING_OUTPUT_CHANGE`; silent, low-change, high-motion or
+otherwise unsupported video remains `UNRESOLVED_VISUAL_EVIDENCE`.
+Natural game/camera scene changes can mimic an edited cut, so visual jump
+observations never certify a human edit.
+
+The stage preserves the existing source-video pair SHA-256, finished-video/
+source audio hash, visual-frame and sheet validation, current source identity,
+public/ended access, policy and range restriction, holdout/training isolation,
+as well as fail-closed provenance and resumable checkpointing from #122.
+Audio/video contradictions, source-time ambiguity, frame-accurate cuts,
+cross-POV event overlap, human review, and genuine independent gold are
+explicitly unresolved. The old training corpus is never modified.
+
+For complete local staged diagnostics after the earlier phases:
+
+```powershell
+uv run --extra media holoclip examples-refine-cut-candidates --max-clips 3
+```
+
+The final diagnostic checkpoint stays
+`data/provider-benchmark/holdout/cut_brackets/holdout-cut-brackets.json`.
+All qualification, true held-out, source-frame, event-split and reviewed-gold
+statuses remain **false**. This is not the dense piecewise
+`OutputSourceTimeMap` nor a production editing profile. More accurate
+source↔output visual correlation with independently verified original PTS
+and real Japanese Hololive clips remains acceptance work.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
