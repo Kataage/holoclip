@@ -42,15 +42,37 @@ _NO_GOLD = {
 }
 
 
-def _starts(duration: float) -> list[float]:
+def _starts(duration: float, cursor: int = 0) -> list[float]:
+    """Deterministic, non-repeating coarse visual scan across successive runs.
+
+    First round samples start/middle/end. Subsequent rounds bisect previously
+    unvisited gaps breadth-first, rather than endlessly probing those same
+    three locations. Individual video requests stay bounded to 12 seconds.
+    """
     if (type(duration) not in (float, int)
-            or not math.isfinite(duration) or duration < 300):
+            or not math.isfinite(duration) or not 300 <= duration <= 24 * 3600
+            or type(cursor) is not int or cursor < 0):
         return []
-    if duration > 24 * 3600:
-        return []
-    return [round(v, 3) for v in (
-        0., (duration - WINDOW_SECONDS) / 2, duration - WINDOW_SECONDS,
-    )]
+    slots = max(3, math.ceil(duration / WINDOW_SECONDS))
+    order = [0, slots // 2, slots - 1]
+    used = set(order)
+    spans = [(0, slots // 2), (slots // 2, slots - 1)]
+    while spans:
+        upcoming = []
+        for first, last in spans:
+            mid = (first + last) // 2
+            if mid not in used:
+                used.add(mid)
+                order.append(mid)
+            if mid - first > 1:
+                upcoming.append((first, mid))
+            if last - mid > 1:
+                upcoming.append((mid, last))
+        spans = upcoming
+    # Last exhausted windows are not negative evidence.
+    selected = order[cursor * SOURCE_WINDOWS:(cursor + 1) * SOURCE_WINDOWS]
+    return [round((duration - WINDOW_SECONDS) * i / (slots - 1), 3)
+            for i in selected]
 
 
 def _measured_frames(window, max_frames: int) -> list:
@@ -219,6 +241,7 @@ def verify_pending_source_visual(
             "status": "UNKNOWN_NO_VERIFIED_VISUAL_CORROBORATION",
             "candidate_observations": [],
             "finished_video_sha256": None,
+            "source_scan_method": "nonrepeating-breadth-first-v1",
             **_NO_GOLD,
         }
 
@@ -283,6 +306,9 @@ def verify_pending_source_visual(
                     "sampled_source_windows": [],
                     "visual_correspondence": "UNKNOWN_NOT_MEASURED",
                     "source_identity_verified": False,
+                    "scan_cursor_before": None,
+                    "scan_cursor_after": None,
+                    "source_video_seconds_sampled": 0.,
                 }
                 report["candidate_observations"].append(observed)
                 try:
@@ -301,9 +327,19 @@ def verify_pending_source_visual(
                             ).decision is not PolicyDecision.ALLOW):
                         observed["status"] = "BLOCKED_SOURCE_IDENTITY_OR_POLICY"
                         continue
-                    spans = [(start, start+WINDOW_SECONDS)
-                             for start in _starts(source.duration)]
-                    if len(spans) != SOURCE_WINDOWS or evaluate_source_ranges(
+                    cursors = scout.setdefault("visual_scan_cursors", {})
+                    cursor = cursors.get(source.external_id, 0)
+                    if type(cursor) is not int or cursor < 0:
+                        observed["status"] = "BLOCKED_INVALID_SOURCE_SCAN_CURSOR"
+                        continue
+                    observed["scan_cursor_before"] = cursor
+                    starts = _starts(source.duration, cursor)
+                    if not starts:
+                        observed["status"] = "UNKNOWN_SOURCE_SCAN_EXHAUSTED"
+                        observed["scan_cursor_after"] = cursor
+                        continue
+                    spans = [(start, start+WINDOW_SECONDS) for start in starts]
+                    if evaluate_source_ranges(
                             source, ranges=spans,
                             rules=policy_rules, operation=PolicyOperation.LEARN,
                         ).decision is not PolicyDecision.ALLOW:
@@ -328,6 +364,13 @@ def verify_pending_source_visual(
                             "requested_range": [start, end], "media_sha256": digest,
                             "source_native_pts_verified": False,
                         })
+                    # Only after completing every planned short range may the
+                    # cursor advance. Failed sections are retried next cycle.
+                    cursors[source.external_id] = cursor + 1
+                    observed["scan_cursor_after"] = cursor + 1
+                    observed["source_video_seconds_sampled"] = (
+                        len(spans) * WINDOW_SECONDS
+                    )
                     visual = compare_sequences(finished, windows)
                     if (not isinstance(visual, dict)
                             or any(visual.get(flag) is not False for flag in _NO_GOLD)
