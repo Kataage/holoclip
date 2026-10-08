@@ -17,6 +17,7 @@ from holoclip.examples import human_clip_identity, load_human_clip_store
 from holoclip.holdout_preparation import _candidates, _measured, prioritize_unprocessed
 from holoclip.holdout_reservations import holdout_inventory
 from holoclip.provider_benchmark import BenchmarkCase, atomic_json, verified_window
+from holoclip.providers.cost import CostPolicyError
 from holoclip.providers.source.yt_dlp import choose_source_candidate
 from holoclip.video_measurement import checksum_file, measure_window, probe_video
 
@@ -101,7 +102,7 @@ def _reusable(old: dict, audio: dict, *, clips_sha: str, source_sha: str,
             if _checked_measurement(pair["finished_measurement"]) != pair["finished_window_sha256"]:
                 return False
         return True
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, CostPolicyError):
         return False
 
 
