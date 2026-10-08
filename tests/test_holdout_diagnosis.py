@@ -218,3 +218,26 @@ def test_diagnosis_never_serializes_provider_exception_messages(tmp_path):
     assert "secret-token" not in serialized
     assert "ffmpeg-stderr" not in serialized
     assert report["first_blocker"]["stage"] == "finished_video"
+
+
+def test_missing_stage_report_explained_instead_of_invalid_audit(tmp_path):
+    store, state, root = files(tmp_path)
+    runners = make_runners(root)
+
+    def skip_report(*args, **kwargs):
+        return {"attempted": 1}
+
+    runners["source_video_pairs"] = skip_report
+    result = run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=runners,
+    )
+    assert result["status"] == "BLOCKED_UPSTREAM_STAGE"
+    assert result["blocked_stage"] == "source_video_pairs"
+    diagnosis = _diagnose(store, state, root)
+    assert diagnosis["status"] == "TRIAL_BLOCKED_REVIEW_STAGE"
+    assert diagnosis["first_blocker"]["stage"] == "source_video_pairs"
+    assert diagnosis["first_blocker"]["observed_status_counts"] == {
+        "MISSING_REPORT": 1,
+    }
+    assert diagnosis["next_action"] == "VERIFY_PINNED_MEDIA_AND_REPORT_CHECKSUMS"
