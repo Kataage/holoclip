@@ -81,8 +81,13 @@ def _match_side(side_frames: list, originals: list, source_features: dict,
                    abs(row[2].pts_seconds - source.pts_seconds) > 1.]
         if distant and score - max(distant) < .09:
             return {"status": "UNKNOWN_REPEATED_OR_AMBIGUOUS_SOURCE"}
-        matches.append((finished_time, group, source.pts_seconds, score))
+        matches.append((finished_time, group, source.pts_seconds, score,
+                        source.checksum, finished.checksum))
+    # Two timestamps showing the same pixel content are not independent
+    # evidence of a changing temporal sequence (static slides/game HUDs).
     if (len(matches) != 2
+            or matches[0][4] == matches[1][4]
+            or matches[0][5] == matches[1][5]
             or matches[0][1] != matches[1][1]
             or matches[1][0] - matches[0][0] < .45
             or matches[1][2] - matches[0][2] < .4
