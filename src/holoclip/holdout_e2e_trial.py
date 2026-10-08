@@ -254,7 +254,7 @@ def _batch_state(state: CorpusGrowthState, selected: list) -> CorpusGrowthState:
     return subset
 
 
-def run_reserved_holdout_e2e(
+def _run_reserved_holdout_e2e_unlocked(
     provider, *, store: Path, state_path: Path, root: Path,
     policy_rules: list, max_clips: int = 3,
     preflight_only: bool = False, progress=None, runners=None,
@@ -313,72 +313,94 @@ def run_reserved_holdout_e2e(
     if preflight_only:
         return output
 
-    # Prevent concurrent executions from overwriting a shared stage checkpoint
-    # or the projected state file. Never delete a lock owned by another run.
+    batch_path = root / "holdout-e2e-batch-state.json"
+    atomic_json(batch_path, projected.model_dump(mode="json"))
+    original_sha = hashlib.sha256(state_bytes).hexdigest()
+    ids = set(selected_ids)
+    completed = set()
+    for stage in STAGES:
+        if progress:
+            progress(f"reserved media trial: {stage.name}")
+        fn = runners.get(stage.name) if runners is not None else stage.execute
+        if not callable(fn):
+            output["status"] = "BLOCKED_INVALID_RUNNER"
+            output["blocked_stage"] = stage.name
+            save()
+            return output
+        try:
+            # If a reservation changes while FFmpeg is running, abort
+            # instead of continuing with a stale holdout source assignment.
+            if (not state_path.is_file()
+                    or hashlib.sha256(state_path.read_bytes()).hexdigest() != original_sha):
+                output["status"] = "BLOCKED_CHANGED_RESERVATION_STATE"
+                output["blocked_stage"] = stage.name
+                save()
+                return output
+            fn(provider, **_kwargs(
+                stage.name, store=store, state=batch_path, root=root,
+                rules=policy_rules, max_clips=len(batch), progress=progress,
+            ))
+            completed.add(stage.name)
+            metrics = summarize_observed_evidence(
+                root, ids, completed_stages=completed,
+            )
+            counts = metrics["stage_status_counts"].get(stage.name, {})
+            step = {"stage": stage.name, "counts": counts, "report": stage.report}
+            output["stages"].append(step)
+            output["observations"] = metrics
+            if counts.get(stage.success, 0) != len(ids):
+                output["status"] = "BLOCKED_UPSTREAM_STAGE"
+                output["blocked_stage"] = stage.name
+                save()
+                return output
+        except Exception as exc:
+            # Never persist raw metadata, stderr, API tokens or remote URLs.
+            output["status"] = "STAGE_FAILED"
+            output["blocked_stage"] = stage.name
+            output["error_class"] = type(exc).__name__
+            save()
+            return output
+        save()
+    output["real_media_run_completed"] = runners is None
+    output["status"] = (
+        "UNREVIEWED_MEASUREMENTS_COMPLETE" if runners is None
+        else "SIMULATED_STAGE_TEST_COMPLETE"
+    )
+    save()
+    return output
+
+
+def run_reserved_holdout_e2e(
+    provider, *, store: Path, state_path: Path, root: Path,
+    policy_rules: list, max_clips: int = 3,
+    preflight_only: bool = False, progress=None, runners=None,
+) -> dict:
+    """Own an exclusive run lock *before* reading/writing any shared audit.
+
+    Refuse overlapping full/preflight calls rather than clobber an active
+    report or projected corpus state. The lock is removed only by its owner.
+    A crash leaves a lock requiring operator investigation (safe by default).
+    """
+    if not 1 <= max_clips <= 20:
+        raise ValueError("1..20 reserved clip budget required")
+    root.mkdir(parents=True, exist_ok=True)
     lock = root / ".holdout-e2e.lock"
     try:
-        fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        handle = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
-        output["status"] = "BLOCKED_CONCURRENT_RUN"
-        save()
-        return output
-
+        return {
+            "version": VERSION, "status": "BLOCKED_CONCURRENT_RUN",
+            "real_media_run_completed": False, "ready": False,
+            "production_ready": False, "qualification_allowed": False,
+            "report_path": str(root / "holdout-e2e-audit.json"),
+        }
     try:
-        os.close(fd)
-        batch_path = root / "holdout-e2e-batch-state.json"
-        atomic_json(batch_path, projected.model_dump(mode="json"))
-        original_sha = hashlib.sha256(state_bytes).hexdigest()
-        ids = set(selected_ids)
-        completed = set()
-        for stage in STAGES:
-            if progress:
-                progress(f"reserved media trial: {stage.name}")
-            fn = runners.get(stage.name) if runners is not None else stage.execute
-            if not callable(fn):
-                output["status"] = "BLOCKED_INVALID_RUNNER"
-                output["blocked_stage"] = stage.name
-                save()
-                return output
-            try:
-                # If a reservation changes while FFmpeg is running, abort
-                # instead of continuing with a stale holdout source assignment.
-                if (not state_path.is_file()
-                        or hashlib.sha256(state_path.read_bytes()).hexdigest() != original_sha):
-                    output["status"] = "BLOCKED_CHANGED_RESERVATION_STATE"
-                    output["blocked_stage"] = stage.name
-                    save()
-                    return output
-                fn(provider, **_kwargs(
-                    stage.name, store=store, state=batch_path, root=root,
-                    rules=policy_rules, max_clips=len(batch), progress=progress,
-                ))
-                completed.add(stage.name)
-                metrics = summarize_observed_evidence(
-                    root, ids, completed_stages=completed,
-                )
-                counts = metrics["stage_status_counts"].get(stage.name, {})
-                step = {"stage": stage.name, "counts": counts, "report": stage.report}
-                output["stages"].append(step)
-                output["observations"] = metrics
-                if counts.get(stage.success, 0) != len(ids):
-                    output["status"] = "BLOCKED_UPSTREAM_STAGE"
-                    output["blocked_stage"] = stage.name
-                    save()
-                    return output
-            except Exception as exc:
-                # Never persist raw metadata, stderr, API tokens or remote URLs.
-                output["status"] = "STAGE_FAILED"
-                output["blocked_stage"] = stage.name
-                output["error_class"] = type(exc).__name__
-                save()
-                return output
-            save()
-        output["real_media_run_completed"] = runners is None
-        output["status"] = (
-            "UNREVIEWED_MEASUREMENTS_COMPLETE" if runners is None
-            else "SIMULATED_STAGE_TEST_COMPLETE"
+        os.close(handle)
+        return _run_reserved_holdout_e2e_unlocked(
+            provider, store=store, state_path=state_path, root=root,
+            policy_rules=policy_rules, max_clips=max_clips,
+            preflight_only=preflight_only, progress=progress,
+            runners=runners,
         )
-        save()
-        return output
     finally:
         lock.unlink(missing_ok=True)
