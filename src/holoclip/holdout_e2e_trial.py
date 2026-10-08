@@ -292,6 +292,7 @@ def _run_reserved_holdout_e2e_unlocked(
         save()
         return output
     state_bytes = state_path.read_bytes()
+    output["reservation_state_sha256"] = hashlib.sha256(state_bytes).hexdigest()
     state = CorpusGrowthState.model_validate_json(state_bytes)
     candidates = _candidates(state)
     inventory = holdout_inventory(store, state_path)
@@ -491,6 +492,7 @@ def run_all_reserved_holdout_batches(
             return result
         initial_state = state_path.read_bytes()
         reservation_hash = hashlib.sha256(initial_state).hexdigest()
+        result["reservation_state_sha256"] = reservation_hash
         state = CorpusGrowthState.model_validate_json(initial_state)
         candidates = _candidates(state)
         all_ids = {human_clip_identity(c.clip_url) for c in candidates}
