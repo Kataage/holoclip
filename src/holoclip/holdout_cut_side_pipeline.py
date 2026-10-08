@@ -22,10 +22,13 @@ from holoclip.holdout_reservations import holdout_inventory
 from holoclip.multimodal_cut_sides import (
     MAX_TRANSITIONS, VERSION as METHOD, compare_transition_sides,
 )
-from holoclip.provider_benchmark import atomic_json
+from holoclip.provider_benchmark import BenchmarkCase, atomic_json, verified_window
 from holoclip.providers.cost import CostPolicyError
 from holoclip.providers.source.yt_dlp import choose_source_candidate
 from holoclip.video_measurement import checksum_file
+from holoclip.visual_only_frame_search import (
+    VERSION as VISUAL_SEARCH_VERSION, search_source_visual_sequences,
+)
 from holoclip.visual_source_crosscheck import (
     VERSION as SOURCE_VISUAL_VERSION, inspect_visual_only_source_changes,
 )
@@ -39,6 +42,7 @@ def inspect_reserved_cut_sides(
     frame_links_root: Path, cuts_root: Path, output: Path, policy_rules: list,
     max_clips: int = 3, progress=None, compare=compare_transition_sides,
     crosscheck=inspect_visual_only_source_changes,
+    search_visual=search_source_visual_sequences,
 ) -> dict:
     """Observe source jump versus edited output; never certify human editing gold."""
     if not 1 <= max_clips <= 20:
@@ -263,6 +267,7 @@ def inspect_reserved_cut_sides(
                 "source_video_sha": media_hashes, "manifest_sha": manifests,
                 "clock_report": clock, "frame_links": linked, "cut_report": cut,
                 "source_visual_method": SOURCE_VISUAL_VERSION,
+                "visual_only_sequence_method": VISUAL_SEARCH_VERSION,
                 "full_audio_sha": a["source_media_sha256"],
             }, sort_keys=True).encode()).hexdigest()
             cached = records.get(clip_id, {})
@@ -332,6 +337,38 @@ def inspect_reserved_cut_sides(
                         "reviewed_gold_available", "qualification_allowed",
                     ))):
                 raise ValueError("Unreviewed output/source visual crosscheck was promoted")
+            def pinned_window(path):
+                return verified_window(BenchmarkCase(
+                    id="visual-only-search", clip_id=clip_id, task="video",
+                    source_url=item.source_url, teacher_reference="unreviewed",
+                    public_data=True, dimensions=frozenset(),
+                    measurement_path=path,
+                ))
+
+            sequence = search_visual(
+                cut.get("independent_output_visual_survey"), segments,
+                load_window=pinned_window,
+            )
+            if (not isinstance(sequence, dict)
+                    or sequence.get("version") != VISUAL_SEARCH_VERSION
+                    or sequence.get("status") not in {
+                        "UNKNOWN_NO_MEASURED_OUTPUT_SURVEY",
+                        "UNKNOWN_VISUAL_SEARCH_PEAK_BUDGET",
+                        "NO_UNMATCHED_OUTPUT_VISUAL_PEAKS",
+                        "UNKNOWN_NO_PINNED_SOURCE_SECTIONS",
+                        "UNKNOWN_VISUAL_FRAME_COVERAGE",
+                        "UNKNOWN_VISUAL_SEARCH_COMPARISON_BUDGET",
+                        "UNKNOWN_VISUAL_IMAGE_DECODE",
+                        "MEASURED_UNREVIEWED_VISUAL_SEQUENCE_SEARCH",
+                    }
+                    or any(sequence.get(k) is not False for k in (
+                        "verified_edit_cut", "source_scene_change_ruled_out",
+                        "frame_accurate_cuts_verified",
+                        "original_video_absolute_pts_verified",
+                        "dense_output_source_map_verified",
+                        "reviewed_gold_available", "qualification_allowed",
+                    ))):
+                raise ValueError("Visual-only correspondence must remain unreviewed")
             records[clip_id] = {
                 **base, "status": "MEASURED_UNREVIEWED_CUT_SIDE_EVIDENCE",
                 "fingerprint": identity, "method": METHOD,
@@ -339,6 +376,8 @@ def inspect_reserved_cut_sides(
                 "transitions": details,
                 "independent_visual_source_checks": visual_source,
                 "source_visual_method_version": SOURCE_VISUAL_VERSION,
+                "visual_only_frame_search": sequence,
+                "visual_only_frame_search_version": VISUAL_SEARCH_VERSION,
                 "audio_source_sha256": a["source_media_sha256"],
                 "finished_media_sha256": p["media_sha256"],
                 "source_section_sha256": media_hashes,
