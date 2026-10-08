@@ -5,11 +5,12 @@ import json
 import pytest
 
 from holoclip.corpus_growth import CorpusGrowthState
+from holoclip.examples import human_clip_identity
 from holoclip.source_visual_assessment import (
     VERSION, assess_visual_candidates, checked_visual_candidate_assessment,
 )
 from holoclip.source_visual_ledger import checked_ledger
-from test_source_candidate_visual import Provider, make_state, verify
+from test_source_candidate_visual import CLIP, Provider, make_state, verify
 from test_source_visual_ledger import (
     AID, BID, CID, add, strong,
 )
@@ -204,11 +205,12 @@ def test_malformed_saved_assessment_blocks_all_video_downloads(tmp_path):
         (tmp_path/"state.json").read_text(encoding="utf-8")
     )
     original = state.items["candidate"].source_scout
+    real_clip_id = human_clip_identity(CLIP)
     current = checked_ledger(
-        None, clip_id=CID, candidate_ids=[AID],
+        None, clip_id=real_clip_id, candidate_ids=[AID],
     )
     forged = assess_visual_candidates(
-        current, clip_id=CID, candidate_ids=[AID],
+        current, clip_id=real_clip_id, candidate_ids=[AID],
     )
     forged["source_candidate_selected"] = True
     original["visual_evidence"] = current
