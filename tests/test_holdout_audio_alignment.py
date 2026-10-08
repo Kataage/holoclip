@@ -63,6 +63,40 @@ def test_short_two_piece_edit_keeps_at_least_three_independent_unique_anchors():
     assert evidence["ranges"][1]["source_start"] == pytest.approx(44., abs=1.)
 
 
+def test_same_offset_does_not_erase_unobserved_replaced_audio_island():
+    # Editor replaces 12 seconds with unrelated narration/BGM at the SAME
+    # overall duration and source offset. Strong accepted matches on either
+    # side cannot prove the acoustic content inside the replacement.
+    source = _features(1200, seed=190)
+    clip = source[200:392].copy()  # source t50..98 => 48s clip
+    clip[72:120] = _features(48, seed=8304)  # edited t18..30
+    evidence = match_features(clip, source)
+    assert evidence["status"] == "PARTIAL_AUDIO_MATCH"
+    assert evidence["source_monotonic"] is True
+    assert len(evidence["anchors"]) >= 3
+    assert len(evidence["ranges"]) == 2
+    left, right = evidence["ranges"]
+    assert left["clip_end"] <= 18
+    assert right["clip_start"] >= 30
+    assert right["clip_start"] - left["clip_end"] > 4
+    assert left["offset_seconds"] == right["offset_seconds"] == 50
+
+
+def test_three_audio_cuts_preserve_three_source_islands():
+    source = _features(1200, seed=290)
+    clip = np.concatenate((
+        source[28:92], source[124:188], source[220:284],
+    ))  # three 16-second source passages, t0,16,32 in the output
+    evidence = match_features(clip, source)
+    assert evidence["status"] == "PARTIAL_AUDIO_MATCH"
+    assert len(evidence["ranges"]) == 3
+    assert evidence["source_monotonic"] is True
+    assert [item["clip_start"] for item in evidence["ranges"]] == pytest.approx(
+        [0, 16.8, 33.6], abs=1.0,
+    )
+    assert all(item["anchors"] >= 1 for item in evidence["ranges"])
+
+
 def test_repeated_source_event_and_unrelated_clip_cannot_establish_unique_match():
     source = _features(500)
     duplicated = np.concatenate([source, source], axis=0)
@@ -191,7 +225,7 @@ def test_sparse_old_audio_match_cache_is_recomputed_without_reusing_old_evidence
     assert second["counts"] == {"PARTIAL_AUDIO_MATCH": 1}
     assert len(observed) == 2
     saved = next(iter(json.loads(path.read_text(encoding="utf-8"))["records"].values()))
-    assert saved["match_sampling_version"] == "bounded-eight-second-anchor-coverage-v2"
+    assert saved["match_sampling_version"] == "bounded-observed-audio-islands-v3"
     _run_pipeline(provider, store, state, prepared, align=record_match)
     assert len(observed) == 2
 
