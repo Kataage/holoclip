@@ -238,6 +238,46 @@ def test_unattended_refinement_records_unreviewed_intervals_and_reuses(tmp_path)
     assert len(seen) == 1
 
 
+
+def test_refinement_runs_independent_survey_without_acoustic_cut_and_caches(tmp_path):
+    provider, store, state, prepared, audio_root = _setup(tmp_path)
+    source = _features(900)
+    clip = source[160:360].copy()
+    surveys = []
+
+    def fake_survey(media, duration, transitions):
+        surveys.append((duration, list(transitions)))
+        return {
+            "version": "bounded-output-only-visual-survey-v1",
+            "status": "UNKNOWN_BOUNDED_VISUAL_DECODE",
+            "verified_edit_cut": False,
+            "reviewed_gold_available": False,
+            "frame_accurate_cuts_verified": False,
+            "qualification_allowed": False,
+        }
+
+    for _ in range(2):
+        report = _run(
+            provider, store, state, prepared, audio_root,
+            fingerprint=_stub_fingerprint(clip, source),
+            survey_visual=fake_survey,
+        )
+        assert report["counts"] == {"MEASURED_UNREVIEWED_CUT_BRACKETS": 1}
+    assert len(surveys) == 1
+    assert surveys[0][1] == []
+    path = prepared / "cut_brackets" / "holdout-cut-brackets.json"
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    record = next(iter(saved["records"].values()))
+    assert record["refinement"]["transitions"] == []
+    assert record["independent_output_visual_survey"]["status"] == (
+        "UNKNOWN_BOUNDED_VISUAL_DECODE"
+    )
+    assert record["visual_survey_method_version"] == (
+        "bounded-output-only-visual-survey-v1"
+    )
+    assert record["visual_cut_boundary_confirmed"] is False
+
+
 def test_learning_collision_blocks_all_metadata_probes(tmp_path):
     _, store, state, prepared, audio_root = _setup(tmp_path)
     upsert_human_clip_examples(
