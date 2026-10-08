@@ -96,6 +96,18 @@ execution is **not** production acceptance. The Git repository includes
 example metadata but does **not** include the user's locally downloaded
 real source/video files or completed private holdout checkpoints.
 
+The acoustic matcher refuses to call an entire passage supported merely
+because two 6-second independently matching fragments have the same
+original-source offset: gaps exceeding four seconds without a verified
+anchor form explicit separate acoustic islands. This guards against
+equally long silence/narration/BGM replacement falsely appearing as a
+complete uninterrupted original source range; source audio caches using
+the previous 25-second gap allowance are invalidated.
+
+The integration suite also exercises a reencoded **three-piece**
+48-second video with test-only known edited boundaries at 16s and 32s.
+This validates synthetic cut bracketing, not real Hololive accuracy.
+
 The offline FFmpeg integration suite also covers a real re-encoded
 **two-piece** source↔finished edit (original 9–31s followed by 44–66s)
 with a known scripted cut at edited t=22s, with and without quiet BGM.
