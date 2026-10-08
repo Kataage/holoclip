@@ -74,6 +74,19 @@ reuses each stage's verified cached media, but cannot continue through an
 upstream stage without successful measurements. Real public media downloads
 may take significant time; the input reservations must already exist.
 
+If the reservation list contains more clips than `--max-clips`, each
+invocation automatically processes one bounded batch, prioritizing clips
+without a completed final-stage record. Re-run the same command to advance
+through later batches; original corpus reservations and learning history
+are not edited. The projected batch state is kept locally at
+`data/provider-benchmark/holdout/holdout-e2e-batch-state.json`.
+`--preflight-only` writes a **separate** `holdout-e2e-preflight.json`
+without overwriting the latest real run audit. Overlapping runs fail
+closed behind a local `.holdout-e2e.lock`; if an unclean crash leaves
+that lock, inspect the process before removing it. If the original
+reservation state changes during processing, the batch stops instead of
+claiming that the old source assignment was validated.
+
 The local `data/provider-benchmark/holdout/holdout-e2e-audit.json` records
 each stage's *actual* per-clip status, observed candidate coverage, frame
 links, candidate edit discontinuities and blockers. Precision/recall,
