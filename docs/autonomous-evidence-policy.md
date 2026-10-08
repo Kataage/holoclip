@@ -997,6 +997,11 @@ clip in the current run**. New fields
 - schema and interval validation that rejects malformed acoustic
   transitions instead of writing plausible descriptive measurements.
 
+Multi-batch runs preserve the per-batch records and accumulate only
+fully completed nine-stage selected clips in
+`holdout-e2e-all-batches.json`, with complete replay recomputing the
+summary rather than trusting a previous checkpoint's quality claims.
+
 No real-video true-positive/false-positive/missed cut metric is
 fabricated, because a candidate can correspond to a natural scene
 change, an inserted audio edit, or an actual editor cut. These
