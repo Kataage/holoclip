@@ -71,7 +71,14 @@ def _mapped_window(peak: list[float], sections: list[dict],
                 continue
             offset = (left_offset + right_offset) / 2
             origin = clock["origin_seconds"]
-            local = [round(t + offset - origin, 3) for t in peak]
+            # Uniform FFmpeg fps sampling and the local section audio
+            # origin are approximate. Expand the SOURCE diagnostic only,
+            # never the acoustic output cut or any claimed exact timestamp.
+            # A 375ms pad on each side stays within a bounded short seek.
+            local = [
+                round(peak[0] + offset - origin - .375, 3),
+                round(peak[1] + offset - origin + .375, 3),
+            ]
             duration = section["source_measured_duration_seconds"]
             if (not 1 <= local[0] < local[1] < duration - 1
                     or not section["source_start"] - 5 <= middle + offset
