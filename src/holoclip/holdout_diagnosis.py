@@ -91,6 +91,16 @@ def _records_from_audit(audit: dict, reserved: set[str]) -> tuple[list, str]:
         stage_number = row.get("completed_stage_count")
         if type(stage_number) is not int or not 0 <= stage_number <= len(STAGES):
             raise ValueError("Invalid stage completion count")
+        if current in ("UNREVIEWED_MEASUREMENTS_COMPLETE",
+                       "SIMULATED_STAGE_TEST_COMPLETE"):
+            if (stage_number != len(STAGES)
+                    or len(stage_counts) != len(STAGES)
+                    or any(
+                        stage_counts.get(stage.name, {}).get(stage.success, 0)
+                        != len(selected)
+                        for stage in STAGES
+                    )):
+                raise ValueError("A complete run lacks all expected stage successes")
         cleaned.append({
             "number": expected_number, "status": current,
             "selected_clip_ids": selected, "stage_status_counts": stage_counts,
