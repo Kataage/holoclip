@@ -991,7 +991,8 @@ clip in the current run**. New fields
 - number of candidates with measured output-only visual change evidence,
   separately from candidates corroborated by two-sided original/finished
   acoustic/visual geometry;
-- explicit UNKNOWN for missing cut schema, mismatched clip, original
+- explicit UNKNOWN for unmeasured acoustic support or exhausted sampling
+  budget (not zero detected candidates); missing cut schema, mismatched clip, original
   stream, finished media hash, source audio hash, unexecuted stages,
   unsafely promoted flags, missing side evidence, or exhausted budgets;
 - schema and interval validation that rejects malformed acoustic
