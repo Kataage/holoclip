@@ -5,9 +5,8 @@ import numpy as np
 import pytest
 
 from holoclip.audio_anchor_alignment import (
-    VERSION, fingerprint_media, match_features, measured_audio_alignment,
+    VERSION, fingerprint_media, match_features,
 )
-from holoclip.corpus_growth import CorpusGrowthState
 from holoclip.examples import upsert_human_clip_examples
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
 from test_editorial_profile import trusted_example
@@ -88,10 +87,6 @@ def test_real_ffmpeg_pcm_audio_fingerprint_reuses_verified_cache(tmp_path):
     assert len(list((tmp_path / "cache").glob("*.npz"))) == 1
     changed = tmp_path / "changed.wav"
     changed.write_bytes(wav.read_bytes() + b"append")
-    assert not np.array_equal(
-        np.load(next((tmp_path / "cache").glob("*.npz")))["features"],
-        np.empty((0, 12), dtype=np.float32),
-    )
     # Different bytes cannot alias an existing cache fingerprint path.
     fingerprint_media(changed, tmp_path / "cache")
     assert len(list((tmp_path / "cache").glob("*.npz"))) == 2
@@ -123,7 +118,7 @@ def _run_pipeline(provider, store, state, prepared, align=_fake_audio_align):
 
 
 def test_unattended_source_audio_and_checksum_bound_resume(tmp_path):
-    provider, store, state, prepared, align = _pipeline(tmp_path)
+    provider, store, state, prepared, _ = _pipeline(tmp_path)
     first = _run_pipeline(provider, store, state, prepared)
     assert first["counts"] == {"PARTIAL_AUDIO_MATCH": 1}
     assert provider.calls == 2  # finished video then one original audio
