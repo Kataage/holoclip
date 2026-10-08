@@ -22,6 +22,19 @@ hash randomization cannot change resume/dataset IDs. Ordered frames/transcript/e
 sequences retain their order. Legacy reports whose dataset identity does not match
 the canonical manifest are rejected, never silently requalified.
 
+## Reserved evaluation-media preparation (operator-free input selection)
+
+`examples-prepare-holdout` reuses newly reserved source streams from the
+corpus-growth queue and prepares real *finished-clip video measurements* without
+manually entered URLs or AI inference. It rechecks source identity/policy/public
+status and validates all cached bytes. It persists a separate unreviewed diagnostic
+checkpoint. See [autonomous evidence policy](autonomous-evidence-policy.md).
+Unlike true external reviewed gold, these deterministic measurements contain
+**no verified story/payoff/identity labels**, no original-source temporal map,
+and no confirmed multi-POV event isolation. They cannot set `held_out=true` or
+promote any model. Do not conflate this with the existing training-corpus
+`corpus-run` command.
+
 ## One command and resume
 
 Install the media extras and FFmpeg. Keep the existing corpus and `.env` read-only.
