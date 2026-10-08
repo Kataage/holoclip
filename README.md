@@ -53,6 +53,19 @@ evidence, without additional downloads or paid AI inference. Acoustic
 silence, ambiguous matches, visual-only edits and unavailable absolute
 source timestamps remain explicit unknowns.
 
+To distinguish strong candidate edit discontinuities from unsupported
+scene-change guesses, inspect the *actual bounded original and finished
+video pixels* on both sides of the previously observed acoustic cut:
+
+```powershell
+uv run --extra media holoclip examples-compare-cut-sides --max-clips 3
+```
+
+This uses only previously downloaded section media and checks independent
+frame matches, repeated content, rights and time-consistency. It produces
+candidate observations, **not** verified edit-cut frames, human editorial
+intent, a dense OutputSourceTimeMap or production-quality gold.
+
 After the bounded source-section clock has been checked, local ORB/RANSAC
 can compare real original/finished **sampled image frames** against the
 independent audio timeline and reject repeated visual content or time
