@@ -9,7 +9,8 @@ from holoclip.visual_only_frame_search import (
 
 
 def frame(name, pts):
-    return SimpleNamespace(id=name, locator=name, pts_seconds=float(pts))
+    return SimpleNamespace(id=name, locator=name, pts_seconds=float(pts),
+                           checksum="sha-"+name)
 
 
 def survey(intervals=None):
@@ -122,6 +123,25 @@ def test_repeated_frames_reject_ambiguous_source_match():
     assert observed["peak_observations"][0]["status"] == (
         "UNKNOWN_VISUAL_MATCH_NOT_UNIQUE"
     )
+
+
+
+def test_static_original_or_finished_frames_do_not_establish_visual_trajectory():
+    sections, windows, compare = fixtures()
+    # The two times contain exactly the same bytes, even though their IDs
+    # and display timestamps differ.
+    windows("src0").frames[0].checksum = "same-content"
+    windows("src0").frames[1].checksum = "same-content"
+    static_source = run(sections, windows, compare)
+    assert static_source["unknown_visual_correspondences"] == 1
+    assert static_source["visual_source_skip_hypotheses"] == 0
+
+    sections, windows, compare = fixtures()
+    windows("dst0").frames[0].checksum = "same-output"
+    windows("dst0").frames[1].checksum = "same-output"
+    static_output = run(sections, windows, compare)
+    assert static_output["unknown_visual_correspondences"] == 1
+    assert static_output["visual_source_skip_hypotheses"] == 0
 
 
 def test_no_both_side_frames_returns_unknown_not_zero_edits():
