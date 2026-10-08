@@ -5,7 +5,6 @@ visual edits, silent cuts, frame-accurate cut boundaries or reviewed gold.
 """
 from __future__ import annotations
 
-import json
 import math
 import shutil
 import subprocess
