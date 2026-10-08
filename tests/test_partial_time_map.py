@@ -244,3 +244,19 @@ def test_map_builder_rejects_forged_qualified_flags(tmp_path):
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError, match="unpromoted"):
         run(provider, store, state, prepared, audio_root)
+
+
+def test_stale_source_visual_side_fingerprint_blocks_partial_map(tmp_path):
+    provider, store, state, prepared, audio_root = fixture(tmp_path)
+    path = prepared / "cut_sides" / "holdout-cut-side-evidence.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    record = next(iter(payload["records"].values()))
+    record["source_visual_method_version"] = "obsolete-source-visual-method"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    class NoNetwork:
+        def probe(self, url):
+            raise AssertionError("Stale original visual method must fail before metadata")
+
+    report = run(NoNetwork(), store, state, prepared, audio_root)
+    assert report["counts"] == {"BLOCKED_UPSTREAM_PROVENANCE": 1}
