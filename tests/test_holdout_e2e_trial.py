@@ -7,7 +7,7 @@ from holoclip.holdout_e2e_trial import (
     STAGES, _kwargs, run_reserved_holdout_e2e, summarize_observed_evidence,
 )
 from holoclip.holdout_preparation import _candidates
-from holoclip.corpus_growth import CorpusGrowthState
+from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
 from test_holdout_preparation import files
 
 
@@ -17,39 +17,49 @@ def make_runners(root, *, override=None, calls=None):
     for stage in STAGES:
         def runner(provider, *, _stage=stage, **kwargs):
             called.append(_stage.name)
-            clip_id = human_clip_identity(
-                _candidates(CorpusGrowthState.model_validate_json(
-                    kwargs["state_path"].read_text(encoding="utf-8")
-                ))[0].clip_url
-            )
+            selected = _candidates(CorpusGrowthState.model_validate_json(
+                kwargs["state_path"].read_text(encoding="utf-8")
+            ))
             status = (override or {}).get(_stage.name, _stage.success)
-            record = {"status": status}
-            if _stage.name == "original_audio":
-                record["anchors"] = [{"clip_start": 0, "clip_end": 6,
-                                      "source_start": 40, "source_end": 46}]
-            if _stage.name == "sampled_frame_links":
-                record["group_observations"] = [{
-                    "status": "PARTIAL_AUDIO_VISUAL_FRAME_LINKS",
-                    "frame_links": [{}, {}],
-                }]
-            if _stage.name == "two_sided_cut_evidence":
-                record["transitions"] = [{
-                    "candidate": {"status": "MULTIMODAL_EDIT_JUMP_CANDIDATE"}
-                }]
-            if _stage.name == "partial_time_map":
-                record["time_map"] = {
-                    "status": "PARTIAL_LOCAL_INTERVAL_CANDIDATES",
-                    "candidate_coverage_seconds": 2.,
-                    "segments": [{"output_start": .5, "output_end": 2.5}],
-                }
+            records = {}
             path = root / _stage.report
+            if path.exists():
+                prior = json.loads(path.read_text(encoding="utf-8"))
+                if prior.get("version") == _stage.version:
+                    records = prior.get("records", {})
+            for item in selected:
+                clip_id = human_clip_identity(item.clip_url)
+                record = {
+                    "status": status, "clip_url": item.clip_url,
+                    "source_url": item.source_url, "source_stream_id": item.source_stream_id,
+                    "qualification_allowed": False,
+                }
+                if _stage.name == "original_audio":
+                    record["anchors"] = [{"clip_start": 0, "clip_end": 6,
+                                          "source_start": 40, "source_end": 46}]
+                if _stage.name == "sampled_frame_links":
+                    record["group_observations"] = [{
+                        "status": "PARTIAL_AUDIO_VISUAL_FRAME_LINKS",
+                        "frame_links": [{}, {}],
+                    }]
+                if _stage.name == "two_sided_cut_evidence":
+                    record["transitions"] = [{
+                        "candidate": {"status": "MULTIMODAL_EDIT_JUMP_CANDIDATE"}
+                    }]
+                if _stage.name == "partial_time_map":
+                    record["time_map"] = {
+                        "status": "PARTIAL_LOCAL_INTERVAL_CANDIDATES",
+                        "candidate_coverage_seconds": 2.,
+                        "segments": [{"output_start": .5, "output_end": 2.5}],
+                    }
+                records[clip_id] = record
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps({
                 "version": _stage.version, "qualification_allowed": False,
                 "event_split_verified": False, "reviewed_gold_available": False,
-                "records": {clip_id: record},
+                "records": records,
             }), encoding="utf-8")
-            return {"counts": {status: 1}, "report_path": str(path)}
+            return {"counts": {status: len(selected)}, "report_path": str(path)}
         runners[stage.name] = runner
     return runners
 
@@ -221,3 +231,117 @@ def test_stage_report_versions_and_safety_flags_checked(tmp_path):
     import pytest
     with pytest.raises(ValueError, match="Unsafe"):
         summarize_observed_evidence(root, {clip_id})
+
+
+def add_reserved_clips(state_path, *, count=3):
+    state = CorpusGrowthState.model_validate_json(state_path.read_text(encoding="utf-8"))
+    for i in range(2, count + 1):
+        source = f"stream-reserved-extra-{i}"
+        clip = f"https://www.youtube.com/watch?v=EXTRA{i:06d}"
+        state.holdout_stream_ids.append(source)
+        state.items[f"reserved-{i}"] = CorpusGrowthItem(
+            clip_url=clip, source_url=f"https://www.youtube.com/watch?v=SOURCE{i:05d}",
+            source_stream_id=source, query="synthetic", status="holdout_reserved",
+        )
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+
+
+def test_more_reservations_than_limit_selects_progressive_batches_without_losing_state(tmp_path):
+    store, state, root = files(tmp_path)
+    add_reserved_clips(state, count=3)
+    original = state.read_bytes()
+    seen = []
+    first = run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=make_runners(root, calls=seen),
+    )
+    assert first["status"] == "SIMULATED_STAGE_TEST_COMPLETE"
+    assert first["reserved_clips"] == 3
+    assert first["selected_clips"] == 1
+    assert first["remaining_clips_after_batch"] == 2
+    first_id = first["selected_clip_ids"][0]
+    assert len(seen) == 9
+    # Projected batch retains durable holdout IDs, but one selected input only.
+    view = CorpusGrowthState.model_validate_json(
+        (root / "holdout-e2e-batch-state.json").read_text(encoding="utf-8")
+    )
+    assert len(_candidates(view)) == 1
+    assert len(view.holdout_stream_ids) == 3
+    assert state.read_bytes() == original
+
+    second = run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=make_runners(root, calls=seen),
+    )
+    third = run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=make_runners(root, calls=seen),
+    )
+    assert second["selected_clip_ids"] != first["selected_clip_ids"]
+    assert third["selected_clip_ids"] not in (
+        first["selected_clip_ids"], second["selected_clip_ids"],
+    )
+    assert len({
+        first_id, second["selected_clip_ids"][0], third["selected_clip_ids"][0],
+    }) == 3
+    assert second["observations"]["all_nine_stages_measured_clips"] == 1
+    assert third["observations"]["all_nine_stages_measured_clips"] == 1
+    assert third["remaining_clips_after_batch"] == 2
+    assert state.read_bytes() == original
+
+
+def test_intermediate_audit_ignores_previous_run_later_stage_success(tmp_path):
+    store, state, root = files(tmp_path)
+    make_runners(root)["partial_time_map"](
+        None, state_path=state, store=store, policy_rules=[],
+        max_clips=1, progress=None,
+    )
+    runners = make_runners(root, override={"original_audio": "INSUFFICIENT_AUDIO"})
+    result = run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=runners,
+    )
+    assert result["status"] == "BLOCKED_UPSTREAM_STAGE"
+    assert result["blocked_stage"] == "original_audio"
+    assert result["observations"]["stage_status_counts"]["partial_time_map"] == {
+        "NOT_EXECUTED_THIS_RUN": 1
+    }
+    assert result["observations"]["local_time_map_candidate_segments"] == 0
+    assert result["observations"]["candidate_coverage_seconds"] == 0.
+    assert result["observations"]["all_nine_stages_measured_clips"] == 0
+    assert result["observations"]["per_clip_stage_status"][
+        result["selected_clip_ids"][0]
+    ]["partial_time_map"] == "NOT_EXECUTED_THIS_RUN"
+
+
+def test_state_change_mid_run_stops_without_claiming_stale_success(tmp_path):
+    store, state, root = files(tmp_path)
+    runners = make_runners(root)
+    original = runners["finished_video"]
+    def change_state(provider, **kwargs):
+        result = original(provider, **kwargs)
+        data = CorpusGrowthState.model_validate_json(state.read_text(encoding="utf-8"))
+        data.cursors["external-change"] = 2
+        state.write_text(data.model_dump_json(), encoding="utf-8")
+        return result
+    runners["finished_video"] = change_state
+    result = run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root, policy_rules=[],
+        max_clips=1, runners=runners,
+    )
+    assert result["status"] == "BLOCKED_CHANGED_RESERVATION_STATE"
+    assert result["blocked_stage"] == "original_audio"
+    assert len(result["stages"]) == 1
+    assert result["real_media_run_completed"] is False
+
+
+def test_existing_lock_blocks_duplicate_run(tmp_path):
+    store, state, root = files(tmp_path)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / ".holdout-e2e.lock").write_text("owner", encoding="utf-8")
+    result = run_reserved_holdout_e2e(
+        None, store=store, state_path=state, root=root,
+        policy_rules=[], max_clips=1, runners=make_runners(root),
+    )
+    assert result["status"] == "BLOCKED_CONCURRENT_RUN"
+    assert (root / ".holdout-e2e.lock").read_text(encoding="utf-8") == "owner"
