@@ -563,6 +563,55 @@ event-split, frame-accurate and dense-map flag remains **false**.
 Synthetic pixel tests and bounded FFmpeg decoder tests do not
 establish real-world acceptance accuracy.
 
+## Increment 11: evidence-only partial OutputSourceTimeMap candidates (#127)
+
+`examples-build-partial-time-map` consumes all *previously measured* reserved
+holdout evidence—independently unique audio anchors, source/finished image
+frame links, source-section clock, acoustic cut brackets and actual source
+cut-side diagnostics—without calling AI inference or acquiring new media.
+
+```powershell
+uv run --extra media holoclip examples-build-partial-time-map --max-clips 3
+```
+
+This emits an **explicitly non-authoritative partial time-map diagnostic** at
+`data/provider-benchmark/holdout/partial_time_maps/holdout-partial-time-map.json`.
+A proposed `LOCAL_INTERPOLATION_CANDIDATE` is bounded strictly by two distinct,
+already measured, increasing source-to-finished image frame matches, at most
+three seconds apart, with stable near-1x time offset/rate and **one uniquely
+matched acoustic anchor corroborating both endpoints**. Neither before nor
+after those actual frame observations is extrapolated. The service never
+crosses an acoustically observed cut/unknown transition, never joins
+independent source-window groups and never connects unobserved long gaps.
+Those portions are emitted explicitly as `unknown_intervals`.
+
+The candidate is intentionally not a claimed *verified interpolation*:
+matching two images and one unique audio span **does not prove every
+intermediate video frame** or exact source↔output native PTS. It records
+supporting IDs, candidate speed, residual audio clock mismatch and
+approximate audio-relative original times; none may directly drive rendering
+or serve as learned editorial gold. Even 100% visual/acoustic candidates
+would not establish exact human edit causes or frame times.
+
+Before using evidence or cached output, the stage recomputes source-section
+clock and cut-side report content fingerprints from SHA-256-checked original
+media, finished media, sampled source/finished frames and manifests;
+revalidates stream holdout reservation and learning split collision,
+canonical public/ended original link, latest clip/source LEARN policy,
+and requested plus observed original-source ranges. Corrupted artifacts or
+policy restrictions fail closed. Candidate work is bounded (160 frame pairs
+by default); exhaustion produces a fully unknown map, not partial output.
+
+**Nonqualification:** `qualification_allowed=false`,
+`benchmark_held_out=false`, `event_split_verified=false`,
+`reviewed_gold_available=false`,
+`frame_accurate_cuts_verified=false`,
+`dense_output_source_map_verified=false`,
+`interpolation_verified=false`. Native original livestream frame PTS,
+cross-video A/V delay, reliable speed/freeze, full piecewise timeline,
+subtitles and precise edit cuts, independently reviewed event-isolated
+gold and real Hololive clips remain unfinished.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
