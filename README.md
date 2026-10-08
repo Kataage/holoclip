@@ -194,6 +194,22 @@ Prior source-video pair caches lacking the sampling-method stamp are
 invalidated and remeasured under current source rights and hash checks.
 This protects direct CLI stage execution, not just the nine-stage runner.
 
+The acoustic cut refinement used by the same nine-stage holdout trial now
+preflights **all** coarse audio-supported regions against its bounded
+sampling-point budget. When 1-second spacing would exceed the budget, it
+can use 1.5- or 2-second spacing across *every* supported section, always
+sampling each section's final eligible audio window. If even 2-second
+sampling cannot cover all ranges, the entire refinement remains
+`UNKNOWN_SAMPLING_BUDGET` with no partial cut claims. The saved
+`refinement.sample_spacing_seconds`, `planned_points`, and
+`sampling_strategy` make the tradeoff visible; wider spacing can still
+miss short transitions. This is not native frame-accurate editing gold.
+
+The refinement schema is now `bounded-acoustic-cut-brackets-v2`.
+Previously measured v1 cut/source-side/time-map cache chains do not
+qualify as v2 measurements; rerun the already documented bounded holdout
+command to recompute them with current provenance guards.
+
 For **actual unreviewed human-edited holdout clips**, the existing
 `examples-validate-holdout-e2e` nine-stage command now also emits
 `observations.real_cut_observations` (per selected clip) and

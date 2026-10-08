@@ -34,7 +34,7 @@ def _report(transitions):
                 "clip_id": "youtube:aaaaaaaaaaa", "status": "MEASURED_UNREVIEWED_CUT_BRACKETS",
                 "frame_accurate_cuts_verified": False,
                 "refinement": {
-                    "version": "bounded-acoustic-cut-brackets-v1",
+                    "version": "bounded-acoustic-cut-brackets-v2",
                     "status": "AUDIO_SUPPORTED_INTERVALS", "transitions": transitions,
                 },
             },

@@ -142,7 +142,8 @@ def _pipeline_fixture(tmp_path):
     }
     def fake_refiner(*args, **kwargs):
         _, _, refinement, transition, _ = supported_transition()
-        return {"status": "AUDIO_SUPPORTED_INTERVALS",
+        return {"version": "bounded-acoustic-cut-brackets-v2",
+                "status": "AUDIO_SUPPORTED_INTERVALS",
                 "points": refinement["points"], "transitions": [transition]}
     def fake_jump(*args):
         return {"status": "VISUAL_JUMP_CANDIDATES", "peaks": [
@@ -164,6 +165,24 @@ def _run(provider, store, state, prepared, audio_root, **kwargs):
         cuts_root=prepared / "cut_brackets", output=prepared / "cut_sides",
         policy_rules=kwargs.pop("policy_rules", []), max_clips=2, **kwargs,
     )
+
+
+
+def test_legacy_acoustic_refinement_blocked_before_provider_call(tmp_path):
+    _, store, state, prepared, audio_root = _pipeline_fixture(tmp_path)
+    path = prepared / "cut_brackets" / "holdout-cut-brackets.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    record = next(iter(payload["records"].values()))
+    record["refinement"]["version"] = "bounded-acoustic-cut-brackets-v1"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    class NoNetwork:
+        def probe(self, url):
+            raise AssertionError("Stale v1 measurement must be rejected before probing")
+
+    report = _run(NoNetwork(), store, state, prepared, audio_root)
+    assert report["counts"] == {"BLOCKED_UPSTREAM_PROVENANCE": 1}
+
 
 
 def test_integrated_cut_side_checkpoint_and_resumption(tmp_path):

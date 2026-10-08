@@ -9,7 +9,7 @@ import math
 
 from holoclip.audio_anchor_alignment import HOP
 
-VERSION = "bounded-acoustic-cut-brackets-v1"
+VERSION = "bounded-acoustic-cut-brackets-v2"
 
 
 def refine_acoustic_cut_brackets(
@@ -55,6 +55,10 @@ def refine_acoustic_cut_brackets(
     ignored = 0
     budgets = 0
     previous_range_end = -1.
+    validated = []
+    # Preflight every coarse audio section before sampling any expensive
+    # correlation. An earlier group must never consume the available budget
+    # and thereby hide a later, potentially edited group.
     for group, section in enumerate(ranges):
         try:
             clip_start = float(section["clip_start"])
@@ -74,18 +78,53 @@ def refine_acoustic_cut_brackets(
         expected_offset = source_start - clip_start
         a = max(0, math.ceil(clip_start / HOP))
         b = min(len(clip) - width, math.floor((clip_end - width * HOP) / HOP))
+        validated.append((group, a, b, expected_offset))
+
+    def sample_count(first: int, last: int, stride: int) -> int:
+        if last < first:
+            return 0
+        regular = (last - first) // stride + 1
+        # End of every anchored section is always sampled, not silently
+        # excluded by a stride remainder at the edit seam.
+        return regular + int(first + (regular - 1) * stride != last)
+
+    # The sampler may increase spacing, but never beyond 2s or the user's
+    # explicitly requested minimum spacing. Candidate boundaries remain
+    # interval-valued; sparse sampling does not establish accurate edit PTS.
+    available_steps = sorted({
+        candidate for candidate in (
+            step, round(1. / HOP), round(1.5 / HOP), round(2. / HOP)
+        )
+        if candidate >= step
+    })
+    selected_step = next((
+        candidate for candidate in available_steps
+        if sum(sample_count(a, b, candidate) for _, a, b, _ in validated)
+        <= max_points
+    ), None)
+    if selected_step is None:
+        return {
+            "version": VERSION, "status": "UNKNOWN_SAMPLING_BUDGET",
+            "points": [], "transitions": [], "tested_points": 0,
+            "sampling_strategy": "FULL_COVERAGE_OR_UNKNOWN",
+            "maximum_sample_spacing_seconds": 2.,
+            "unknowns": [
+                "Even 2s spacing cannot cover all anchored ranges within budget",
+                "No earlier partial range is promoted to a cut observation",
+            ],
+        }
+
+    planned_points = sum(
+        sample_count(a, b, selected_step) for _, a, b, _ in validated
+    )
+    for group, a, b, expected_offset in validated:
         if b < a:
             ignored += 1
             continue
-        start_positions = list(range(a, b + 1, step))
+        start_positions = list(range(a, b + 1, selected_step))
+        if start_positions[-1] != b:
+            start_positions.append(b)
         for start in start_positions:
-            if budgets >= max_points:
-                # Never silently truncate an arbitrary number of source ranges.
-                return {
-                    "version": VERSION, "status": "UNKNOWN_SAMPLING_BUDGET",
-                    "points": [], "transitions": [],
-                    "unknowns": ["Acoustic sampling budget exhausted; no partial cut claims"],
-                }
             budgets += 1
             fragment = clip[start:start + width]
             if (np.linalg.norm(fragment, axis=1) > .5).mean() < .75:
@@ -156,6 +195,9 @@ def refine_acoustic_cut_brackets(
         "version": VERSION, "status": status,
         "points": points, "transitions": transitions,
         "tested_points": budgets, "rejected_points": ignored,
+        "planned_points": planned_points,
+        "sample_spacing_seconds": round(selected_step * HOP, 3),
+        "sampling_strategy": "FULL_COVERAGE_BUDGET_ADAPTED",
         "resolution_seconds": HOP,
         "unknowns": [
             "Cut boundaries are intervals rather than exact output frame positions",

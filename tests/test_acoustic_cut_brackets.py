@@ -93,6 +93,89 @@ def test_sampling_budget_and_invented_audio_offsets_fail_closed():
         )
 
 
+
+def test_bounded_adaptive_sampling_preserves_all_three_anchored_regions():
+    source = _features(2100)
+    clip = np.concatenate((
+        source[80:200], source[640:760], source[1000:1120],
+    ), axis=0)
+    ranges = [
+        _segment(0., 30., 20.),
+        _segment(30., 30., 160.),
+        _segment(60., 30., 250.),
+    ]
+    # 1s or 1.5s sampling exceeds 50 starts. A complete 2s plan fits.
+    result = refine_acoustic_cut_brackets(
+        clip, source, ranges, max_points=50,
+    )
+    assert result["version"] == "bounded-acoustic-cut-brackets-v2"
+    assert result["status"] == "AUDIO_SUPPORTED_INTERVALS"
+    assert result["sampling_strategy"] == "FULL_COVERAGE_BUDGET_ADAPTED"
+    assert result["sample_spacing_seconds"] == 2.
+    assert result["tested_points"] == result["planned_points"]
+    assert result["tested_points"] <= 50
+    assert {point["group"] for point in result["points"]} == {0, 1, 2}
+    assert sorted(set(point["offset_seconds"] for point in result["points"])) == [
+        20., 130., 190.,
+    ]
+    candidate = [t for t in result["transitions"]
+                 if t["status"] == "CUT_INTERVAL_CANDIDATE"]
+    assert len(candidate) == 2
+    for expected in (30., 60.):
+        assert any(a <= expected <= b for a, b in
+                   (x["interval"] for x in candidate))
+    assert not any(x["status"] == "UNKNOWN_WIDE_GAP" for x in result["transitions"])
+
+
+def test_adaptive_1_5_second_spacing_when_needed():
+    source = _features(1600)
+    clip = source[120:440].copy()
+    result = refine_acoustic_cut_brackets(
+        clip, source, [_segment(0., 80., 30.)], max_points=60,
+    )
+    assert result["status"] == "AUDIO_SUPPORTED_INTERVALS"
+    assert result["sample_spacing_seconds"] == 1.5
+    assert result["tested_points"] <= 60
+    assert result["transitions"] == []
+
+
+def test_unsatisfiable_full_span_fails_before_partial_sample_claim():
+    source = _features(2100)
+    clip = np.concatenate((
+        source[80:200], source[640:760], source[1000:1120],
+    ), axis=0)
+    ranges = [
+        _segment(0., 30., 20.),
+        _segment(30., 30., 160.),
+        _segment(60., 30., 250.),
+    ]
+    blocked = refine_acoustic_cut_brackets(
+        clip, source, ranges, max_points=44,
+    )
+    assert blocked["status"] == "UNKNOWN_SAMPLING_BUDGET"
+    assert blocked["points"] == []
+    assert blocked["transitions"] == []
+    assert blocked["tested_points"] == 0
+    assert blocked["sampling_strategy"] == "FULL_COVERAGE_OR_UNKNOWN"
+
+
+def test_every_section_tail_is_sampled_even_with_stride_remainder():
+    source = _features(1700)
+    # 25s is not divisible into 2s starts after excluding a 2s window.
+    clip = np.concatenate((source[80:180], source[600:700]), axis=0)
+    result = refine_acoustic_cut_brackets(
+        clip, source, [_segment(0., 25., 20.),
+                       _segment(25., 25., 150.)],
+        max_points=26,
+    )
+    assert result["status"] == "AUDIO_SUPPORTED_INTERVALS"
+    assert result["sample_spacing_seconds"] == 2.
+    assert result["planned_points"] == result["tested_points"] <= 26
+    assert any(p["clip_start"] == 23. for p in result["points"])
+    assert any(p["clip_start"] == 48. for p in result["points"])
+
+
+
 def _setup(tmp_path):
     provider, store, state, prepared, audio_root = pair_fixture(tmp_path)
     result = run_visual(provider, store, state, prepared, audio_root)
