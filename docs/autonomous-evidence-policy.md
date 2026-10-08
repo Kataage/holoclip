@@ -1273,6 +1273,37 @@ source identity decisions remain separate. Sampled visual confirmation
 is an improvement, not proof of complete original-stream recovery.
 `ready=false` and all existing quality gates remain unchanged.
 
+## Increment 31: adaptive coarse-to-fine original-video sampling (#147)
+
+The previous breadth-first scan was broad but never acted on weaker
+image correspondence. The bounded short-video worker now records
+`weak_source_window` **only** for two distinct, unique, temporally
+advancing output/source frame pairs in one source section (not the
+three image pairs required even for unreviewed corroboration).
+Competing source sections, repeated/stationary frames, implausible
+timing and decoder errors cannot create these hints. This remains
+`UNKNOWN_NO_VISUAL_SEQUENCE`, never proof of source identity.
+
+The sample scheduler binds the tentative hint to the source stream
+ID, measured original duration, original coarse-scan cursor, finished
+video SHA256 and the exact verified coarse windows. On the next
+eligible visit to that original candidate, it probes at most three
+**non-overlapping neighboring 12-second windows** (±12/24/etc.).
+The hint is consumed after a successful complete probe and the next
+visit **resumes the existing broad breadth-first cursor**. A new
+hint cannot recursively monopolize source-video downloads. Source
+candidate rotation is preserved. The per-visit maximum number of
+bounded media requests does not increase.
+
+Outdated, forged, impossible or internally inconsistent refinement
+hints are rejected before any original source-media acquisition.
+Media rights/public status/range policy, checksum/duration guards and
+holdout/training boundaries are rechecked for every request. The
+new method `adaptive-source-visual-refinement-v1` only alters where
+small source sections are probed; there is **no source truth,
+exact native PTS, precision/recall, editorial gold, or
+production-ready route**, and `ready=false` remains unchanged.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished

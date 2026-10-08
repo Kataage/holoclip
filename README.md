@@ -210,6 +210,20 @@ Previously measured v1 cut/source-side/time-map cache chains do not
 qualify as v2 measurements; rerun the already documented bounded holdout
 command to recompute them with current provenance guards.
 
+Long-original visual discovery now uses an adaptive **coarse-to-fine**
+sampling policy. The original broad breadth-first source scan remains
+the default. If exactly one already-decoded original section supplies
+two distinct, unambiguous, time-advancing image matches (insufficient
+to call a source match), the worker stores a **weak, unreviewed image
+hint** tied to that candidate's stream ID, source duration, finished
+SHA256 and broad-scan cursor. The *next* visit to that candidate uses
+up to three new nearby 12-second source windows, with none overlapping
+the coarse evidence. That hint is then consumed; the following visit
+must resume breadth-first source coverage. Invalid, stale or promoted
+hints are blocked before any original-video download. This preserves
+the same bounded acquisition budget, avoids repeated scanning of
+the same positions and does not assign source or editor gold.
+
 Unresolved source shortlists now flow into an **automatic bounded visual
 verification worker** during ordinary `examples-grow-corpus` cycles.
 `uv run holoclip examples-verify-source-visual` also runs it separately
