@@ -154,6 +154,12 @@ def test_timeout_kills_only_the_smoke_process_group(tmp_path, monkeypatch):
 
     monkeypatch.setattr(smoke.subprocess, "Popen", Hanging)
     monkeypatch.setattr(
+        smoke, "_linux_descendant_pids", lambda pid: [515153, 515152],
+    )
+    monkeypatch.setattr(
+        smoke.os, "kill", lambda pid, sig: terminated.append((pid, sig)),
+    )
+    monkeypatch.setattr(
         smoke.os, "killpg",
         lambda pid, signum: terminated.append((pid, signum)),
     )
@@ -161,7 +167,11 @@ def test_timeout_kills_only_the_smoke_process_group(tmp_path, monkeypatch):
         tmp_path, tmp_path / "output.log",
     )
     assert (code, timed_out) == (124, True)
-    assert terminated == [(515151, smoke.signal.SIGKILL)]
+    assert terminated == [
+        (515153, smoke.signal.SIGKILL),
+        (515152, smoke.signal.SIGKILL),
+        (515151, smoke.signal.SIGKILL),
+    ]
 
 
 def test_workflow_is_single_push_attempt_with_no_video_artifacts():
