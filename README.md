@@ -380,6 +380,56 @@ policies are correct, or that both Windows PCs have actually completed
 two-host testing. Only a real separately run PC-A / PC-B verification
 can establish deployment behavior. Always retain `ready=false` until
 separate original-video/editor reference quality gates are satisfied.
+#### SSH public-key-only LAN secret pull and Windows NTFS ACL audit
+
+For Windows-to-Windows transfer without moving a USB drive, **opt in** to
+an already configured OpenSSH SFTP server on PC-A. You must independently
+verify the PC-A SSH host-key fingerprint and put that trusted key in a
+dedicated `known_hosts` file on PC-B **before** running the command.
+Copying unverified `ssh-keyscan` output into known_hosts is NOT safe
+host identity verification. Configure public-key authentication to PC-A
+(password prompts and unknown-host prompts are deliberately disabled).
+Do not expose SSH on the public internet; allow only the trusted PC-B
+address through PC-A's local firewall. This process only transfers the
+small existing secret file, never downloads public video.
+
+On PC-B, from the Holoclip directory (replace example IP, username,
+known-hosts path, remote Windows SFTP path and local secret path):
+
+```powershell
+uv run holoclip examples-ytdlp-lan-pull-secret --host 192.168.1.20 --user holoclip --remote-path D:/AI/holoclip/data/runtime/yt-dlp-lan-secret.txt --known-hosts "D:\AI\holoclip\data\runtime\pc-a-known-hosts" --secret-file "D:\AI\holoclip\data\runtime\yt-dlp-lan-secret.txt"
+uv run holoclip examples-ytdlp-lan-secret-acl --secret-file "D:\AI\holoclip\data\runtime\yt-dlp-lan-secret.txt"
+uv run holoclip examples-ytdlp-lan-configure --url http://192.168.1.20:8878 --secret-file "D:\AI\holoclip\data\runtime\yt-dlp-lan-secret.txt"
+uv run holoclip examples-ytdlp-lan-doctor
+```
+
+The SSH transfer requires `sftp` from OpenSSH in PATH and **fails closed**
+when the known-hosts file is absent, host key is untrusted/changed, SSH
+authentication fails, the remote path is unsafe or the destination differs
+from an existing secret. It uses `StrictHostKeyChecking=yes`, disables
+password/keyboard-interactive prompts, SSH agent forwarding, SSH proxies
+and jump hosts, and imposes a transfer timeout. The remote path must be
+an absolute SFTP path without spaces, wildcards or traversal components.
+Depending on PC-A's OpenSSH SFTP root, Windows drive paths may use
+`D:/...`; test the path using an already authenticated SFTP session.
+
+On Windows the command first restricts the temporary staging directory
+to the **current user, SYSTEM and Administrators**, then imports the
+credential and restricts its NTFS ACL the same way. It never prints
+secret bytes, creates GitHub secrets, or sends a credential through
+the coordinator's *unencrypted* HTTP. A PowerShell 5.1 ACL helper
+rejects inherited or unexpected allow rules and refuses unexpected
+file owners/symlinks. To audit a pre-existing local credential, run
+`examples-ytdlp-lan-secret-acl` without options other than its path;
+use the explicit `--apply` only if you want to reset that file's
+access rules. On non-Windows systems the ACL doctor reports unsupported;
+it does not falsely claim NTFS protection.
+
+SSH transport success and secure NTFS ACLs do **not** prove that both
+PCs have actually enrolled, that the coordinator is reachable from both,
+or that the eventual video/edit quality is production ready. Only
+site-free loopback/CI simulations have been exercised so far;
+`ready=false` remains unchanged.
 #### Optional PC-A Windows autostart and crash recovery
 
 After creating the shared secret, install the **PC-A coordinator only** as
