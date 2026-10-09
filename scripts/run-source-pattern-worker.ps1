@@ -7,7 +7,8 @@ param(
     [string]$UvExecutable = '',
     [string]$FFmpegExecutable = '',
     [string]$FFprobeExecutable = '',
-    [string]$JsRuntimeExecutable = ''
+    [string]$JsRuntimeExecutable = '',
+    [string]$ConfigPath = ''
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
@@ -24,6 +25,88 @@ $ranCollector = $false
 $code = 1
 
 try {
+    # Optional local-only configuration. A missing default preserves existing
+    # settings; a user-specified missing/invalid path must fail prelaunch.
+    # Nothing in config is evaluated as PowerShell or passed to a shell.
+    $configExplicit = -not [string]::IsNullOrWhiteSpace($ConfigPath)
+    if (-not $configExplicit) {
+        $ConfigPath = Join-Path $stateRoot 'source-pattern-local-settings.json'
+    }
+    if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
+        if ($configExplicit) { throw 'Explicit source-pattern config file does not exist' }
+    } else {
+        $configFile = Get-Item -LiteralPath $ConfigPath -ErrorAction Stop
+        if (($configFile.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Source-pattern config must not be a symlink or reparse point'
+        }
+        if ($configFile.Length -gt 32768) {
+            throw 'Source-pattern config exceeds 32 KiB'
+        }
+        $settings = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 |
+            ConvertFrom-Json -ErrorAction Stop
+        if ($null -eq $settings -or -not ($settings -is [pscustomobject])) {
+            throw 'Source-pattern config must be a JSON object'
+        }
+        $allowed = @(
+            'version', 'store', 'state', 'output', 'policy_file',
+            'report_path', 'launcher_audit_path', 'cycles', 'max_clips',
+            'max_candidates', 'scan_limit', 'target_distinct_streams',
+            'discover'
+        )
+        foreach ($name in $settings.PSObject.Properties.Name) {
+            if ($name -cnotin $allowed) {
+                throw 'Source-pattern config contains an unsupported key'
+            }
+        }
+        if ($settings.version -cne 'source-pattern-local-settings-v1') {
+            throw 'Unsupported source-pattern config version'
+        }
+        $configuration = @{}
+        foreach ($name in @('store', 'state', 'output', 'policy_file',
+                             'report_path', 'launcher_audit_path')) {
+            if ($settings.PSObject.Properties.Name -notcontains $name) { continue }
+            $value = $settings.$name
+            if (-not ($value -is [string]) -or
+                    [string]::IsNullOrWhiteSpace($value) -or
+                    $value.IndexOfAny([char[]]@([char]10, [char]13, [char]0)) -ge 0 -or
+                    $value.Contains('"')) {
+                throw 'Invalid source-pattern config path'
+            }
+            $absolute = if ([System.IO.Path]::IsPathRooted($value)) {
+                [System.IO.Path]::GetFullPath($value)
+            } else {
+                [System.IO.Path]::GetFullPath((Join-Path $root $value))
+            }
+            $configuration[$name] = $absolute
+        }
+        $integerBounds = @{
+            cycles = @(1, 20); max_clips = @(1, 2)
+            max_candidates = @(1, 2); scan_limit = @(1, 100)
+            target_distinct_streams = @(1, 50)
+        }
+        foreach ($name in $integerBounds.Keys) {
+            if ($settings.PSObject.Properties.Name -notcontains $name) { continue }
+            $value = $settings.$name
+            if (($value -isnot [int] -and $value -isnot [long]) -or
+                    $value -lt $integerBounds[$name][0] -or
+                    $value -gt $integerBounds[$name][1]) {
+                throw 'Invalid bounded source-pattern config number'
+            }
+            $configuration[$name] = [int]$value
+        }
+        if ($settings.PSObject.Properties.Name -contains 'discover') {
+            if ($settings.discover -isnot [bool]) {
+                throw 'Source-pattern discover must be a JSON boolean'
+            }
+            $configuration['discover'] = [bool]$settings.discover
+        }
+        if ($configuration.ContainsKey('launcher_audit_path')) {
+            $auditPath = $configuration['launcher_audit_path']
+            $auditDir = Split-Path -Parent $auditPath
+            New-Item -ItemType Directory -Force -Path $auditDir | Out-Null
+        }
+    }
+
     # Identify predictable failures BEFORE running yt-dlp or the collector.
     # This launcher audit is separate from the Python collector's measured audit.
     if ($UvExecutable) {
@@ -71,7 +154,38 @@ try {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & $uvPath run --extra media holoclip examples-collect-source-patterns --cycles $Cycles --max-clips $MaxClips *>> $logPath
+        $argsForCollector = @(
+            'run', '--extra', 'media', 'holoclip',
+            'examples-collect-source-patterns', '--cycles', [string]$Cycles,
+            '--max-clips', [string]$MaxClips
+        )
+        if ($null -ne $configuration) {
+            foreach ($name in @('cycles', 'max_clips', 'max_candidates',
+                                'scan_limit', 'target_distinct_streams')) {
+                if (-not $configuration.ContainsKey($name)) { continue }
+                $flag = '--' + $name.Replace('_', '-')
+                $index = [array]::IndexOf($argsForCollector, $flag)
+                if ($index -ge 0) {
+                    $argsForCollector[$index + 1] = [string]$configuration[$name]
+                } else {
+                    $argsForCollector += @($flag, [string]$configuration[$name])
+                }
+            }
+            foreach ($name in @('store', 'state', 'output', 'policy_file',
+                                'report_path')) {
+                if (-not $configuration.ContainsKey($name)) { continue }
+                $argsForCollector += @(
+                    ('--' + $name.Replace('_', '-')),
+                    [string]$configuration[$name]
+                )
+            }
+            if ($configuration.ContainsKey('discover') -and
+                    -not $configuration['discover']) {
+                $argsForCollector += '--no-discover'
+            }
+        }
+        # Array invocation preserves argument boundaries for paths with spaces.
+        & $uvPath @argsForCollector *>> $logPath
         if ($null -ne $LASTEXITCODE) { $code = [int]$LASTEXITCODE }
     }
     finally {
