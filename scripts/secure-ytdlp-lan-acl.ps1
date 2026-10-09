@@ -46,9 +46,9 @@ try {
             $acl.RemoveAccessRuleSpecific($rule)
         }
         foreach ($id in $allowed) {
-            $sid = New-Object Security.Principal.SecurityIdentifier($id)
+            $sid = [Security.Principal.SecurityIdentifier]::new($id)
             if ($isDirectory) {
-                $rule = New-Object Security.AccessControl.FileSystemAccessRule(
+                $rule = [Security.AccessControl.FileSystemAccessRule]::new(
                     $sid, [Security.AccessControl.FileSystemRights]::FullControl,
                     ([Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'),
                     [Security.AccessControl.PropagationFlags]::None,
