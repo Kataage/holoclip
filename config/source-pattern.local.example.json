@@ -1,0 +1,15 @@
+{
+  "version": "source-pattern-local-settings-v1",
+  "store": "data/examples/human_clips.jsonl",
+  "state": "data/examples/corpus_growth.json",
+  "output": "data/sources/source_visual_scout",
+  "policy_file": "data/policy/clip_rules.jsonl",
+  "report_path": "data/examples/source-pattern-last-run.json",
+  "launcher_audit_path": "data/examples/source-pattern-launcher-last-run.json",
+  "cycles": 3,
+  "max_clips": 2,
+  "max_candidates": 2,
+  "scan_limit": 20,
+  "target_distinct_streams": 3,
+  "discover": true
+}
