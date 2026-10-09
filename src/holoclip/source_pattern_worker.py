@@ -6,7 +6,6 @@ state path. This is not a lock for independent external writes to that state.
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
