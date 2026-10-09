@@ -78,6 +78,7 @@ def summarize_smoke(
         and cache.get("ready") is False
         and cache.get("actual_public_video_verified") is False
         and cache.get("source_identity_verified") is False
+        and cache.get("complete_pending_queue_audited") is True
         and diagnostic_error is None
     )
     if timed_out:
