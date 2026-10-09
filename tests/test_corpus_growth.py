@@ -205,6 +205,52 @@ async def test_local_metadata_bot_challenge_stops_network_probes_but_keeps_queue
 
 
 @pytest.mark.asyncio
+async def test_challenged_source_lookup_counts_after_successful_clip_probe(tmp_path):
+    from holoclip.corpus_growth import CorpusGrowthItem
+
+    state_path = tmp_path / "corpus.json"
+    state = CorpusGrowthState()
+    for index in range(5):
+        state.items[f"entry-{index}"] = CorpusGrowthItem(
+            clip_url=f"https://youtu.be/{index:011d}", query="hololive",
+        )
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+
+    class SourceLookupChallenged(PublicProvider):
+        def __init__(self):
+            super().__init__()
+            self.probe_calls = 0
+            self.source_calls = 0
+
+        def search_public_clips(self, *_args, **_kwargs):
+            return []
+
+        def probe(self, url):
+            self.probe_calls += 1
+            return super().probe(url)
+
+        def source_candidates(self, _metadata):
+            self.source_calls += 1
+            raise RuntimeError("Sign in to confirm you're not a bot")
+
+    provider = SourceLookupChallenged()
+
+    async def forbidden(**_kwargs):
+        pytest.fail("no media ingestion")
+
+    report = await grow_corpus(
+        provider, store=tmp_path/"clips.jsonl", state_path=state_path,
+        ingest=forbidden, policy_rules=[], scan_limit=5, discover_only=True,
+    )
+    assert provider.probe_calls == 3
+    assert provider.source_calls == 3
+    assert report["metadata_access_paused"] is True
+    assert report["metadata_failure_category_counts"] == {
+        "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE": 3,
+    }
+
+
+@pytest.mark.asyncio
 async def test_metadata_breaker_also_stops_queued_learning_media_acquisition(tmp_path):
     from holoclip.corpus_growth import CorpusGrowthItem
 
