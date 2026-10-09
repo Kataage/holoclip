@@ -218,7 +218,6 @@ def test_first_pattern_execution_failure_does_not_starve_second_candidate(
 ):
     from holoclip import source_candidate_visual as scout
     from holoclip.source_visual_pattern_controls import _report
-    from holoclip.video_measurement import checksum_file
 
     make_state(tmp_path / "state.json", candidates=[
         "https://www.youtube.com/watch?v=BBBBBBBBBBB",
@@ -256,3 +255,24 @@ def test_first_pattern_execution_failure_does_not_starve_second_candidate(
         "status"] == "UNKNOWN_MEASURED_VIDEO_HASH_OR_BUDGET"
     assert state.items["candidate"].source_stream_id is None
     assert report["source_identity_verified"] is False
+
+
+def test_busy_collector_cli_returns_nonzero_for_scheduler(monkeypatch):
+    from typer.testing import CliRunner
+    from holoclip import cli as commands
+
+    monkeypatch.setattr(commands, "YtDlpSourceProvider", lambda **_kwargs: object())
+    monkeypatch.setattr(commands, "load_policy_rules", lambda _path: [])
+
+    async def busy(_provider, **_kwargs):
+        return {
+            "status": "BLOCKED_CONCURRENT_COLLECTION",
+            "ready": False, "qualification_allowed": False,
+        }
+
+    monkeypatch.setattr(commands, "run_locked_source_pattern_collection", busy)
+    result = CliRunner().invoke(commands.app, [
+        "examples-collect-source-patterns", "--no-discover",
+    ])
+    assert result.exit_code == 6
+    assert "BLOCKED_CONCURRENT_COLLECTION" in result.stdout
