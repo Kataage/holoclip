@@ -1151,7 +1151,10 @@ def examples_collect_source_patterns(
     ))
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
     # A skipped scheduled run must not appear as an ordinary completed task.
-    if report.get("status") == "BLOCKED_CONCURRENT_COLLECTION":
+    if report.get("status") in {
+        "BLOCKED_CONCURRENT_COLLECTION",
+        "BLOCKED_LOCAL_YTDLP_PACING_STATE",
+    }:
         raise typer.Exit(6)
 
 
