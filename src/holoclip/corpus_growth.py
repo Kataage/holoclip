@@ -22,6 +22,7 @@ from holoclip.examples import (
 from holoclip.providers.source.base import SourceMetadata
 from holoclip.providers.source.yt_dlp import choose_source_candidate
 from holoclip.source_candidate_scout import scout_unresolved_public_source
+from holoclip.source_metadata_failure_summary import _public_probe_failure_category
 
 
 # ytsearch relevance pages are neither infinite nor a reliable new-uploads feed.
@@ -209,6 +210,14 @@ async def grow_corpus(
     )
     metadata_resolution_attempted = 0
     metadata_retryable_attempted = 0
+    metadata_failure_category_counts: Counter[str] = Counter()
+    metadata_access_challenge_streak = 0
+    metadata_access_paused = False
+    # Repeated bot challenges/429 are an environment failure, not a reason
+    # to hammer additional clips from the same host during this invocation.
+    metadata_access_stop_categories = {
+        "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE", "HTTP_RATE_LIMIT",
+    }
     for _key, item in rotated[:scan_limit]:
         metadata_resolution_attempted += 1
         if item.status == "retryable":
@@ -219,6 +228,7 @@ async def grow_corpus(
             pending_cursor + metadata_resolution_attempted
         )
         persist()
+        challenge_in_this_attempt = False
         try:
             clip = provider.probe(item.clip_url)
             if not _public(clip):
@@ -311,9 +321,28 @@ async def grow_corpus(
                 resolved += 1
         except Exception as exc:
             item.status, item.reason = "retryable", f"{type(exc).__name__}: {exc}"
+            category = _public_probe_failure_category(str(exc))
+            metadata_failure_category_counts[category] += 1
+            metadata_access_challenge_streak = (
+                metadata_access_challenge_streak + 1
+                if category in metadata_access_stop_categories else 0
+            )
+            challenge_in_this_attempt = category in metadata_access_stop_categories
+            if metadata_access_challenge_streak >= 3:
+                metadata_access_paused = True
         finally:
+            # A valid clip probe can still fail source discovery later. Only
+            # reset the host challenge streak when the *whole attempt* has
+            # completed without another challenge, including early continues.
+            if not challenge_in_this_attempt:
+                metadata_access_challenge_streak = 0
             persist()
-    if not discover_only:
+        if metadata_access_paused:
+            break
+    # This API is also used by full learning growth. A host-wide YouTube
+    # access challenge must not be followed by queued audio/video ingestion
+    # requests from that same local invocation.
+    if not discover_only and not metadata_access_paused:
         while attempted < max_new_examples:
             examples = load_human_clip_store(store)
             trusted = [
@@ -382,6 +411,14 @@ async def grow_corpus(
         "resolved": resolved,
         "metadata_resolution_attempted": metadata_resolution_attempted,
         "metadata_retryable_attempted": metadata_retryable_attempted,
+        "metadata_failure_category_counts": dict(
+            sorted(metadata_failure_category_counts.items())
+        ),
+        "metadata_access_paused": metadata_access_paused,
+        "metadata_access_pause_reason": (
+            "REPEATED_YOUTUBE_CHALLENGE_OR_RATE_LIMIT"
+            if metadata_access_paused else None
+        ),
         "metadata_resolution_pending": sum(
             item.status in {"discovered", "retryable"}
             and (not discover_only or (

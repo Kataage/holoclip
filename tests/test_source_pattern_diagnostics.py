@@ -71,6 +71,52 @@ def test_missing_state_and_audits_are_unknown_not_ready(tmp_path):
     assert report["ready"] is False
 
 
+def test_local_doctor_redacts_retryable_youtube_challenges_and_explains_pause(tmp_path):
+    from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
+
+    state = CorpusGrowthState()
+    for index in range(3):
+        state.items[f"retry-{index}"] = CorpusGrowthItem(
+            clip_url=f"https://youtu.be/{index:011d}",
+            query="hololive",
+            status="retryable",
+            reason=(
+                "YtDlpError: Sign in to confirm you're not a bot "
+                "https://www.youtube.com/watch?v=SECRET_PRIVATE_CONTENT"
+            ),
+        )
+    (tmp_path / "state.json").write_text(
+        state.model_dump_json(), encoding="utf-8",
+    )
+    now = datetime.now(timezone.utc)
+    report = audit(now, status="UNKNOWN_NO_REAL_PUBLIC_VIDEO_PATTERN_MEASUREMENTS")
+    report["result"]["discovery"] = {
+        "metadata_access_paused": True,
+        "metadata_access_pause_reason": "REPEATED_YOUTUBE_CHALLENGE_OR_RATE_LIMIT",
+        "metadata_failure_category_counts": {
+            "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE": 3,
+        },
+    }
+    (tmp_path / "collector.json").write_text(
+        json.dumps(report), encoding="utf-8",
+    )
+    result = diagnose(tmp_path)
+    assert result["status"] == "BLOCKED_LOCAL_YOUTUBE_METADATA_ACCESS"
+    assert result["next_action_code"] == (
+        "DEFER_LOCAL_YOUTUBE_REQUESTS_UNTIL_NEXT_SCHEDULE"
+    )
+    assert result["last_run_metadata_access_paused"] is True
+    assert result["local_retryable_metadata_failure_summary"][
+        "failure_category_counts"
+    ] == {"YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE": 3}
+    assert result["local_retryable_metadata_failure_summary"][
+        "raw_error_text_included"
+    ] is False
+    assert result["ready"] is False
+    assert "youtu.be" not in json.dumps(result)
+    assert "SECRET_PRIVATE_CONTENT" not in json.dumps(result)
+
+
 def test_later_launcher_failure_overrides_stale_collector_success(tmp_path):
     now = datetime.now(timezone.utc)
     prior = audit(now, status="MEASURED_UNREVIEWED_CONSTRUCTED_PUBLIC_VIDEO_PATTERNS",

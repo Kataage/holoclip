@@ -198,7 +198,14 @@ async def collect_public_source_patterns(
     # The target is fresh candidate sources measured THIS invocation, not a
     # lifetime quota. Otherwise scheduled runs stop forever after the first
     # successful three-stream day and cannot learn about newer public videos.
-    for cycle in range(cycles):
+    # Access challenges affect the runner's public IP, not only one clip.
+    # On a three-probe hostwide pause, do not immediately retry other
+    # yt-dlp video ranges during the same unattended invocation.
+    visual_cycles = (
+        0 if discovery and discovery.get("metadata_access_paused") is True
+        else cycles
+    )
+    for cycle in range(visual_cycles):
         if (previous["distinct_candidate_source_streams_measured"] - distinct_before
                 >= target_distinct_streams):
             break

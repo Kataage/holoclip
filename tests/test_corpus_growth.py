@@ -132,6 +132,206 @@ async def test_metadata_only_mode_never_downloads_and_keeps_queue(tmp_path):
     assert item.source_scout["candidate_sources"][0]["source_url"] == "https://youtu.be/source"
 
 
+@pytest.mark.asyncio
+async def test_local_metadata_bot_challenge_stops_network_probes_but_keeps_queue(tmp_path):
+    from holoclip.corpus_growth import CorpusGrowthItem
+
+    state_path = tmp_path / "corpus.json"
+    state = CorpusGrowthState()
+    for index in range(7):
+        state.items[f"candidate-{index}"] = CorpusGrowthItem(
+            clip_url=f"https://youtu.be/{index:011d}",
+            query="hololive clips Japanese",
+        )
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+
+    class Challenged(PublicProvider):
+        def __init__(self):
+            super().__init__()
+            self.probed = []
+
+        def search_public_clips(self, query, *, limit, offset):
+            self.searches.append((query, offset))
+            return []
+
+        def probe(self, url):
+            self.probed.append(url)
+            raise RuntimeError(
+                "Sign in to confirm you're not a bot "
+                "https://www.youtube.com/watch?v=SECRET_DATA"
+            )
+
+    provider = Challenged()
+
+    async def forbidden(**_kwargs):
+        pytest.fail("access challenges must never start ingestion")
+
+    report = await grow_corpus(
+        provider, store=tmp_path/"clips.jsonl", state_path=state_path,
+        ingest=forbidden, policy_rules=[], discover_only=True, scan_limit=7,
+    )
+    assert len(provider.probed) == 3
+    assert report["metadata_resolution_attempted"] == 3
+    assert report["metadata_access_paused"] is True
+    assert report["metadata_access_pause_reason"] == (
+        "REPEATED_YOUTUBE_CHALLENGE_OR_RATE_LIMIT"
+    )
+    assert report["metadata_failure_category_counts"] == {
+        "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE": 3,
+    }
+    assert report["metadata_resolution_pending"] == 7
+    assert report["source_visual_newly_pending"] == 0
+    assert report["attempted"] == 0
+    saved = CorpusGrowthState.model_validate_json(
+        state_path.read_text(encoding="utf-8"),
+    )
+    assert saved.cursors["corpus_metadata_pending_round_robin"] == 3
+    assert sum(item.status == "discovered" for item in saved.items.values()) == 4
+    assert sum(item.status == "retryable" for item in saved.items.values()) == 3
+    assert all(item.source_stream_id is None for item in saved.items.values())
+
+    # The next scheduled invocation can retry without losing discovery state.
+    resumed = Challenged()
+    next_report = await grow_corpus(
+        resumed, store=tmp_path/"clips.jsonl", state_path=state_path,
+        ingest=forbidden, policy_rules=[], discover_only=True, scan_limit=7,
+    )
+    assert len(resumed.probed) == 3
+    assert next_report["metadata_access_paused"] is True
+    after = CorpusGrowthState.model_validate_json(
+        state_path.read_text(encoding="utf-8"),
+    )
+    assert after.cursors["corpus_metadata_pending_round_robin"] == 6
+
+
+@pytest.mark.asyncio
+async def test_challenged_source_lookup_counts_after_successful_clip_probe(tmp_path):
+    from holoclip.corpus_growth import CorpusGrowthItem
+
+    state_path = tmp_path / "corpus.json"
+    state = CorpusGrowthState()
+    for index in range(5):
+        state.items[f"entry-{index}"] = CorpusGrowthItem(
+            clip_url=f"https://youtu.be/{index:011d}", query="hololive",
+        )
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+
+    class SourceLookupChallenged(PublicProvider):
+        def __init__(self):
+            super().__init__()
+            self.probe_calls = 0
+            self.source_calls = 0
+
+        def search_public_clips(self, *_args, **_kwargs):
+            return []
+
+        def probe(self, url):
+            self.probe_calls += 1
+            return super().probe(url)
+
+        def source_candidates(self, _metadata):
+            self.source_calls += 1
+            raise RuntimeError("Sign in to confirm you're not a bot")
+
+    provider = SourceLookupChallenged()
+
+    async def forbidden(**_kwargs):
+        pytest.fail("no media ingestion")
+
+    report = await grow_corpus(
+        provider, store=tmp_path/"clips.jsonl", state_path=state_path,
+        ingest=forbidden, policy_rules=[], scan_limit=5, discover_only=True,
+    )
+    assert provider.probe_calls == 3
+    assert provider.source_calls == 3
+    assert report["metadata_access_paused"] is True
+    assert report["metadata_failure_category_counts"] == {
+        "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE": 3,
+    }
+
+
+@pytest.mark.asyncio
+async def test_metadata_breaker_also_stops_queued_learning_media_acquisition(tmp_path):
+    from holoclip.corpus_growth import CorpusGrowthItem
+
+    path = tmp_path / "corpus.json"
+    state = CorpusGrowthState()
+    state.items["queued"] = CorpusGrowthItem(
+        clip_url="https://youtu.be/queued",
+        source_url="https://youtu.be/original",
+        source_stream_id="original",
+        query="hololive", status="queued",
+    )
+    for index in range(4):
+        state.items[f"fresh-{index}"] = CorpusGrowthItem(
+            clip_url=f"https://youtu.be/{index:011d}", query="hololive",
+        )
+    path.write_text(state.model_dump_json(), encoding="utf-8")
+
+    class Challenged(PublicProvider):
+        def search_public_clips(self, *_args, **_kwargs):
+            return []
+
+        def probe(self, _url):
+            raise RuntimeError("HTTP Error 429: Too Many Requests")
+
+    async def ingest(**_kwargs):
+        pytest.fail("queued media download must stop on host-wide challenge")
+
+    result = await grow_corpus(
+        Challenged(), store=tmp_path / "clips.jsonl", state_path=path,
+        ingest=ingest, policy_rules=[], scan_limit=5,
+        max_new_examples=2, discover_only=False,
+    )
+    assert result["metadata_access_paused"] is True
+    assert result["attempted"] == 0
+    assert result["queue_counts"]["queued"] == 1
+    assert result["metadata_failure_category_counts"] == {"HTTP_RATE_LIMIT": 3}
+
+
+@pytest.mark.asyncio
+async def test_metadata_challenges_are_not_confused_with_unrelated_probe_failures(tmp_path):
+    from holoclip.corpus_growth import CorpusGrowthItem
+
+    state_path = tmp_path / "corpus.json"
+    state = CorpusGrowthState()
+    for index in range(6):
+        state.items[f"candidate-{index}"] = CorpusGrowthItem(
+            clip_url=f"https://youtu.be/{index:011d}", query="hololive",
+        )
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+
+    class Mixed(PublicProvider):
+        def __init__(self):
+            super().__init__()
+            self.probed = []
+
+        def search_public_clips(self, *_args, **_kwargs):
+            return []
+
+        def probe(self, url):
+            self.probed.append(url)
+            if len(self.probed) % 2:
+                raise RuntimeError("HTTP Error 429: Too Many Requests")
+            raise RuntimeError("Video unavailable")
+
+    provider = Mixed()
+
+    async def forbidden(**_kwargs):
+        pytest.fail("no media ingestion")
+
+    report = await grow_corpus(
+        provider, store=tmp_path/"clips.jsonl", state_path=state_path,
+        ingest=forbidden, policy_rules=[], discover_only=True, scan_limit=6,
+    )
+    assert len(provider.probed) == 6
+    assert report["metadata_access_paused"] is False
+    assert report["metadata_failure_category_counts"] == {
+        "HTTP_RATE_LIMIT": 3, "VIDEO_UNAVAILABLE": 3,
+    }
+    assert report["metadata_resolution_attempted"] == 6
+
+
 def test_growth_keeps_running_after_count_floors_if_model_is_unready(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     store = tmp_path / "human_clips.jsonl"
