@@ -299,6 +299,43 @@ access **never falls back to a local-only gate**. A crashed coordinator
 retains unexpired leases via its own SQLite; an abandoned lease
 eventually expires based on the bounded yt-dlp process deadline.
 
+#### One-command per-PC LAN client setup (no secret in settings)
+
+After PC-A's coordinator has been configured, copy the **same** shared
+credential through a secure local channel to PC-B. On **both PCs**, run
+the following from the Holoclip directory (use the actual PC-A private
+IPv4 address and the local credential path on each PC):
+
+```powershell
+uv run holoclip examples-ytdlp-lan-configure --url http://192.168.1.20:8878 --secret-file "D:\AI\holoclip\data\runtime\yt-dlp-lan-secret.txt"
+uv run holoclip examples-ytdlp-lan-status
+```
+
+This writes `data/runtime/yt-dlp-lan-client.json` (Git-ignored) containing
+**only** the private coordinator URL and the absolute path to the existing
+credential file. It never copies, transfers, or prints secret bytes.
+Identical repeated setup is idempotent; replacing a different saved profile
+requires `--replace`. Missing or invalid credentials and unsafe public
+coordinator addresses are rejected without touching YouTube.
+
+Existing deployments with both `HOLOCLIP_YTDLP_COORDINATOR_URL` and
+`HOLOCLIP_YTDLP_COORDINATOR_SECRET_FILE` still work and take precedence
+over saved JSON. Partial environment overrides fail closed, even with a
+healthy saved profile. To choose an alternate config location, use
+`--config-file` during setup **and** set `HOLOCLIP_YTDLP_COORDINATOR_CONFIG`
+to its **absolute path** in each client process / scheduled task environment.
+Missing or invalid explicitly selected config files fail closed.
+
+The authenticated status command now loads `.env` like the collector does,
+so the two commands read the same environment/profile settings. A status
+response only proves the addressed broker authenticated, not that all PCs
+are enrolled or YouTube access/clip quality has been established.
+
+Saved-profile mode is opt-in: removing the default file with no required
+config override returns to the original **local-only** behavior. For
+unattended operation, set the explicit config override to ensure a
+missing profile is treated as an error, rather than silently opting out.
+`ready=false` remains mandatory.
 #### Optional PC-A Windows autostart and crash recovery
 
 After creating the shared secret, install the **PC-A coordinator only** as
