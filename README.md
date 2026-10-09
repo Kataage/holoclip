@@ -210,6 +210,31 @@ Previously measured v1 cut/source-side/time-map cache chains do not
 qualify as v2 measurements; rerun the already documented bounded holdout
 command to recompute them with current provenance guards.
 
+The next audit stage measures **multiple constructed editing patterns on
+real acquired bounded original video** without user data preparation. Each
+real `YtDlpSourceProvider` source-video measurement can be tested on five
+controlled changes to its SHA256-verified decoded frames: JPEG overlay,
+brightness shift, small center zoom, reversed temporal order and cyclic
+temporal shift. ORB geometry plus independent DCT-temporal verification
+are exercised for every case. Only explicit measured correspondence or
+evaluated time-sequence noncorrespondence can count as a pattern outcome;
+decoder failures, comparison limits and unrecognized statuses are
+**UNEVALUABLE**, never successful negative samples.
+
+All patterns share the **same already acquired source video**; they do
+not cause extra yt-dlp downloads. A bounded SHA-keyed pattern history
+is saved per pending clip, with strict anti-gold/schema checks before the
+next media request. The existing
+`uv run holoclip examples-source-controls-report` now also reports
+per-pattern observed/evaluable/unevaluable counts, measured constructed
+pass fractions, and **distinct original stream count**. Identical
+source-video bytes reached through different human clips count only
+once across the report. Zero real samples mean null pattern pass rates,
+not 100% success. Multiple windows from the *same* stream do not
+provide independent stream diversity; no observed pattern metric is
+an editor precision/recall or true source false-positive rate.
+Production `ready=false` is unchanged.
+
 The unattended `source_visual_pending` worker now also runs an
 **actual-acquired-video constructed control audit** once per cycle
 on an already downloaded, public/policy-allowed original video sample
