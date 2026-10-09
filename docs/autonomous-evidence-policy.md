@@ -30,6 +30,15 @@ cycle reports attempted clip keys, latest acquisition/decoder/policy outcomes
 and the **change in globally deduplicated** measured source samples. Results
 are saved by the established SHA-bound control histories in corpus state.
 
+The per-invocation target is a **delta** of distinct candidate source streams
+compared with the validated report at the start of that invocation; the
+lifetime totals and the new-this-run totals remain separate. Historical
+samples cannot satisfy a future scheduled run and cannot turn a no-progress
+run into "measured" success. After an empty search result page or an offset
+limit of 50, metadata discovery schedules a first-page revisit (without
+additional network traffic that cycle) to accommodate newly published clips.
+Source metadata remains unverified; no restart confers source truth.
+
 Round-robin scheduling prevents one pending clip from occupying every cycle,
 but it **does not** guarantee source diversity: several clips can still point
 to one original. The report must distinguish attempts, independently counted

@@ -276,3 +276,137 @@ def test_busy_collector_cli_returns_nonzero_for_scheduler(monkeypatch):
     ])
     assert result.exit_code == 6
     assert "BLOCKED_CONCURRENT_COLLECTION" in result.stdout
+
+
+def test_old_three_stream_target_does_not_silence_future_daily_runs(
+    tmp_path, monkeypatch,
+):
+    """Previously recorded examples must not count toward a new run's quota."""
+    from holoclip import source_pattern_collection as collector
+
+    snapshots = [
+        {"real_measured_source_video_samples": 3,
+         "distinct_candidate_source_streams_measured": 3},
+        {"real_measured_source_video_samples": 3,
+         "distinct_candidate_source_streams_measured": 3},
+        {"real_measured_source_video_samples": 3,
+         "distinct_candidate_source_streams_measured": 3},
+    ]
+    calls = []
+
+    def fake_report(_path):
+        return {
+            "constructed_pattern_audit": snapshots[0],
+            "ready": False,
+            "reviewed_gold_available": False,
+        }
+
+    def fake_saved(_path):
+        return snapshots[0]
+
+    def fake_verify(_provider, **_kwargs):
+        calls.append(1)
+        return {
+            "attempted": 1, "counts": {"UNKNOWN_NO_VISUAL_MATCH": 1},
+            "attempted_clip_keys": [],
+        }
+
+    monkeypatch.setattr(collector, "report_saved_source_controls", fake_report)
+    monkeypatch.setattr(collector, "report_saved_patterns", fake_saved)
+    monkeypatch.setattr(collector, "verify_pending_source_visual", fake_verify)
+    options = dict(
+        store=tmp_path / "clips.jsonl", state_path=tmp_path / "state.json",
+        output=tmp_path / "media", policy_rules=[], discover=False,
+        cycles=2, target_distinct_streams=3,
+    )
+    day1 = asyncio.run(collect_public_source_patterns(object(), **options))
+    day2 = asyncio.run(collect_public_source_patterns(object(), **options))
+    assert len(calls) == 4
+    for report in (day1, day2):
+        assert report["cycles_completed"] == 2
+        assert report["status"] == "UNKNOWN_NO_NEW_PUBLIC_VIDEO_PATTERN_MEASUREMENTS"
+        assert report["observed_source_samples_before"] == 3
+        assert report["distinct_candidate_streams_before"] == 3
+        assert report["distinct_candidate_streams_measured"] == 3
+        assert report["new_distinct_candidate_streams_this_run"] == 0
+        assert report["new_unique_video_samples_this_run"] == 0
+        assert report["target_scope"] == "this_run_new_distinct_candidate_streams"
+        assert report["target_reached"] is False
+        assert report["ready"] is False
+
+
+def test_fresh_stream_quota_is_delta_not_lifetime(tmp_path, monkeypatch):
+    from holoclip import source_pattern_collection as collector
+
+    snapshots = [
+        {"real_measured_source_video_samples": 8,
+         "distinct_candidate_source_streams_measured": 5},
+        {"real_measured_source_video_samples": 9,
+         "distinct_candidate_source_streams_measured": 6},
+        {"real_measured_source_video_samples": 10,
+         "distinct_candidate_source_streams_measured": 7},
+    ]
+    audit_calls = 0
+    read_calls = 0
+    attempted = []
+
+    def controls(_path):
+        nonlocal audit_calls
+        index = 0 if audit_calls == 0 else min(read_calls, 2)
+        audit_calls += 1
+        return {"constructed_pattern_audit": snapshots[index], "ready": False}
+
+    def patterns(_path):
+        nonlocal read_calls
+        index = min(read_calls, 2)
+        read_calls += 1
+        return snapshots[index]
+
+    def verify(_provider, **_kwargs):
+        attempted.append(1)
+        return {"attempted": 1, "counts": {}, "attempted_clip_keys": []}
+
+    monkeypatch.setattr(collector, "report_saved_source_controls", controls)
+    monkeypatch.setattr(collector, "report_saved_patterns", patterns)
+    monkeypatch.setattr(collector, "verify_pending_source_visual", verify)
+    outcome = asyncio.run(collect_public_source_patterns(
+        object(), store=tmp_path / "clips", state_path=tmp_path / "state",
+        output=tmp_path / "video", policy_rules=[], discover=False,
+        cycles=5, target_distinct_streams=2,
+    ))
+    assert len(attempted) == 2  # not a lifetime 2-stream total, not all 5
+    assert outcome["new_unique_video_samples_this_run"] == 2
+    assert outcome["new_distinct_candidate_streams_this_run"] == 2
+    assert outcome["target_reached"] is True
+    assert outcome["cycles_completed"] == 2
+    assert outcome["status"] == (
+        "MEASURED_UNREVIEWED_CONSTRUCTED_PUBLIC_VIDEO_PATTERNS"
+    )
+    assert outcome["ready"] is False
+
+
+def test_histories_shrinking_during_run_cannot_produce_positive_audit(
+    tmp_path, monkeypatch,
+):
+    from holoclip import source_pattern_collection as collector
+
+    old = {"real_measured_source_video_samples": 4,
+           "distinct_candidate_source_streams_measured": 4}
+    new = {"real_measured_source_video_samples": 3,
+           "distinct_candidate_source_streams_measured": 3}
+    monkeypatch.setattr(collector, "report_saved_source_controls",
+                        lambda _path: {"constructed_pattern_audit": old})
+    snapshots = iter([old, new])
+    monkeypatch.setattr(collector, "report_saved_patterns",
+                        lambda _path: next(snapshots))
+    monkeypatch.setattr(collector, "verify_pending_source_visual",
+                        lambda *_args, **_kwargs: {
+                            "attempted": 1, "counts": {},
+                            "attempted_clip_keys": [],
+                        })
+    with pytest.raises(ValueError, match="decreased"):
+        asyncio.run(collect_public_source_patterns(
+            object(), store=tmp_path / "clips", state_path=tmp_path / "state",
+            output=tmp_path / "media", policy_rules=[], discover=False,
+            cycles=1,
+        ))

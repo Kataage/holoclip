@@ -223,3 +223,67 @@ def test_growth_continues_when_profile_refresh_fails(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert targets == [33, 33, 33]
     assert "continuing acquisition" in result.output
+
+
+@pytest.mark.asyncio
+async def test_relevance_search_cycles_to_first_page_after_finite_budget(tmp_path):
+    class RelevanceProvider(PublicProvider):
+        def search_public_clips(self, query, *, limit, offset):
+            self.searches.append((query, offset))
+            return []  # New uploads may appear after a later refresh.
+
+    provider = RelevanceProvider()
+
+    async def prohibited(**_kwargs):
+        pytest.fail("metadata-only mode must not ingest")
+
+    state_path = tmp_path / "state.json"
+    state = CorpusGrowthState()
+    query = "ホロライブ 切り抜き コラボ"
+    state.cursors[query] = 99999
+    state.cursors["ホロライブ 切り抜き 雑談"] = 49
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+    report = await grow_corpus(
+        provider, store=tmp_path / "clips", state_path=state_path,
+        ingest=prohibited, policy_rules=[], scan_limit=15,
+        discover_only=True,
+    )
+    assert report["attempted"] == 0
+    assert report["empty_search_pages"] >= 1
+    assert report["search_page_wraps"] >= 1
+    # A huge stale cursor must not generate ytsearch100000 on restart.
+    assert all(offset < 50 for _, offset in provider.searches)
+    persisted = CorpusGrowthState.model_validate_json(
+        state_path.read_text(encoding="utf-8"),
+    )
+    assert persisted.cursors[query] == 0
+    assert persisted.cursors["ホロライブ 切り抜き 雑談"] == 0
+
+
+@pytest.mark.asyncio
+async def test_source_discovery_wraps_after_last_bounded_page(tmp_path):
+    provider = PublicProvider()
+
+    async def prohibited(**_kwargs):
+        pytest.fail("metadata only")
+
+    path = tmp_path / "state.json"
+    state = CorpusGrowthState()
+    for query in [
+        "ホロライブ 切り抜き 雑談", "ホロライブ 切り抜き コラボ",
+        "hololive clips Japanese",
+    ]:
+        state.cursors[query] = 45
+    path.write_text(state.model_dump_json(), encoding="utf-8")
+    report = await grow_corpus(
+        provider, store=tmp_path / "clips", state_path=path,
+        ingest=prohibited, policy_rules=[],
+        scan_limit=15, discover_only=True,
+    )
+    assert report["search_page_wraps"] == 3
+    assert report["scanned"] == 15
+    assert sorted(offset for _, offset in provider.searches) == [45, 45, 45]
+    persisted = CorpusGrowthState.model_validate_json(
+        path.read_text(encoding="utf-8"),
+    )
+    assert all(persisted.cursors[q] == 0 for q, _ in provider.searches)

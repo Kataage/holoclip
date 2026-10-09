@@ -33,7 +33,14 @@ with preserved artifacts. See [production provider setup](docs/production-provid
 ## Collect real public-source constructed pattern measurements
 
 The source-pattern collector combines **metadata-only public clip discovery**
-with rotating, bounded yt-dlp video checks. It reuses the acquired sections,
+with rotating, bounded yt-dlp video checks. Each scheduled invocation targets
+**new** distinct candidate streams measured **in that invocation**, not the
+lifetime corpus total; previously achieved coverage cannot permanently stop
+subsequent daily runs. A run with only old historical measurements reports
+`UNKNOWN_NO_NEW_PUBLIC_VIDEO_PATTERN_MEASUREMENTS` instead of new success.
+Public metadata discovery also wraps back to the first relevance-search page
+after 50 results or an empty page to detect newly published public clips
+without unbounded `ytsearchN` requests. It reuses the acquired sections,
 persists the existing SHA-bound five-pattern histories for each sampled
 source candidate (up to two per clip per cycle), and returns a
 source-diverse report with explicit unknowns. No cloud model, GPU, URLs, gold

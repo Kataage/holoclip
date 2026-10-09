@@ -24,6 +24,11 @@ from holoclip.providers.source.yt_dlp import choose_source_candidate
 from holoclip.source_candidate_scout import scout_unresolved_public_source
 
 
+# ytsearch relevance pages are neither infinite nor a reliable new-uploads feed.
+# Periodically revisit the first page to discover newly published public clips.
+MAX_DISCOVERY_CURSOR = 50
+
+
 class CorpusGrowthItem(BaseModel):
     clip_url: str
     source_url: str | None = None
@@ -113,11 +118,22 @@ async def grow_corpus(
     queries = discovery_queries(examples)
     # Round-robin pages ensure continued runs move past the same popular results.
     scanned = 0
+    search_page_wraps = 0
+    empty_search_pages = 0
     for query in sorted(queries, key=lambda q: (state.cursors.get(q, 0), q)):
         if scanned >= scan_limit:
             break
         limit = min(5, scan_limit - scanned)
         offset = state.cursors.get(query, 0)
+        if type(offset) is not int or offset < 0:
+            raise ValueError("Invalid persistent source discovery cursor")
+        # Old state can have arbitrarily high cursors. Reset *before* hitting
+        # yt-dlp with an ever-growing ytsearchN request.
+        if offset >= MAX_DISCOVERY_CURSOR:
+            offset = 0
+            state.cursors[query] = 0
+            search_page_wraps += 1
+            persist()
         try:
             rows = provider.search_public_clips(query, limit=limit, offset=offset)
         except Exception as exc:
@@ -126,7 +142,18 @@ async def grow_corpus(
             ]
             persist()
             continue
-        state.cursors[query] = offset + limit
+        if not rows:
+            # An empty result page is not proof of zero public clips forever.
+            # The next scheduled invocation scans fresh first-page results.
+            state.cursors[query] = 0
+            empty_search_pages += 1
+            search_page_wraps += 1
+        else:
+            state.cursors[query] = (
+                0 if offset + limit >= MAX_DISCOVERY_CURSOR else offset + limit
+            )
+            if state.cursors[query] == 0:
+                search_page_wraps += 1
         scanned += limit
         for row in rows:
             example_id = make_human_clip_example_id(row.url)
@@ -299,6 +326,8 @@ async def grow_corpus(
     ]
     return {
         "scanned": scanned,
+        "search_page_wraps": search_page_wraps,
+        "empty_search_pages": empty_search_pages,
         "resolved": resolved,
         "attempted": attempted,
         "trusted_examples": len(trusted),
