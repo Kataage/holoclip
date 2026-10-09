@@ -240,7 +240,40 @@ output Cartesian search, an editor negative, gold source identity, recall
 or permission to change `ready=false`. Missing or unsafe current metadata
 does not count as successful pair verification.
 
+### Inspect local yt-dlp cooldown without any network request
+
+`uv run holoclip examples-ytdlp-access-status` displays a compact,
+**read-only** JSON snapshot of the shared native yt-dlp gate. It reports a
+fixed `pacing_status` (active six-hour site cooldown, another local
+process holding the gate, waiting for the 20-second minimum gap, gate
+available, missing history, or unreadable state), a sanitized
+`cooldown_reason` such as `HTTP_RATE_LIMIT` or
+`YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE`, and
+`next_attempt_not_before_utc` with `seconds_until_not_before`. A custom
+local SQLite file can be inspected via `--pacing-path`. The existing
+`examples-collector-health` output now includes the same information as
+`yt_dlp_access`.
+
+**A displayed time is not a promise that YouTube access will succeed**:
+it is the earliest retry estimate from the current local gate, and a
+separate process may take the gate in the meantime. When a different
+Holoclip invocation is in flight, the reported lease deadline is a
+conservative upper bound that may be released earlier. When the
+database is missing, the answer is explicitly unknown; no file is
+created by a status check. Existing pre-upgrade cooldown records remain
+valid and retain the fixed `UNKNOWN_HISTORICAL_COOLDOWN_REASON` category
+until the writer migrates them on its next authorized access. Corrupted
+or unsafe state is reported as blocked, not silently treated as available.
+
+This command does not launch yt-dlp, access YouTube, change the delay,
+lift a cooldown, download anything, or modify a task. A common query:
+
+```powershell
+uv run holoclip examples-ytdlp-access-status
+```
+
 ### Conservative native YouTube request pacing
+
 
 YouTube rate limiting is **not** a fixed universally safe requests-per-hour
 threshold. Holoclip now applies conservative request pacing to public
