@@ -81,6 +81,21 @@ CI and synthetic MP4 fixtures does **not**
 count as measured Hololive public-stream data. Source-pattern accuracy
 without reviewed gold remains unmeasured, and `ready=false` is mandatory.
 
+## Fair, resumable public metadata candidate resolution
+
+Every `grow_corpus` invocation now selects only `discovered` and
+eligible `retryable` metadata candidates for a persistent round-robin
+queue, checkpointing a nonnegative integer cursor before each candidate's
+network probe. The old fixed-prefix scan could repeatedly retry failed
+popular clips and indefinitely starve the pending newly discovered clips
+once the backlog exceeded `scan_limit`. Existing learning `queued`
+entries no longer consume metadata probe slots. Metadata-only discovery
+never reassigns a previously assigned learning-ingestion retry
+(`source_url`/`source_stream_id`) to an unverified visual candidate,
+preserving existing training/holdout reservations. Resolution attempt
+counters never represent successful video samples or source truth.
+Corrupt persistent cursor values abort before external network work.
+
 ## Metadata-only original-link coverage for unattended sampling
 
 Metadata-only autonomous discovery now forwards even a uniquely chosen
