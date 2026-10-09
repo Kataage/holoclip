@@ -78,8 +78,13 @@ finally {
     }
     catch {
         $code = 1
-        ('Windows launcher audit write failed: ' + $_.Exception.GetType().Name) |
-            Out-File -LiteralPath $logPath -Append -Encoding UTF8
+        $innerClass = if ($_.Exception.InnerException) {
+            $_.Exception.InnerException.GetType().Name
+        } else { 'None' }
+        $diagnostic = ('Windows launcher audit write failed: ' +
+            $_.Exception.GetType().Name + ' inner=' + $innerClass +
+            ' message=' + $_.Exception.Message)
+        $diagnostic | Out-File -LiteralPath $logPath -Append -Encoding UTF8
     }
     finally {
         Remove-Item -LiteralPath $temp -ErrorAction SilentlyContinue
