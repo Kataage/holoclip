@@ -136,4 +136,10 @@ def test_unrestricted_native_metadata_still_works_with_staggered_process(tmp_pat
     monkeypatch.setattr(yt_dlp, "_run_process", fake_process)
     clip = provider.probe("https://youtu.be/AAAAAAAAAAA")
     assert clip.external_id == "AAAAAAAAAAA"
-    assert len(calls) == 1
+    # Metadata probe is the only external-video operation. The provider
+    # separately calls yt-dlp --version to record local runtime provenance;
+    # this does not contact YouTube and must not be counted as a probe.
+    metadata_requests = [cmd for cmd in calls if "--dump-single-json" in cmd]
+    assert len(metadata_requests) == 1
+    assert all(cmd[-1:] == ["--version"] or
+               "--dump-single-json" in cmd for cmd in calls)
