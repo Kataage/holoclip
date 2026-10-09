@@ -102,6 +102,37 @@ downloaded**, original identity verified, or quality achieved; the existing
 deduplicated measured-media summary remains separate. Every new field
 preserves `ready=false`.
 
+### Confirm saved public-source video bytes locally (no download)
+
+The unattended collector now performs a **bounded post-run cache attestation**
+before writing its last-run report. It reads the latest source window
+observations, locates existing yt-dlp `section-integrity.json` receipts,
+recomputes SHA-256 from the exact stored bounded video bytes, and checks the
+persisted source URL, ID, requested interval, filename and SHA. Missing files,
+changed bytes, forged receipts and symlinks are reported as
+`UNKNOWN_*`/`BLOCKED_*` instead of a successful real-video measurement.
+The collector report includes `source_cache_byte_attestation` even when no
+matching real clip/source pair has been established.
+
+The read-only doctor independently rechecks **current disk bytes** and
+shows `current_source_cache_byte_attestation` alongside the **historical**
+`last_run_saved_cache_attestation`:
+
+```powershell
+uv run --extra media holoclip examples-collector-doctor --no-check-tools
+# For a customized media directory:
+uv run --extra media holoclip examples-collector-doctor --no-check-tools --media-output "D:\\video-cache"
+```
+
+The unattended worker audits up to four **recently attempted** clips rather than a stale first-in-queue prefix; the independent doctor uses a deterministic sorted prefix. Each audit checks at most 48 unique sections;
+if the queue exceeds the budget, `UNKNOWN_PARTIAL_BOUNDED_CACHE_AUDIT`
+explicitly prevents claiming full coverage. `--no-audit-media-cache` skips
+disk rehashing when only metadata status is needed. Neither a matching
+receipt nor stored bytes prove that the footage is the actual Hololive
+original, that YouTube is reachable right now, that video timestamps are
+precise, or that edited cuts are correct. No GPU/cloud model, user-provided
+URLs or ground-truth labels are required. `ready=false` remains mandatory.
+
 ### Native extraction deadlines and unattended recovery
 
 All yt-dlp subprocess invocations now use explicit deadlines instead of

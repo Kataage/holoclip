@@ -53,10 +53,47 @@ def test_success_writes_audit_without_gold(tmp_path, monkeypatch):
     assert report["started_at_utc"] <= report["finished_at_utc"]
     assert report["ready"] is False
     assert report["reviewed_gold_available"] is False
+    cache = report["result"]["source_cache_byte_attestation"]
+    assert cache["status"] == "UNKNOWN_NO_SOURCE_CACHE_EVIDENCE"
+    assert cache["source_identity_verified"] is False
+    assert cache["actual_public_video_verified"] is False
+    assert cache["ready"] is False
     # Existing lock file is normal: the OS lock is released on exit.
     assert (tmp_path / ".source-pattern-collector.lock").exists()
     result2 = _run(tmp_path)
     assert result2["status"] == result["status"]
+
+
+def test_post_run_byte_audit_targets_new_attempts_not_first_old_clip(
+    tmp_path, monkeypatch,
+):
+    from holoclip import source_pattern_worker as worker
+
+    async def fake(_provider, **_kwargs):
+        return {
+            "status": "UNKNOWN_NO_REAL_PUBLIC_VIDEO_PATTERN_MEASUREMENTS",
+            "cycle_diagnostics": [
+                {"attempted_clip_keys": ["old", "fresh"]},
+                {"attempted_clip_keys": ["fresh", "newest"]},
+            ],
+            **NO_GOLD,
+        }
+
+    seen = []
+
+    def audit(**kwargs):
+        seen.append(kwargs.get("clip_keys"))
+        return {
+            "status": "UNKNOWN_PARTIAL_BOUNDED_CACHE_AUDIT",
+            "source_identity_verified": False, "ready": False,
+        }
+
+    monkeypatch.setattr(worker, "collect_public_source_patterns", fake)
+    monkeypatch.setattr(worker, "audit_cached_source_video_sections", audit)
+    result = _run(tmp_path)
+    assert seen == [["old", "fresh", "newest"]]
+    assert result["source_cache_byte_attestation"]["ready"] is False
+    assert result["ready"] is False
 
 
 def test_second_process_lock_refuses_network_without_replacing_audit(tmp_path, monkeypatch):

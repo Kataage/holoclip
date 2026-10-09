@@ -49,6 +49,35 @@ original-stream false-positive rate, training gold or production qualification
 may be inferred. `ready=false` remains mandatory. Real collection must actually
 run against public media before any observed source result is claimed.
 
+## Bounded live-media cache byte revalidation
+
+To distinguish a historical stage counter from media bytes still accessible
+locally, the source-pattern worker now automatically revalidates saved bounded
+source-video sections against its own yt-dlp cache receipt. It constructs a
+fixed section identity from the already stored stream ID and requested range,
+rejects symlinks and unsafe receipt filenames, checks receipt source ID/URL
+and requested time bounds, and hashes the current bounded video file. The
+worker writes `source_cache_byte_attestation` to its atomic final report.
+
+The read-only collector doctor separately rechecks present disk contents
+under `current_source_cache_byte_attestation` and shows the last historical
+report value under `last_run_saved_cache_attestation`. The fixed 4-clip /
+48-section limit and a partial-audit status explicitly prohibit interpreting
+a truncated run as a complete audit. Unattended audits target recently
+attempted clip identities from the current run (not an old sorted-prefix
+backlog); read-only doctor checks a deterministic bounded prefix and
+reports scope independently. Missing, stale or altered files yield
+unknown or blocked statuses; a recorded control result alone is insufficient.
+
+**A matching on-disk SHA-256 and yt-dlp receipt prove only internal local
+byte consistency, not genuine public media origin.** YouTube access, metadata
+accuracy, actual source-stream identity, source-to-finished correspondence,
+native PTS, editor decisions and independent human gold are separate
+qualification gates. Thus `actual_public_video_verified=false`,
+`source_identity_verified=false`, and `ready=false` are obligatory even
+for successful local byte verification. No network, downloaded video or
+model calls occur within this diagnostic.
+
 ## Independent persisted stage-funnel diagnostics
 
 A constructed video control may execute successfully on an original-source
