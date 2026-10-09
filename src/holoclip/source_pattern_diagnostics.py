@@ -40,6 +40,100 @@ def _timestamp(raw: object) -> datetime:
     return stamp
 
 
+_STAGE_COUNT_FIELDS = (
+    "attempted_clip_records",
+    "candidate_observation_records",
+    "finished_video_sha_recorded_clips",
+    "source_window_section_records",
+    "constructed_pattern_execution_failures",
+    "cross_revisit_attempted_clips",
+)
+_STAGE_STATUS_FIELDS = (
+    "clip_status_counts",
+    "candidate_visual_status_counts",
+    "constructed_pattern_status_counts",
+    "source_probe_mode_counts",
+)
+
+
+def _checked_stage_funnel(result: dict) -> dict | None:
+    """Verify record-only stage metrics; legacy audits remain explicitly unknown."""
+    rows = result.get("cycle_diagnostics")
+    if rows is None:
+        return None
+    if not isinstance(rows, list):
+        raise ValueError("Malformed collection cycle diagnostics")
+    has_stage = [
+        isinstance(row, dict) and "stage_diagnostics" in row for row in rows
+    ]
+    if not any(has_stage):
+        return None  # old audits cannot supply a retrospective stage funnel
+    if not all(has_stage):
+        raise ValueError("Incomplete mixed-version collection stage diagnostics")
+    totals = dict.fromkeys(_STAGE_COUNT_FIELDS, 0)
+    tallies = {name: Counter() for name in _STAGE_STATUS_FIELDS}
+    for row in rows:
+        stage = row["stage_diagnostics"]
+        if not isinstance(stage, dict):
+            raise ValueError("Malformed collection stage diagnostics")
+        if (stage.get("measured_original_match_gold") is not False
+                or stage.get("record_counts_are_verified_public_media") is not False):
+            raise ValueError("Stage counts cannot claim gold or verified real media")
+        for field in _STAGE_COUNT_FIELDS:
+            value = stage.get(field)
+            if type(value) is not int or value < 0:
+                raise ValueError("Invalid collection stage record count")
+            totals[field] += value
+        for field in _STAGE_STATUS_FIELDS:
+            value = stage.get(field)
+            if (not isinstance(value, dict)
+                    or any(not isinstance(k, str) or not k or type(n) is not int
+                           or n <= 0 for k, n in value.items())):
+                raise ValueError("Invalid collection stage status tally")
+            tallies[field].update(value)
+        if (type(row.get("attempted_clips")) is not int
+                or row["attempted_clips"] != stage["attempted_clip_records"]
+                or sum(stage["clip_status_counts"].values())
+                    != stage["attempted_clip_records"]
+                or sum(stage["candidate_visual_status_counts"].values())
+                    != stage["candidate_observation_records"]
+                or sum(stage["constructed_pattern_status_counts"].values())
+                    + stage["constructed_pattern_execution_failures"]
+                    > stage["candidate_observation_records"]
+                or stage["finished_video_sha_recorded_clips"]
+                    > stage["attempted_clip_records"]
+                or stage["cross_revisit_attempted_clips"]
+                    > stage["attempted_clip_records"]
+                or stage["source_window_section_records"]
+                    > stage["candidate_observation_records"] * 3):
+            raise ValueError("Contradictory collection stage diagnostics")
+    summary = {**totals, **{
+        field: dict(sorted(counter.items())) for field, counter in tallies.items()
+    }}
+    # Never translate saved section counts or constructed control tests into
+    # acquired, independently verified Hololive video/match totals.
+    summary["record_counts_are_verified_public_media"] = False
+    summary["measured_original_match_gold"] = False
+    return summary
+
+
+def _stage_evidence_gap(summary: dict | None) -> str:
+    if summary is None:
+        return "UNKNOWN_NO_STAGE_DIAGNOSTICS"
+    if summary["attempted_clip_records"] == 0:
+        return "UNKNOWN_NO_VISUAL_CLIP_ATTEMPTS"
+    if summary["finished_video_sha_recorded_clips"] == 0:
+        return "UNKNOWN_NO_FINISHED_VIDEO_RECORDS"
+    if summary["source_window_section_records"] == 0:
+        return "UNKNOWN_NO_SOURCE_VIDEO_SECTION_RECORDS"
+    if not summary["constructed_pattern_status_counts"]:
+        return "UNKNOWN_NO_CONSTRUCTED_PATTERN_OUTCOMES"
+    statuses = summary["candidate_visual_status_counts"]
+    if not statuses.get("VISUAL_SEQUENCE_CORROBORATED_NOT_SOURCE_GOLD"):
+        return "UNKNOWN_NO_VISUAL_SOURCE_CORROBORATION"
+    return "UNREVIEWED_SOURCE_VISUAL_CORROBORATION_NOT_GOLD"
+
+
 def _read_audit(path: Path, *, launcher: bool) -> dict | None:
     if not path.is_file():
         return None
@@ -79,6 +173,7 @@ def _read_audit(path: Path, *, launcher: bool) -> dict | None:
             or type(result.get("new_distinct_candidate_streams_this_run")) is not int
             or result["new_distinct_candidate_streams_this_run"] < 0):
         raise ValueError("Malformed saved source-pattern run result")
+    _checked_stage_funnel(result)
     if raw["status"] == "MEASURED_UNREVIEWED_CONSTRUCTED_PUBLIC_VIDEO_PATTERNS":
         if result["new_unique_video_samples_this_run"] == 0:
             raise ValueError("Historical samples cannot prove fresh measurement")
@@ -159,6 +254,7 @@ def diagnose_source_pattern_collector(
     diagnostics = (
         result.get("cycle_diagnostics", []) if isinstance(result, dict) else []
     )
+    stage_funnel = _checked_stage_funnel(result) if isinstance(result, dict) else None
     outcomes = Counter()
     for cycle in diagnostics:
         for key, count in cycle.get("source_pattern_attempt_outcomes", {}).items():
@@ -181,6 +277,8 @@ def diagnose_source_pattern_collector(
         "last_launcher_exit_code": launcher.get("exit_code") if launcher else None,
         "last_launcher_error_class": launcher.get("error_class") if launcher else None,
         "last_source_pattern_attempt_outcomes": dict(sorted(outcomes.items())),
+        "last_run_stage_funnel": stage_funnel,
+        "last_run_stage_evidence_gap": _stage_evidence_gap(stage_funnel),
         "new_unique_video_samples_last_run": (
             result.get("new_unique_video_samples_this_run")
             if isinstance(result, dict) else None
