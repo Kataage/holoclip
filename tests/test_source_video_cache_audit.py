@@ -181,7 +181,7 @@ def test_exact_current_run_clip_selection_avoids_sorted_backlog_starvation(tmp_p
         audit_cached_source_video_sections(
             state_path=path, output_root=root, clip_keys=["not-pending"],
         )
-    with pytest.raises(ValueError, match="clip"):
+    with pytest.raises(ValueError, match="audit keys"):
         audit_cached_source_video_sections(
             state_path=path, output_root=root, clip_keys=["other", "other"],
         )
