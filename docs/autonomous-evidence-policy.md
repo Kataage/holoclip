@@ -81,6 +81,16 @@ CI and synthetic MP4 fixtures does **not**
 count as measured Hololive public-stream data. Source-pattern accuracy
 without reviewed gold remains unmeasured, and `ready=false` is mandatory.
 
+## Windows-specific release regression checks
+
+The `windows-source-pattern` GitHub Actions job exercises Windows Python
+advisory locking and launcher audit scenarios under Windows PowerShell 5.1.
+It copies only the launcher into a temporary project and shadows uv/FFmpeg
+with local stubs to verify missing-tool, nonzero-child-exit and successful
+child-exit behavior. It must **never** run the task installer, real yt-dlp or
+a real public video in CI. A successful exit from a fake uv is only a
+script-control fixture and counts as no verified source samples.
+
 ## Offline diagnosis and Windows launcher failures (2026-10-09 increment)
 
 `examples-collector-doctor` is a read-only local diagnostic entrypoint.
