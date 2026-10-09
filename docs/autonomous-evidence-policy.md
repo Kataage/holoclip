@@ -49,31 +49,34 @@ original-stream false-positive rate, training gold or production qualification
 may be inferred. `ready=false` remains mandatory. Real collection must actually
 run against public media before any observed source result is claimed.
 
-## Exhaustion of bounded source-only visual scans
+## Bounded pairing revisit after source-only exhaustion
 
-A scheduled source-only visual probe can consume all deterministic bounded
-source-window positions for its saved candidate duration while remaining
-unable to prove whether the finished human clip matches that original.
-Formerly it still reacquired a finished-video section every later cycle
-only to return `UNKNOWN_SOURCE_SCAN_EXHAUSTED` for the candidates.
+The source-only visual search may visit every selected original window
+without finding the human-edited clip because prior probes rotated among
+different finished sections. The scan budget is therefore **not** complete
+pair coverage. After every shortlist candidate's original-only cursor is
+exhausted, with no pending SHA-bound weak refinement, the collector now
+uses a separate persisted `visual_cross_revisit_step` to schedule a small
+set of additional output/source pair comparisons.
 
-Before downloading finished media, the collector now detects exhaustion
-**only if every saved shortlist candidate** has a validated exhausted
-cursor and no SHA-bound local refinement remains. It re-probes each
-original's current public status, ID, duration and metadata rights. If any
-candidate is unscanned, metadata changes, or validation fails, no shortcut
-applies and the normal guarded observation path is retained. The
-short-circuit yields `UNKNOWN_ALL_CANDIDATE_SOURCE_SCANS_EXHAUSTED`
-without a positive measurement, editor negative or verified gold.
-The pending clip and its original scan evidence remain untouched.
+For each selected finished-video window (at most six), each candidate
+batch (at most two candidates per bounded invocation), and each of
+**two** initial original-source window groups (at most six 12s windows
+per candidate/output pair), current metadata identity, public availability
+and rights/range policy are checked before media fetch. Failed candidate
+checks stay unknown, not negative. A saved step advances only after the
+finished-video probe and candidate-attempt phase; restarting does not
+discard original scan cursors, source evidence ledger or SHA-bound
+histories. A malformed/oversized resume position is blocked.
 
-**This optimization does not implement dense source/output pairing.**
-Having visited every original-source window against only a subset of
-finished output windows is not exhaustive cross-product coverage and
-cannot justify a mismatch decision, source-source exclusion, reviewer
-precision/recall, a learning/holdout assignment or production readiness.
-Future independent finished-window revisits must account for pair coverage
-and stale source content without erasing historical provenance.
+Once the limited paired-revisit schedule is consumed, the prior no-media
+shortcut applies after fresh original metadata checks, reporting
+`UNKNOWN_ALL_CANDIDATE_SOURCE_SCANS_EXHAUSTED`. The stopped work is a
+finite *sampling budget*, **not** full output×source coverage, proof of
+source mismatch, an editor negative, independent event isolation,
+human-reviewed gold, source-relative frame PTS, or production readiness.
+Existing training/holdout assignments cannot be inferred from any
+unreviewed repeated image. `ready=false` remains mandatory.
 
 ## Unattended Windows collection and provenance checkpoint (2026-10-09)
 
