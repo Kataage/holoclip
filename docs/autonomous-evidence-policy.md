@@ -72,10 +72,12 @@ symlinked, missing or corrupt configured values fail closed before any
 yt-dlp subprocess. Complete legacy env settings take precedence, but
 partial env settings block instead of silently falling back to JSON.
 
-An explicit `HOLOCLIP_YTDLP_COORDINATOR_CONFIG` absolute path must exist
-and be valid; it is the recommended way to enforce fail-closed behavior
-if a default profile is accidentally deleted. The old unconfigured
-local-only mode remains opt-in's absent default, and is not shared-IP safe.
+An adjacent non-secret required marker is written before the local JSON
+profile. When the profile disappears but its marker remains, clients fail
+closed. An explicit absolute `HOLOCLIP_YTDLP_COORDINATOR_CONFIG` path also
+blocks missing/invalid profiles. Removing both default profile and marker
+opts out and must never happen on PCs expected to share pacing. The old
+unconfigured local-only mode remains and is not shared-IP safe.
 
 `examples-ytdlp-lan-status` loads the local `.env` like existing source
 commands. Its signed status establishes broker authentication only, not
