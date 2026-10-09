@@ -81,6 +81,25 @@ CI and synthetic MP4 fixtures does **not**
 count as measured Hololive public-stream data. Source-pattern accuracy
 without reviewed gold remains unmeasured, and `ready=false` is mandatory.
 
+## Offline diagnosis and Windows launcher failures (2026-10-09 increment)
+
+`examples-collector-doctor` is a read-only local diagnostic entrypoint.
+It never invokes yt-dlp or cloud inference and does not touch corpus state.
+The toolchain check runs only local binary discovery/version checks for
+`uv`, `ffmpeg`, `ffprobe`, and Deno >= 2.3 or Node >= 22; it can be
+disabled with `--no-check-tools`. It summarizes validated corpus pattern
+histories, pending queue, latest persisted source/probe outcomes and
+the latest Python/PowerShell run statuses with separate new-this-run
+and lifetime measured sample counts.
+
+The Windows Task Scheduler launcher persists an independent structured
+audit even if `uv`/FFmpeg cannot be launched. Its success status means
+only that the child process returned code zero: **no measurement count is
+inferred** from it. Doctor gives later launcher failures priority over
+older Python collector measurements. Untrusted/tampered run audits
+fail closed rather than silently promoting a route. Neither audit
+is human-reviewed reference evidence, and both retain `ready=false`.
+
 ## Acquisition and safe data allocation
 
 1. Discover public ended clips by metadata; check source/channel/range policy and

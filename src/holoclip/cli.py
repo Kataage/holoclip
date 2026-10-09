@@ -25,6 +25,7 @@ from holoclip.source_visual_control_report import report_saved_source_controls
 from holoclip.source_pattern_worker import (
     _state_lock, run_locked_source_pattern_collection,
 )
+from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collector
 from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
@@ -1049,6 +1050,21 @@ def _blocked_corpus_state_writer(state_path: Path) -> None:
         "reviewed_gold_available": False,
     }, ensure_ascii=False))
     raise typer.Exit(6)
+
+
+@app.command("examples-collector-doctor")
+def examples_collector_doctor(
+    state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
+    report_path: Path = typer.Option(Path("data/examples/source-pattern-last-run.json")),
+    launcher_path: Path = typer.Option(Path("data/examples/source-pattern-launcher-last-run.json")),
+    check_tools: bool = typer.Option(True, "--check-tools/--no-check-tools"),
+) -> None:
+    """Offline runtime and evidence audit; does not request public video."""
+    report = diagnose_source_pattern_collector(
+        state_path=state, report_path=report_path,
+        launcher_path=launcher_path, check_tools=check_tools,
+    )
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 @app.command("examples-source-controls-report")
