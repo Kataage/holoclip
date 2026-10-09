@@ -86,6 +86,31 @@ acquired. CI exercises only synthetic files and loopback-only services;
 it never touches YouTube or actual Windows Task Scheduler registration.
 No editor gold, source truth or production qualification is inferred.
 `ready=false` remains mandatory.
+## Increment: trusted local LAN credential import and non-media diagnosis
+
+`examples-ytdlp-lan-import-secret` accepts an **already trusted local**
+copy of the coordinator's 256-bit credential, validates it, and saves it
+with exclusive no-overwrite file creation. Identical re-import is
+idempotent; invalid files, symlinks, mismatched existing credentials and
+partial writes never authorize a network request. Neither the CLI nor
+diagnostics prints secret bytes. The import command is **not** a secure
+transport; the owner must use separately trusted removable media or
+host-identity-verified encrypted transport and review Windows NTFS ACLs.
+
+`examples-ytdlp-lan-doctor` uses exactly the same config/env selection
+as the yt-dlp provider, then invokes only the signed coordinator status
+RPC. Local configuration errors, missing enrollment marker, unauthenticated
+peer replies and disconnections become fixed non-sensitive failure codes.
+Even a signed status is restricted to a known gate-state allowlist;
+arbitrary remote payloads and LAN URL/secret paths are not reported.
+A failed/absent config returns nonzero. The pre-existing
+`examples-ytdlp-lan-status` entrypoint is preserved as an alias.
+
+Offline tests cover malformed sources, no-overwrite, symlink rejection,
+identical repeated import, wrong shared secret, broker unreachability,
+corrupt profile latch, spoofed status and real loopback-signed responses.
+These are **not** two physical PC tests, editor-gold tests, or hosted
+YouTube access tests. `ready=false` and all quality gates remain.
 ## Increment: opt-in Windows LAN coordinator supervision
 
 On PC-A only, `scripts/install-ytdlp-lan-task.ps1` registers an

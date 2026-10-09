@@ -338,6 +338,48 @@ The marker is not a credential. An explicit custom config path likewise
 fails closed when missing. Removing both profile and marker opts out and
 must never be done on PCs intended to share pacing.
 `ready=false` remains mandatory.
+#### Trusted local secret import and offline LAN connection diagnosis
+
+Use an independently trusted way to **transport** the PC-A credential to PC-B
+(for example, a USB drive under your control or an already authenticated,
+encrypted file-transfer session with its host identity verified). The
+Holoclip coordinator's LAN HTTP protocol is **not encrypted** and must
+**never** be used as a secret-transfer channel or host-identity bootstrap.
+After delivery, on PC-B, import the existing credential without copying
+its bytes into a terminal command, repository, logs, or JSON settings:
+
+```powershell
+uv run holoclip examples-ytdlp-lan-import-secret --source-file "E:\transfer\yt-dlp-lan-secret.txt" --secret-file "D:\AI\holoclip\data\runtime\yt-dlp-lan-secret.txt"
+uv run holoclip examples-ytdlp-lan-configure --url http://192.168.1.20:8878 --secret-file "D:\AI\holoclip\data\runtime\yt-dlp-lan-secret.txt"
+uv run holoclip examples-ytdlp-lan-doctor
+```
+
+Replace all example paths/PC-A address with real local values. The import
+validates the existing source file before writing, refuses symbolic links,
+never overwrites a different destination credential, and treats an
+identical previously imported credential as already complete. It does **not**
+contact PC-A, read YouTube, transfer secrets over the network or delete the
+source. Restrict access to the source and destination on Windows using
+appropriate NTFS ACLs; Python file mode 0600 alone is **not proof** of
+Windows ACL isolation. Remove the extra transport copy securely after
+confirming setup. Do not put either secret file in Git or cloud storage.
+
+The read-only `examples-ytdlp-lan-doctor` produces safe JSON codes:
+`NOT_CONFIGURED`, `LOCAL_YTDLP_COORDINATOR_CONFIGURATION_INVALID`,
+`LOCAL_YTDLP_COORDINATOR_UNAVAILABLE`,
+`LOCAL_YTDLP_COORDINATOR_RESPONSE_UNTRUSTED` or
+`AUTHENTICATED_LOCAL_LAN_COORDINATOR` with a recognized remote gate state
+(`AVAILABLE`, `ACTIVE`, `WAIT_GAP`, `COOLDOWN`). It exits nonzero unless
+authentication succeeds, never prints secrets, paths or the URL, never
+requests a reservation and never starts yt-dlp. The existing
+`examples-ytdlp-lan-status` command uses this same result format.
+
+**Important:** authenticated status from each machine is independent:
+it does **not** prove the other machine is enrolled, that firewall
+policies are correct, or that both Windows PCs have actually completed
+two-host testing. Only a real separately run PC-A / PC-B verification
+can establish deployment behavior. Always retain `ready=false` until
+separate original-video/editor reference quality gates are satisfied.
 #### Optional PC-A Windows autostart and crash recovery
 
 After creating the shared secret, install the **PC-A coordinator only** as
