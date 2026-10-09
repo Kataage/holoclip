@@ -93,6 +93,9 @@ def test_pattern_video_same_sha_replay_is_not_an_independent_source(tmp_path):
     assert added is False
     assert again == history
     summary = summarize_pattern_results(again)
+    assert summary["version"] == VERSION
+    assert summary["per_source_pattern_results"][0]["source_stream_id"] == STREAM
+    assert summary["per_source_pattern_results"][0]["source_video_samples"] == 1
     assert summary["real_measured_source_video_samples"] == 1
     assert summary["distinct_candidate_source_streams_measured"] == 1
     assert summary["source_diversity_sufficient_for_generalization"] is False
@@ -140,6 +143,7 @@ def test_cross_clip_reuse_of_same_original_media_is_deduplicated(tmp_path):
     assert result["real_measured_source_video_samples"] == 1
     assert result["deduplicated_cross_clip_repeat_samples"] == 1
     assert result["distinct_candidate_source_streams_measured"] == 1
+    assert result["per_source_pattern_results"][0]["source_video_samples"] == 1
 
 
 @pytest.mark.parametrize("mode", [
