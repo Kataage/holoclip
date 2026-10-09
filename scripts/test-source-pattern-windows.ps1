@@ -69,6 +69,11 @@ function Run-Launcher([string]$expectedStatus, [int]$expectedCode, [bool]$expect
     Assert-Condition ($lastEvent.collector_report_correlated -eq $false) 'Mocked uv must never claim video evidence'
     Assert-Condition ($null -eq $lastEvent.new_unique_video_samples) 'Mocked uv claimed video samples'
     Assert-Condition ($null -eq $lastEvent.new_distinct_candidate_streams) 'Mocked uv claimed public stream'
+    Assert-Condition ($lastEvent.stage_metrics_correlated -eq $false) 'Uncorrelated fake uv claimed visual stage'
+    foreach ($name in @('last_run_visual_pair_attempts', 'last_run_source_window_records',
+                         'last_run_sampled_visual_correspondences')) {
+        Assert-Condition ($null -eq $lastEvent.$name) "Mocked uv claimed visual evidence: $name"
+    }
     Assert-Condition (-not (Test-Path -LiteralPath ($historyPath + '.' + $PID + '.tmp'))) 'Launcher history temporary file leaked'
     $started = [DateTimeOffset]::Parse($audit.started_at_utc)
     $finished = [DateTimeOffset]::Parse($audit.finished_at_utc)
