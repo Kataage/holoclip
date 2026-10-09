@@ -39,6 +39,10 @@ def _public_probe_failure_category(message: str) -> str:
     """Only finite categorical public-access diagnostics, no raw URL or log."""
     normalized = message.casefold()
     if any(token in normalized for token in (
+        "login required", "private video", "sign in to confirm your age",
+    )):
+        return "VIDEO_REQUIRES_LOGIN_OR_RESTRICTED"
+    if any(token in normalized for token in (
         "not a bot", "sign in to confirm", "captcha", "bot detection",
         "unusual traffic",
     )):
@@ -51,10 +55,6 @@ def _public_probe_failure_category(message: str) -> str:
         "http error 403", "403 forbidden", "status code 403",
     )):
         return "HTTP_FORBIDDEN"
-    if any(token in normalized for token in (
-        "login required", "private video", "sign in to confirm your age",
-    )):
-        return "VIDEO_REQUIRES_LOGIN_OR_RESTRICTED"
     if any(token in normalized for token in (
         "video unavailable", "removed by the uploader", "has been removed",
     )):
