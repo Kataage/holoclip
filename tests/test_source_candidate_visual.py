@@ -269,6 +269,12 @@ def test_source_scan_exhaustion_is_unknown_not_negative_gold(tmp_path):
     state.items["candidate"].source_scout["visual_cross_revisit_step"] = (
         len(_finished_starts(40.)) * CROSS_REVISIT_SOURCE_GROUPS
     )
+    state.items["candidate"].source_scout["visual_cross_revisit_layout"] = {
+        "version": "bounded-output-source-pairs-v1",
+        "candidate_ids": [A.split("=")[-1]],
+        "finished_starts": _finished_starts(40.),
+        "max_candidates": 2,
+    }
     (tmp_path/"state.json").write_text(
         state.model_dump_json(), encoding="utf-8"
     )
@@ -373,6 +379,56 @@ def test_cross_revisits_cover_all_candidates_with_smaller_budget(tmp_path):
     assert state.items["candidate"].source_scout[
         "visual_cross_revisit_step"
     ] == 4
+
+
+def test_cross_revisit_rejects_resumption_with_changed_batch_width(tmp_path):
+    make_state(tmp_path/"state.json", candidates=[A, B])
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    state.items["candidate"].source_scout["visual_scan_cursors"] = {
+        A.split("=")[-1]: 10000, B.split("=")[-1]: 10000,
+    }
+    (tmp_path/"state.json").write_text(state.model_dump_json(), encoding="utf-8")
+    first = Provider()
+    verify(first, tmp_path, max_candidates=1)
+    assert len(first.calls) == 4
+    resumed = Provider()
+    report = verify(resumed, tmp_path, max_candidates=2)
+    assert report["counts"] == {"BLOCKED_INVALID_CROSS_REVISIT_SCHEDULE": 1}
+    assert resumed.calls == []
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    assert state.items["candidate"].source_scout[
+        "visual_cross_revisit_step"
+    ] == 1
+    assert state.items["candidate"].source_stream_id is None
+
+
+def test_cross_revisit_rejects_changed_finished_window_layout(tmp_path):
+    make_state(tmp_path/"state.json")
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    state.items["candidate"].source_scout["visual_scan_cursors"] = {
+        A.split("=")[-1]: 10000,
+    }
+    (tmp_path/"state.json").write_text(state.model_dump_json(), encoding="utf-8")
+    verify(Provider(), tmp_path)
+
+    class ChangedFinished(Provider):
+        def probe(self, url):
+            result = super().probe(url)
+            if url == CLIP:
+                result.duration = 48.
+            return result
+
+    provider = ChangedFinished()
+    report = verify(provider, tmp_path)
+    assert report["counts"] == {"BLOCKED_INVALID_CROSS_REVISIT_SCHEDULE": 1}
+    assert provider.calls == []
+    assert report["qualification_allowed"] is False
 
 
 @pytest.mark.parametrize("cursor", [-1, True, 999999])
