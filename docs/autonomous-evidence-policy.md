@@ -17,62 +17,36 @@ The target is evidence-backed **corpus-level editorial pattern learning**, not
 necessarily LLM weight fine-tuning. Model fine-tuning can be evaluated later but
 does not replace original-stream/video verification, dataset splits or calibrated QA.
 
-## Initial bounded hosted public-video smoke
+## Retired GitHub-hosted real-media collection; local access evidence only
 
-A new independent GitHub Actions workflow can make **one actual public-video
-collection attempt** when merged into `main`, without operator-supplied
-URLs, local Windows access, credentials, GPU, paid AI providers or Docker.
-Unlike offline CI fixtures, the runner executes the standard yt-dlp
-`examples-collect-source-patterns` entrypoint with strict one-cycle,
-one-clip, one-candidate, five-metadata-record discovery caps and a maximum
-12-minute process-tree deadline; the runner snapshots and terminates
-same-user Linux descendants including independently-grouped yt-dlp / FFmpeg
-processes before stopping its outer uv group. The overall job stops at
-18 minutes. Deliberately detached processes that escape the parent tree
-before the deadline cannot be guaranteed to be enumerated. No recurring cron is enabled: public traffic and GitHub Actions
-private-repository minutes are not presumed free without limit.
+The experimental GitHub-hosted live YouTube workflow was removed after
+two real bounded runs: [#37946788956](https://github.com/Kataage/holoclip/actions/runs/37946788956)
+and [#37948045092](https://github.com/Kataage/holoclip/actions/runs/37948045092).
+Each discovered five candidate entries; all five full metadata probes in
+both runs became `retryable`. The second run classified all five as
+`YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE`. Both had **zero acquired
+source-video sections, zero candidate visual pairs and zero constructed
+pattern measurements**. These are access failures before model evaluation,
+not evidence of false visual matches. Uploading additional public media
+or repeatedly probing from GitHub-hosted IPs is not part of CI anymore.
+No workflow in GitHub Actions schedules or manually dispatches a
+public YouTube download. Standard CI tests are offline fixtures and native
+platform integration checks, not real media qualification.
 
-The one-shot collector writes its independent report and source-video
-cache integrity evidence. The smoke gate only succeeds if a new unreviewed
-constructed-pattern sample, a distinct candidate original stream, and an
-intact bounded on-disk source media receipt are all recorded, with the
-entire selected cache audit complete. Unknown network errors, failed
-YouTube media download, zero samples, stale/tampered receipts and runtime
-timeouts remain `UNKNOWN_*` or blocked/non-green. The workflow stores
-**only JSON evidence for seven days**, never fetched footage or login
-credentials; files are scoped to a fresh ephemeral runner and do not
-overwrite local production corpus state.
-
-A positive result is **operational test evidence only**. The corresponding
-human edited clip has not thereby been shown to match the discovered
-original stream, and constructed frame transforms are not human editor
-labels. GitHub runners can be blocked by YouTube. This gate never sets
-`actual_public_video_verified`, `source_identity_verified`,
-`reviewed_gold_available`, `qualification_allowed` or `ready` true.
-Windows long-term scheduled collection is separately opt-in and continues
-to own resumable production data. Every ordinary PR CI remains offline.
-
-## First hosted public-video attempt and metadata failure classification
-
-The first hosted real-media attempt, run
-[37946788956](https://github.com/Kataage/holoclip/actions/runs/37946788956),
-completed the external search for five candidate human clips, but all
-five ended in `retryable` during full clip metadata resolution. The
-source-visual queue was empty and **no public source section or constructed
-pattern was acquired**. This is measured diagnostic evidence of the
-hosted-runner acquisition path only, not source-match accuracy, and it
-does not establish the cause of the failed probes.
-
-To make the next attempt actionable, the runner now derives strictly
-sanitized exception-class counts and broad failure categories from the
-persisted `retryable` reasons. It never forwards raw yt-dlp stderr, URLs,
-titles, or arbitrary exception text to the GitHub artifact/step summary.
-Expected classifications include bot/interactive challenges, HTTP forbidden,
-rate limiting, restricted login, unavailable videos, extraction changes,
-timeouts, runtime issues and an explicit unclassified fallback. These
-categories are **diagnostics**, not credentials, policy exemptions,
-permitted bypass routes or verified video evidence. Source identity,
-measured editorial accuracy and `ready=false` gates are unchanged.
+The existing Windows opt-in native source-pattern collector remains the
+only intended source of real public-media measurements. Metadata resolution
+now has a per-invocation **three consecutive bot-challenge/HTTP429**
+cutoff. A halt preserves queue entries and the persisted metadata
+round-robin cursor, avoids hammering more URLs, and leaves the next
+scheduled run to try normally. A successful public clip probe or an
+unrelated error breaks the streak. The saved discovery report contains
+category-only counts and an explicit pause reason, while the read-only
+local doctor emits sanitized counts for persisted retryable items plus
+the last-run pause. URLs, titles, raw extractor stderr and cookies must
+not appear in that diagnostic summary. These categories do **not**
+authorize access-control bypass, real-original identity, gold labels,
+source/finished temporal accuracy or production promotion.
+`ready=false` remains mandatory.
 
 ## Source-pattern collection (2026-10-09 increment)
 
