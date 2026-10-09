@@ -97,6 +97,8 @@ def test_bot_or_429_skips_refresh_and_defers_next_native_probe(tmp_path, monkeyp
         provider.probe("https://youtu.be/AAAAAAAAAAA")
     assert refreshed == []
     assert len(seen) == 1
+    cooldown_view = inspect_local_ytdlp_pacing(provider.pacer.path)
+    assert cooldown_view["cooldown_reason"] == "HTTP_RATE_LIMIT"
     assert "--sleep-requests" in seen[0]
     assert seen[0][seen[0].index("--sleep-requests") + 1] == "2"
     assert "--sleep-interval" in seen[0]
@@ -245,6 +247,36 @@ def test_reader_supports_preexisting_v1_cooldowns_and_writer_migrates_once(tmp_p
         fields = [x[1] for x in db.execute("PRAGMA table_info(access)")]
         assert "cooldown_reason" in fields
         assert db.execute("SELECT cooldown_until FROM access WHERE id=1").fetchone()[0] == 30000
+
+
+def test_competing_local_reservations_have_a_total_bounded_wait(
+    tmp_path, monkeypatch,
+):
+    import holoclip.source_ytdlp_pacing as pacing
+
+    clock = [5000.0]
+    monkeypatch.setattr(pacing.time, "time", lambda: clock[0])
+    gate = LocalYtDlpPacer(tmp_path / "shared.sqlite3")
+    with gate.reserve(timeout_seconds=30):
+        pass
+
+    sleeps = []
+
+    def another_process_wins_after_sleep(duration):
+        clock[0] += duration
+        sleeps.append(duration)
+        with sqlite3.connect(gate.path) as db:
+            db.execute(
+                "UPDATE access SET next_at=? WHERE id=1",
+                (clock[0] + 20,),
+            )
+
+    monkeypatch.setattr(pacing.time, "sleep", another_process_wins_after_sleep)
+    with pytest.raises(LocalYtDlpDeferred, match="PACING_WAIT_TOO_LONG"):
+        with gate.reserve(timeout_seconds=30):
+            pytest.fail("competing processes may not drive recursive waiting")
+    assert sleeps == [20, 20, 20]
+    assert sum(sleeps) == 60
 
 
 def test_reader_rejects_corrupt_symlinked_or_forged_pacing_state(tmp_path):
