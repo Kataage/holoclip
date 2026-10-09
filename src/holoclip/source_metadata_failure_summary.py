@@ -12,13 +12,16 @@ from pathlib import Path
 def _public_probe_failure_category(message: str) -> str:
     """Only finite categorical public-access diagnostics, no raw URL or log."""
     normalized = message.casefold()
+    if "local_ytdlp_" in normalized:
+        return "LOCAL_YTDLP_PACING_DEFERRED"
     if any(token in normalized for token in (
         "login required", "private video", "sign in to confirm your age",
     )):
         return "VIDEO_REQUIRES_LOGIN_OR_RESTRICTED"
     if any(token in normalized for token in (
         "not a bot", "sign in to confirm", "captcha", "bot detection",
-        "unusual traffic",
+        "unusual traffic", "this content isn't available, try again later",
+        "session has been rate-limited",
     )):
         return "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE"
     if any(token in normalized for token in (
