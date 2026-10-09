@@ -1058,11 +1058,16 @@ def examples_collector_doctor(
     report_path: Path = typer.Option(Path("data/examples/source-pattern-last-run.json")),
     launcher_path: Path = typer.Option(Path("data/examples/source-pattern-launcher-last-run.json")),
     check_tools: bool = typer.Option(True, "--check-tools/--no-check-tools"),
+    media_output: Path = typer.Option(Path("data/sources/source_visual_scout")),
+    audit_media_cache: bool = typer.Option(
+        True, "--audit-media-cache/--no-audit-media-cache",
+    ),
 ) -> None:
-    """Offline runtime and evidence audit; does not request public video."""
+    """Offline runtime and disk-byte evidence audit; no public video requests."""
     report = diagnose_source_pattern_collector(
         state_path=state, report_path=report_path,
         launcher_path=launcher_path, check_tools=check_tools,
+        media_output=media_output, audit_media_cache=audit_media_cache,
     )
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
