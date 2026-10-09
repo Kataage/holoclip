@@ -149,8 +149,8 @@ def add_pattern_result(
     return records, True
 
 
-def summarize_pattern_results(rows: list[dict]) -> dict:
-    """Strictly report constructed pattern outcomes, never real-world accuracy."""
+def _pattern_case_results(rows: list[dict]) -> dict:
+    """Compute case denominators without inventing unmeasured outcomes."""
     cases = {}
     for name, expectation in PATTERNS.items():
         collected = [r["result"]["patterns"][name] for r in rows]
@@ -169,6 +169,11 @@ def summarize_pattern_results(rows: list[dict]) -> dict:
                 sum(evaluated) / len(evaluated) if evaluated else None
             ),
         }
+    return cases
+
+
+def summarize_pattern_results(rows: list[dict]) -> dict:
+    """Strictly report constructed pattern outcomes, never real-world accuracy."""
     sources = {r["source_stream_id"] for r in rows}
     return {
         "version": VERSION,
@@ -179,7 +184,20 @@ def summarize_pattern_results(rows: list[dict]) -> dict:
         "real_measured_source_video_samples": len(rows),
         "distinct_candidate_source_streams_measured": len(sources),
         "source_diversity_sufficient_for_generalization": False,
-        "pattern_results": cases,
+        "pattern_results": _pattern_case_results(rows),
+        "per_source_pattern_results": [
+            {
+                "source_stream_id": source,
+                "source_video_samples": sum(
+                    row["source_stream_id"] == source for row in rows
+                ),
+                "patterns": _pattern_case_results([
+                    row for row in rows
+                    if row["source_stream_id"] == source
+                ]),
+            }
+            for source in sorted(sources)
+        ],
         "has_independent_real_source_match_labels": False,
         "has_independent_human_editor_labels": False,
         "precision_recall_estimable": False,
