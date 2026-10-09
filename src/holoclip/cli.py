@@ -1070,6 +1070,9 @@ def examples_collect_source_patterns(
         discover=discover, report_path=report_path, progress=typer.echo,
     ))
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+    # A skipped scheduled run must not appear as an ordinary completed task.
+    if report.get("status") == "BLOCKED_CONCURRENT_COLLECTION":
+        raise typer.Exit(6)
 
 
 @app.command("examples-verify-source-visual")

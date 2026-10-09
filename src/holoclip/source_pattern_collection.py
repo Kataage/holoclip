@@ -39,27 +39,30 @@ def _latest_attempt_outcomes(state_path: Path, keys: list[str]) -> dict:
         probe = (item.source_scout or {}).get("visual_probe")
         if not isinstance(probe, dict):
             raise ValueError("Missing persisted source-visual attempt")
-        outcome = probe.get("constructed_pattern_observation")
-        if isinstance(outcome, dict):
-            result = outcome.get("result")
-            status = result.get("status") if isinstance(result, dict) else None
-            if not isinstance(status, str):
-                raise ValueError("Malformed measured pattern diagnostic")
-            name = "pattern:" + status
+        observations = probe.get("candidate_observations")
+        if not isinstance(observations, list):
+            raise ValueError("Malformed source acquisition observations")
+        if not observations:
+            name = "clip:" + str(probe.get("status", "UNKNOWN_NO_VIDEO_ATTEMPT"))
             counts[name] = counts.get(name, 0) + 1
-        else:
-            observations = probe.get("candidate_observations")
-            if not isinstance(observations, list):
-                raise ValueError("Malformed source acquisition observations")
-            for observation in observations:
-                status = observation.get("status") if isinstance(observation, dict) else None
+        for observation in observations:
+            if not isinstance(observation, dict):
+                raise ValueError("Invalid source acquisition observation")
+            outcome = observation.get("constructed_pattern_observation")
+            if isinstance(outcome, dict):
+                result = outcome.get("result")
+                status = result.get("status") if isinstance(result, dict) else None
+                if not isinstance(status, str):
+                    raise ValueError("Malformed measured pattern diagnostic")
+                name = "pattern:" + status
+            elif "constructed_pattern_error_class" in observation:
+                name = "pattern:UNKNOWN_CONTROL_EXECUTION_FAILURE"
+            else:
+                status = observation.get("status")
                 if not isinstance(status, str):
                     raise ValueError("Invalid source acquisition status")
                 name = "source:" + status
-                counts[name] = counts.get(name, 0) + 1
-            if not observations:
-                name = "clip:" + str(probe.get("status", "UNKNOWN_NO_VIDEO_ATTEMPT"))
-                counts[name] = counts.get(name, 0) + 1
+            counts[name] = counts.get(name, 0) + 1
     return dict(sorted(counts.items()))
 
 

@@ -22,7 +22,7 @@ does not replace original-stream/video verification, dataset splits or calibrate
 `examples-collect-source-patterns` is a bounded, restartable batch runner for
 the already implemented five constructed video patterns. It runs metadata-only
 public clip discovery (optional), then the existing policy-checked yt-dlp
-source/video cross-check across persisted round-robin pending clip keys. Each
+source/video cross-check across persisted round-robin pending clip keys. Each sampled shortlisted\noriginal (up to two per pending clip/cycle) receives independent constructed\ncontrols on its already acquired bounded video; one decoder or control-suite\nerror does not suppress another candidate's diagnostics. Each
 cycle reports attempted clip keys, latest acquisition/decoder/policy outcomes
 and the **change in globally deduplicated** measured source samples. Results
 are saved by the established SHA-bound control histories in corpus state.
