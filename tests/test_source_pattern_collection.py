@@ -43,6 +43,82 @@ def _run_once(provider, tmp_path, **kwargs):
     )
 
 
+def test_run_stage_funnel_does_not_hide_failed_visual_matching_behind_controls(
+    tmp_path,
+):
+    from holoclip.source_pattern_collection import (
+        _latest_attempt_outcomes, _latest_attempt_stage_diagnostics,
+    )
+
+    make_state(tmp_path / "state.json")
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path / "state.json").read_text(encoding="utf-8")
+    )
+    state.items["candidate"].source_scout["visual_probe"] = {
+        "status": "UNKNOWN_NO_VISUAL_MATCH_IN_BOUNDED_SAMPLES",
+        "candidate_observations": [{
+            "status": "UNKNOWN_NO_VISUAL_SEQUENCE",
+            "sampled_source_windows": [{"media_sha256": "a" * 64}],
+            "probe_mode": "bounded_cross_revisit",
+            "constructed_pattern_observation": {
+                "result": {
+                    "status": "MEASURED_UNREVIEWED_CONSTRUCTED_VIDEO_PATTERN_SUITE",
+                },
+            },
+        }],
+        "finished_video_sha256": "b" * 64,
+        "cross_revisit_step_before": 0,
+    }
+    (tmp_path / "state.json").write_text(state.model_dump_json(), encoding="utf-8")
+
+    old = _latest_attempt_outcomes(tmp_path / "state.json", ["candidate"])
+    assert old == {
+        "pattern:MEASURED_UNREVIEWED_CONSTRUCTED_VIDEO_PATTERN_SUITE": 1,
+    }
+    stage = _latest_attempt_stage_diagnostics(
+        tmp_path / "state.json", ["candidate"],
+    )
+    assert stage["clip_status_counts"] == {
+        "UNKNOWN_NO_VISUAL_MATCH_IN_BOUNDED_SAMPLES": 1,
+    }
+    assert stage["candidate_visual_status_counts"] == {
+        "UNKNOWN_NO_VISUAL_SEQUENCE": 1,
+    }
+    assert stage["constructed_pattern_status_counts"] == {
+        "MEASURED_UNREVIEWED_CONSTRUCTED_VIDEO_PATTERN_SUITE": 1,
+    }
+    assert stage["source_probe_mode_counts"] == {"bounded_cross_revisit": 1}
+    assert stage["candidate_observation_records"] == 1
+    assert stage["source_window_section_records"] == 1
+    assert stage["finished_video_sha_recorded_clips"] == 1
+    assert stage["cross_revisit_attempted_clips"] == 1
+    assert stage["measured_original_match_gold"] is False
+    assert stage["record_counts_are_verified_public_media"] is False
+
+
+def test_stage_funnel_rejects_duplicate_clips_or_forged_media_hashes(tmp_path):
+    from holoclip.source_pattern_collection import _latest_attempt_stage_diagnostics
+
+    make_state(tmp_path / "state.json")
+    with pytest.raises(ValueError, match="Duplicate"):
+        _latest_attempt_stage_diagnostics(
+            tmp_path / "state.json", ["candidate", "candidate"],
+        )
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path / "state.json").read_text(encoding="utf-8")
+    )
+    state.items["candidate"].source_scout["visual_probe"] = {
+        "status": "UNKNOWN_NO_VISUAL_MATCH",
+        "candidate_observations": [],
+        "finished_video_sha256": "not-a-real-sha",
+    }
+    (tmp_path / "state.json").write_text(state.model_dump_json(), encoding="utf-8")
+    with pytest.raises(ValueError, match="SHA-256"):
+        _latest_attempt_stage_diagnostics(
+            tmp_path / "state.json", ["candidate"],
+        )
+
+
 def test_pending_visual_queue_rotates_across_invocations(tmp_path):
     _seed_multiple(tmp_path/"state.json")
     provider = MultipleClips()
@@ -198,6 +274,15 @@ def test_each_distinct_original_candidate_receives_bounded_pattern_controls(
     assert result["cycle_diagnostics"][0]["source_pattern_attempt_outcomes"] == {
         "pattern:MEASURED_UNREVIEWED_CONSTRUCTED_VIDEO_PATTERN_SUITE": 2
     }
+    stages = result["cycle_diagnostics"][0]["stage_diagnostics"]
+    assert stages["attempted_clip_records"] == 1
+    assert stages["candidate_observation_records"] == 2
+    assert stages["constructed_pattern_status_counts"] == {
+        "MEASURED_UNREVIEWED_CONSTRUCTED_VIDEO_PATTERN_SUITE": 2,
+    }
+    assert sum(stages["candidate_visual_status_counts"].values()) == 2
+    assert stages["measured_original_match_gold"] is False
+    assert stages["record_counts_are_verified_public_media"] is False
     stored = report_saved_patterns(tmp_path / "state.json")
     assert stored["real_measured_source_video_samples"] == 2
     assert len(stored["per_source_pattern_results"]) == 2

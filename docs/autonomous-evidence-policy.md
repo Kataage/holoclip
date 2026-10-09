@@ -49,6 +49,32 @@ original-stream false-positive rate, training gold or production qualification
 may be inferred. `ready=false` remains mandatory. Real collection must actually
 run against public media before any observed source result is claimed.
 
+## Independent persisted stage-funnel diagnostics
+
+A constructed video control may execute successfully on an original-source
+candidate even when its sampled visual frames do not corroborate the
+edited human clip. The previous aggregate `source_pattern_attempt_outcomes`
+prioritized the constructed pattern result, potentially obscuring that
+failure mode. The collector now independently records per-cycle finished
+media checksum presence, sampled original-section **record counts**, clip
+terminal statuses, candidate visual statuses, separate constructed control
+outcomes/errors, and bounded cross-revisit probe modes. Existing combined
+outcomes remain for backward compatibility but are not sufficient for
+source-matching evaluation.
+
+`examples-collector-doctor` reads the saved records with no media fetch
+or cloud inference. It checks integer and categorical count consistency,
+rejects forged readiness/media/gold flags and contradictory stage tallies,
+and reports one `last_run_stage_evidence_gap` category, while exposing the
+complete `last_run_stage_funnel` details. Old audits with no stage schema
+return an explicit unknown; partially migrated or fabricated stage counts
+fail closed. The diagnostic counts indicate **persisted observations**,
+not independently verified fresh public downloads. Source identity,
+original-frame PTS, exact edit cuts, reviewed precision/recall and
+production readiness remain unverified (`ready=false`). Real-world
+qualification requires separately validated source/finished pairs and
+independent calibration.
+
 ## Bounded pairing revisit after source-only exhaustion
 
 The source-only visual search may visit every selected original window

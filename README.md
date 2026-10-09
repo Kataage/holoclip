@@ -79,6 +79,29 @@ The launcher writes a **separate**
 or FFmpeg is unavailable, so a previous successful collector report cannot
 hide the most recent failed scheduled invocation.
 
+### Independent real-media stage diagnosis
+
+The collector's saved `cycle_diagnostics[].stage_diagnostics` now separates
+**finished-video checksum records**, sampled original-section records,
+source/finished **visual correspondence statuses**, constructed-pattern
+control statuses/errors, and cross-window revisit probe modes. Previously
+the combined `source_pattern_attempt_outcomes` preferred a successful
+constructed-control status and could hide a simultaneous
+`UNKNOWN_NO_VISUAL_SEQUENCE` outcome. That combined legacy field remains
+for compatibility, but it must never be interpreted as an original match.
+
+The read-only `examples-collector-doctor --no-check-tools` command aggregates
+the new funnel under `last_run_stage_funnel` and provides
+`last_run_stage_evidence_gap` to distinguish no finished video record, no
+source-video section, missing pattern control, and missing visual-source
+corroboration. Old audits without this schema return an explicit
+`UNKNOWN_NO_STAGE_DIAGNOSTICS`. No URL, media, model or operator-supplied
+label is required to inspect saved evidence. **The raw stage counts are
+persisted records, not independent proof that live public media was
+downloaded**, original identity verified, or quality achieved; the existing
+deduplicated measured-media summary remains separate. Every new field
+preserves `ready=false`.
+
 ### Native extraction deadlines and unattended recovery
 
 All yt-dlp subprocess invocations now use explicit deadlines instead of

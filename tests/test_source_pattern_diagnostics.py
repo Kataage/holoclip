@@ -137,6 +137,107 @@ def test_tool_missing_is_explicit_and_does_not_call_network(tmp_path, monkeypatc
     assert report["ready"] is False
 
 
+def test_doctor_exposes_unreviewed_video_stage_gap_even_when_controls_pass(
+    tmp_path,
+):
+    now = datetime.now(timezone.utc)
+    report = audit(now, status="UNKNOWN_NO_REAL_PUBLIC_VIDEO_PATTERN_MEASUREMENTS")
+    report["result"]["cycle_diagnostics"] = [{
+        "cycle": 1,
+        "attempted_clips": 1,
+        "source_pattern_attempt_outcomes": {
+            "pattern:MEASURED_UNREVIEWED_CONSTRUCTED_VIDEO_PATTERN_SUITE": 1,
+        },
+        "stage_diagnostics": {
+            "attempted_clip_records": 1,
+            "candidate_observation_records": 1,
+            "finished_video_sha_recorded_clips": 1,
+            "source_window_section_records": 3,
+            "constructed_pattern_execution_failures": 0,
+            "cross_revisit_attempted_clips": 1,
+            "clip_status_counts": {
+                "UNKNOWN_NO_VISUAL_MATCH_IN_BOUNDED_SAMPLES": 1,
+            },
+            "candidate_visual_status_counts": {
+                "UNKNOWN_NO_VISUAL_SEQUENCE": 1,
+            },
+            "constructed_pattern_status_counts": {
+                "MEASURED_UNREVIEWED_CONSTRUCTED_VIDEO_PATTERN_SUITE": 1,
+            },
+            "source_probe_mode_counts": {"bounded_cross_revisit": 1},
+            "measured_original_match_gold": False,
+            "record_counts_are_verified_public_media": False,
+        },
+    }]
+    (tmp_path / "collector.json").write_text(json.dumps(report), encoding="utf-8")
+    result = diagnose(tmp_path)
+    assert result["last_run_stage_evidence_gap"] == (
+        "UNKNOWN_NO_VISUAL_SOURCE_CORROBORATION"
+    )
+    funnel = result["last_run_stage_funnel"]
+    assert funnel["source_window_section_records"] == 3
+    assert funnel["finished_video_sha_recorded_clips"] == 1
+    assert funnel["candidate_visual_status_counts"] == {
+        "UNKNOWN_NO_VISUAL_SEQUENCE": 1,
+    }
+    assert funnel["constructed_pattern_status_counts"] == {
+        "MEASURED_UNREVIEWED_CONSTRUCTED_VIDEO_PATTERN_SUITE": 1,
+    }
+    assert funnel["record_counts_are_verified_public_media"] is False
+    assert result["ready"] is False
+
+
+@pytest.mark.parametrize("corruption", [
+    "promoted_gold", "excess_candidate_status", "negative_count",
+    "excess_pattern_records", "mixed_schema",
+])
+def test_doctor_rejects_forged_or_incomplete_stage_funnels(tmp_path, corruption):
+    now = datetime.now(timezone.utc)
+    report = audit(now)
+    stage = {
+        "attempted_clip_records": 1,
+        "candidate_observation_records": 1,
+        "finished_video_sha_recorded_clips": 0,
+        "source_window_section_records": 0,
+        "constructed_pattern_execution_failures": 0,
+        "cross_revisit_attempted_clips": 0,
+        "clip_status_counts": {"UNKNOWN_NO_VISUAL_MATCH": 1},
+        "candidate_visual_status_counts": {"UNKNOWN_NO_VISUAL_SEQUENCE": 1},
+        "constructed_pattern_status_counts": {},
+        "source_probe_mode_counts": {},
+        "measured_original_match_gold": False,
+        "record_counts_are_verified_public_media": False,
+    }
+    if corruption == "promoted_gold":
+        stage["measured_original_match_gold"] = True
+    elif corruption == "excess_candidate_status":
+        stage["candidate_visual_status_counts"]["UNKNOWN_NO_VISUAL_SEQUENCE"] = 3
+    elif corruption == "negative_count":
+        stage["source_window_section_records"] = -1
+    elif corruption == "excess_pattern_records":
+        stage["constructed_pattern_status_counts"]["MEASURED_OTHER"] = 2
+    row = {"attempted_clips": 1, "stage_diagnostics": stage}
+    rows = [row]
+    if corruption == "mixed_schema":
+        rows.append({"attempted_clips": 1})
+    report["result"]["cycle_diagnostics"] = rows
+    (tmp_path / "collector.json").write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ValueError):
+        diagnose(tmp_path)
+
+
+def test_legacy_audit_cannot_claim_retroactive_stage_data(tmp_path):
+    now = datetime.now(timezone.utc)
+    (tmp_path / "collector.json").write_text(
+        json.dumps(audit(now)), encoding="utf-8",
+    )
+    result = diagnose(tmp_path)
+    assert result["last_run_stage_funnel"] is None
+    assert result["last_run_stage_evidence_gap"] == (
+        "UNKNOWN_NO_STAGE_DIAGNOSTICS"
+    )
+
+
 def test_cli_doctor_can_read_status_with_no_install_or_download(tmp_path):
     result = CliRunner().invoke(cli.app, [
         "examples-collector-doctor", "--no-check-tools",
