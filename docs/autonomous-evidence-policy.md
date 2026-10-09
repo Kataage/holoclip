@@ -140,6 +140,32 @@ real two-PC network is exercised in GitHub. Cryptographic host
 identity verification by the operator and physical two-host
 commissioning remain outstanding. Shared-IP pacing remains an
 opt-in feature and `ready=false` remains mandatory.
+## Increment: authenticated cross-PC LAN observation receipts
+
+The coordinator persists a random instance ID in its existing durable
+SQLite file and includes it, plus an HMAC-derived opaque observed TCP
+peer-address tag, inside its existing signed status response. This
+does not affect leases, minimum pacing gap, or cooldown. Raw IP and
+secret bytes are never exposed in the response.
+
+A local client exports a versioned report of authenticated status.
+Its purpose-separated HMAC protects a bounded file and the verifier
+enforces an age limit, role constraints, schema allowlist, exact two
+reports, distinct random nonces, matching durable coordinator ID and
+different coordinator-observed TCP peer tags. Failed/unavailable
+coordinator checks never create new positive reports. Offline CI
+covers identity persistence, disagreement, corrupt/malformed/stale
+files, symlinks, and fail-closed yt-dlp provider behavior.
+
+This is explicitly **not** a physical two-host identity proof:
+all enrolled clients share the report signing key and could fabricate
+reports. Connection source IP may be affected by network topology.
+A consistent state ID is not evidence of a single running service.
+Report comparison makes no live network call. Even an accepted
+observation sets two_host_verified=false, global_pacing_runtime_verified=false
+and ready=false. Independent real-PC commissioning and video/editor
+qualification remain mandatory.
+
 ## Increment: read-only PC-A/PC-B deployment preflight
 
 `examples-ytdlp-lan-setup-doctor --role pc-a|pc-b` aggregates authenticated
