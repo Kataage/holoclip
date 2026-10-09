@@ -17,7 +17,32 @@ The target is evidence-backed **corpus-level editorial pattern learning**, not
 necessarily LLM weight fine-tuning. Model fine-tuning can be evaluated later but
 does not replace original-stream/video verification, dataset splits or calibrated QA.
 
+## Local yt-dlp cooldown observability and schema continuity
+
+The optional read-only `examples-ytdlp-access-status` CLI and
+`examples-collector-health.yt_dlp_access` report the same local durable
+pacing state. They expose only finite fixed codes for gate availability,
+minimum local gap, currently active process lease, YouTube access cooldown,
+missing historical DB or unreadable/unsafe DB. A cooldown begun by new
+Holoclip versions records only the sanitized `HTTP_RATE_LIMIT` or
+`YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE` cause; raw yt-dlp stderr,
+URLs and credentials are never added. A pre-existing four-column
+SQLite access row can still be read without mutation and is
+transactionally extended with a `cooldown_reason` column only by
+the next writer, preserving any live cooldown deadline.
+
+`next_attempt_not_before_utc` and `seconds_until_not_before`
+are based on persisted local timestamps and may change because of
+another process, wall-clock adjustments or further YouTube restrictions.
+They are **not proof of remote accessibility**. A successful read
+does not create a new pacing database, contact YouTube, alter its
+reservation/cooldown or authorize more aggressive retry. If data
+cannot be read or validated, the status explicitly blocks trusting
+the pacing state instead of inventing a release time. Production
+remains `ready=false`; this state is not training evidence or gold.
+
 ## Hostwide conservative yt-dlp pacing / rate-limit safety
+
 
 The native Holoclip managed yt-dlp provider must not issue rapid
 consecutive public YouTube search, metadata or media requests. Every
