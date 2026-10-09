@@ -1467,7 +1467,7 @@ or distinguish hundreds of sampled windows from hundreds of independent
 source streams. The new actual bounded-source `source_visual_pattern_controls.py`
 adds five local, label-constructed patterns to the same SHA256-pinned
 already-downloaded frames: JPEG overlay, brightness shift, 1.08x
-central crop/zoom, reversed timeline, and cyclic-shifted timeline.
+central crop/zoom, reversed timeline, and pairwise-swapped adjacent-frame timeline.
 No extra original stream media is fetched and the verifier remains the
 same ORB + independent DCT temporal sequence scorer as production.
 
