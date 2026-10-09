@@ -48,6 +48,9 @@ Assert-Setup (-not $good.ready) 'Local mock must not promote readiness'
 $script:remote = 'Any'
 $broad = (. $inspector -Role pc-a -CoordinatorPort 8878 -PeerIp 192.168.1.21 | ConvertFrom-Json)
 Assert-Setup ($broad.firewall_rule -eq 'BROAD_INBOUND_ALLOW_RULE_OBSERVED') 'Broad rule must fail closed'
+$script:remote = @('192.168.1.21', 'Any')
+$multi = (. $inspector -Role pc-a -CoordinatorPort 8878 -PeerIp 192.168.1.21 | ConvertFrom-Json)
+Assert-Setup ($multi.firewall_rule -eq 'BROAD_INBOUND_ALLOW_RULE_OBSERVED') 'Mixed address list must not bypass broad detection'
 $script:remote = '192.168.1.21'
 $script:listener = '0.0.0.0'
 $wildcard = (. $inspector -Role pc-a -CoordinatorPort 8878 -PeerIp 192.168.1.21 | ConvertFrom-Json)
