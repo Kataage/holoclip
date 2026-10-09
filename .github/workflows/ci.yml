@@ -62,3 +62,7 @@ jobs:
         run: |
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-task.ps1"
           if ($LASTEXITCODE -ne 0) { throw "Windows LAN coordinator task tests failed: $LASTEXITCODE" }
+      - name: Verify Windows LAN credential NTFS ACLs on disposable files
+        run: |
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-acl.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "Windows LAN credential ACL tests failed: $LASTEXITCODE" }
