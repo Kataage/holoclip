@@ -157,6 +157,35 @@ def test_bad_source_range_record_fails_closed(tmp_path):
         _audit(path, root)
 
 
+
+def test_exact_current_run_clip_selection_avoids_sorted_backlog_starvation(tmp_path):
+    path, root, _, _ = _arrange(tmp_path)
+    state = CorpusGrowthState.model_validate_json(path.read_text(encoding="utf-8"))
+    template = state.items["candidate"]
+    second = template.model_copy(deep=True)
+    second.clip_url = "https://www.youtube.com/watch?v=ZZZZZZZZZZZ"
+    second.source_scout["visual_probe"] = None
+    state.items["other"] = second
+    path.write_text(state.model_dump_json(), encoding="utf-8")
+
+    latest = audit_cached_source_video_sections(
+        state_path=path, output_root=root, clip_keys=["other"],
+    )
+    assert latest["clip_selection"] == "CURRENT_RUN_ATTEMPTED_CLIPS"
+    assert latest["inspected_clips"] == 1
+    assert latest["total_pending_clips"] == 2
+    assert latest["deduplicated_section_records_checked"] == 0
+    assert latest["complete_pending_queue_audited"] is False
+    assert latest["ready"] is False
+    with pytest.raises(ValueError, match="Attempted"):
+        audit_cached_source_video_sections(
+            state_path=path, output_root=root, clip_keys=["not-pending"],
+        )
+    with pytest.raises(ValueError, match="clip"):
+        audit_cached_source_video_sections(
+            state_path=path, output_root=root, clip_keys=["other", "other"],
+        )
+
 def test_audit_budget_cannot_be_changed_unbounded(tmp_path):
     with pytest.raises(ValueError, match="budget"):
         audit_cached_source_video_sections(
