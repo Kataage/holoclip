@@ -211,3 +211,48 @@ def audit_cached_source_video_sections(
     else:
         result["status"] = "UNKNOWN_SOURCE_CACHE_GAPS_OR_INTEGRITY_FAILURES"
     return result
+
+
+def checked_cached_video_attestation(value: dict) -> dict:
+    """Fail closed on a forged 'verified' record in a saved collector report."""
+    if (not isinstance(value, dict) or value.get("version") != VERSION
+            or any(value.get(k) is not v for k, v in _NO_GOLD.items())
+            or value.get("status") not in {
+                "UNKNOWN_NO_SOURCE_CACHE_EVIDENCE",
+                "UNKNOWN_NO_SAVED_SOURCE_SECTION_RECORDS",
+                "UNKNOWN_PARTIAL_BOUNDED_CACHE_AUDIT",
+                "UNKNOWN_SOURCE_CACHE_GAPS_OR_INTEGRITY_FAILURES",
+                "VERIFIED_ONLY_LOCAL_SOURCE_SECTION_BYTES_NOT_GOLD",
+            }):
+        raise ValueError("Malformed or promoted cached video attestation")
+    fields = (
+        "clip_budget", "section_budget", "total_pending_clips",
+        "inspected_clips", "eligible_latest_source_section_records",
+        "deduplicated_section_records_checked", "not_checked_section_records",
+    )
+    if any(type(value.get(k)) is not int or value[k] < 0 for k in fields):
+        raise ValueError("Invalid cache attestation counts")
+    if (not 1 <= value["clip_budget"] <= MAX_CLIPS
+            or value["section_budget"] != MAX_SECTIONS
+            or value["inspected_clips"] > value["clip_budget"]
+            or value["inspected_clips"] > value["total_pending_clips"]
+            or value["deduplicated_section_records_checked"] > MAX_SECTIONS
+            or type(value.get("complete_pending_queue_audited")) is not bool
+            or (value["complete_pending_queue_audited"] and
+                (value["inspected_clips"] != value["total_pending_clips"]
+                 or value["not_checked_section_records"] != 0))):
+        raise ValueError("Contradictory cache audit scope")
+    counts = value.get("cache_section_status_counts")
+    if (not isinstance(counts, dict)
+            or any(not isinstance(k, str) or type(v) is not int or v <= 0
+                   for k, v in counts.items())
+            or sum(counts.values()) != value["deduplicated_section_records_checked"]):
+        raise ValueError("Contradictory cache attestation status totals")
+    if value["status"] == "VERIFIED_ONLY_LOCAL_SOURCE_SECTION_BYTES_NOT_GOLD":
+        if (not value["complete_pending_queue_audited"]
+                or not counts
+                or set(counts) != {
+                    "VERIFIED_LOCAL_SOURCE_SECTION_BYTES_AND_RECEIPT_NOT_GOLD",
+                }):
+            raise ValueError("Forged cache byte verification claim")
+    return value
