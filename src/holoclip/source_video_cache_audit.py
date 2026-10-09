@@ -100,6 +100,7 @@ def _verify_section(
 
 def audit_cached_source_video_sections(
     *, state_path: Path, output_root: Path, max_clips: int = MAX_CLIPS,
+    clip_keys: list[str] | None = None,
 ) -> dict:
     """Audit current persisted latest observations, with a *visible* scope cap."""
     if type(max_clips) is not int or not 1 <= max_clips <= MAX_CLIPS:
@@ -109,6 +110,10 @@ def audit_cached_source_video_sections(
         "status": "UNKNOWN_NO_SOURCE_CACHE_EVIDENCE",
         "clip_budget": max_clips,
         "section_budget": MAX_SECTIONS,
+        "clip_selection": (
+            "CURRENT_RUN_ATTEMPTED_CLIPS"
+            if clip_keys is not None else "PENDING_SORTED_PREFIX"
+        ),
         "total_pending_clips": 0,
         "inspected_clips": 0,
         "eligible_latest_source_section_records": 0,
@@ -130,7 +135,17 @@ def audit_cached_source_video_sections(
         if item.status == "source_visual_pending"
     )
     result["total_pending_clips"] = len(pending)
-    chosen = pending[:max_clips]
+    if clip_keys is None:
+        chosen = pending[:max_clips]
+    else:
+        if (not isinstance(clip_keys, list) or len(clip_keys) > max_clips
+                or len(set(clip_keys)) != len(clip_keys)
+                or any(not isinstance(key, str) for key in clip_keys)):
+            raise ValueError("Invalid bounded current-run cache audit keys")
+        by_key = dict(pending)
+        if any(key not in by_key for key in clip_keys):
+            raise ValueError("Attempted clip is no longer pending")
+        chosen = [(key, by_key[key]) for key in clip_keys]
     seen: set[tuple] = set()
     statuses = Counter()
     omitted = 0
@@ -216,6 +231,9 @@ def audit_cached_source_video_sections(
 def checked_cached_video_attestation(value: dict) -> dict:
     """Fail closed on a forged 'verified' record in a saved collector report."""
     if (not isinstance(value, dict) or value.get("version") != VERSION
+            or value.get("clip_selection") not in {
+                "CURRENT_RUN_ATTEMPTED_CLIPS", "PENDING_SORTED_PREFIX",
+            }
             or any(value.get(k) is not v for k, v in _NO_GOLD.items())
             or value.get("status") not in {
                 "UNKNOWN_NO_SOURCE_CACHE_EVIDENCE",
