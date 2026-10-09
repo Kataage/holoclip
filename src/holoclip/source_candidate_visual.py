@@ -324,6 +324,19 @@ def _bounded_cross_revisit_schedule(
     batches = math.ceil(len(candidates) / max_candidates)
     total = (len(finished_starts) * batches * CROSS_REVISIT_SOURCE_GROUPS
              if len(finished_starts) >= 2 else 0)
+    # A schedule step has no meaning if a later invocation changes batch
+    # width, shortlist identity/order, or the finished duration/window set.
+    # Never silently reinterpret a persisted counter under a new layout.
+    layout = {
+        "version": "bounded-output-source-pairs-v1",
+        "candidate_ids": [entry["source_stream_id"] for entry in candidates],
+        "finished_starts": finished_starts,
+        "max_candidates": max_candidates,
+    }
+    saved_layout = scout.get("visual_cross_revisit_layout")
+    if ((saved_layout is not None and saved_layout != layout)
+            or (saved_layout is None and step != 0)):
+        raise ValueError("Cross-window revisit layout changed or missing")
     if step > total:
         raise ValueError("Cross-window revisit cursor exceeds bounded schedule")
     if step == total:
@@ -333,6 +346,7 @@ def _bounded_cross_revisit_schedule(
     start = candidate_batch * max_candidates
     return {
         "step": step,
+        "layout": layout,
         "total_steps": total,
         "source_group": source_group,
         "finished_index": finished_index,
@@ -868,6 +882,7 @@ def verify_pending_source_visual(
             scout["visual_candidate_round"] = round_number + 1
             report["candidate_round_after"] = round_number + 1
             if cross_revisit is not None:
+                scout["visual_cross_revisit_layout"] = cross_revisit["layout"]
                 scout["visual_cross_revisit_step"] = cross_revisit["step"] + 1
                 report["cross_revisit_step_after"] = cross_revisit["step"] + 1
                 report["cross_revisit_is_exhaustive_pair_coverage"] = False
