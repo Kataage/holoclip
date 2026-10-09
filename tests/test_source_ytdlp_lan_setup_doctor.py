@@ -50,7 +50,7 @@ def test_unconfigured_pc_b_is_actionable_and_nonzero(tmp_path):
     assert data["config_modified"] is False
     assert data["checks"]["signed_coordinator_status"]["code"] == "NOT_CONFIGURED"
     assert "examples-ytdlp-lan-configure" in data["checks"]["signed_coordinator_status"]["action"]
-    assert "WINDOWS_INSPECTION_UNAVAILABLE" == data["checks"]["credential_acl"]["code"]
+    assert "LAN_CREDENTIAL_ACL_UNVERIFIED" == data["checks"]["credential_acl"]["code"]
 
 
 def test_missing_pc_a_secret_does_not_claim_complete(tmp_path, monkeypatch):
