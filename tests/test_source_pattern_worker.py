@@ -1,6 +1,5 @@
 """A run's audit is a bounded fact, not gold or silent duplicate success."""
 import asyncio
-import copy
 import json
 
 import pytest
