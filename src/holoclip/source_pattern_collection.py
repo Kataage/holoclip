@@ -213,6 +213,7 @@ async def collect_public_source_patterns(
         row = {
             "cycle": cycle + 1,
             "attempted_clips": observed["attempted"],
+            "attempted_clip_keys": keys,
             "verification_outcomes": observed["counts"],
             "source_pattern_attempt_outcomes": counts,
             "stage_diagnostics": _latest_attempt_stage_diagnostics(
