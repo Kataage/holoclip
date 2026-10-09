@@ -23,6 +23,7 @@ try {
     $secret = Join-Path $testRoot 'my temporary secret file.txt'
     [IO.File]::WriteAllText($secret, ('a' * 64) + [Environment]::NewLine)
     $hardened = Run-Acl $secret $true
+    Write-Host ('ACL smoke result: ' + $hardened.Data.status)
     Assert-LocalAcl ($hardened.ExitCode -eq 0) 'Lockdown must succeed on current-user-owned temp file'
     Assert-LocalAcl ($hardened.Data.status -eq 'ACL_SECURE') 'Lockdown failed NTFS DACL audit'
     Assert-LocalAcl ($hardened.Data.acl_verified -eq $true) 'Lockdown did not verify ACL'
