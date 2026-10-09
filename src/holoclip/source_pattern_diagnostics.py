@@ -170,6 +170,65 @@ def _read_audit(path: Path, *, launcher: bool) -> dict | None:
             raise ValueError("Failed collector audit claims successful result")
         return raw
     result = raw.get("result")
+    # An intentional scheduled cooldown/other-process deferral is not a
+    # measurement, even when the Python process exited successfully.
+    if raw["status"] in {
+        "DEFERRED_LOCAL_YTDLP_ACCESS", "BLOCKED_LOCAL_YTDLP_PACING_STATE",
+    }:
+        allowed_result_fields = {
+            "status", "new_unique_video_samples_this_run",
+            "new_distinct_candidate_streams_this_run", "local_access_state",
+            "local_cooldown_reason", "next_attempt_not_before_utc",
+            "collection_started", *NO_GOLD,
+            "editor_cut_precision", "editor_cut_recall",
+            "real_original_match_false_positive_rate",
+        }
+        allowed_audit_fields = {
+            "version", "status", "started_at_utc", "finished_at_utc",
+            "result", *NO_GOLD, "editor_cut_precision",
+            "editor_cut_recall", "real_original_match_false_positive_rate",
+        }
+        allowed_statuses = {
+            "COOLDOWN_AFTER_YOUTUBE_ACCESS_RESTRICTION",
+            "ACTIVE_OTHER_LOCAL_YTDLP_PROCESS",
+        }
+        expected = (
+            "BLOCKED_UNREADABLE_LOCAL_PACING_STATE"
+            if raw["status"] == "BLOCKED_LOCAL_YTDLP_PACING_STATE"
+            else None
+        )
+        if (not isinstance(result, dict)
+                or set(result) != allowed_result_fields
+                or set(raw) != allowed_audit_fields
+                or any(result.get(key) is not None for key in (
+                    "editor_cut_precision", "editor_cut_recall",
+                    "real_original_match_false_positive_rate",
+                ))
+                or any(raw.get(key) is not None for key in (
+                    "editor_cut_precision", "editor_cut_recall",
+                    "real_original_match_false_positive_rate",
+                ))
+                or result.get("status") != raw["status"]
+                or any(result.get(k) is not v for k, v in NO_GOLD.items())
+                or result.get("collection_started") is not False
+                or result.get("new_unique_video_samples_this_run") is not None
+                or result.get("new_distinct_candidate_streams_this_run") is not None
+                or (result.get("local_access_state") not in allowed_statuses
+                    if expected is None else
+                    result.get("local_access_state") != expected)
+                or "cycle_diagnostics" in result
+                or "source_cache_byte_attestation" in result):
+            raise ValueError("Deferred source-pattern audit claims measurements")
+        cooldown_reason = result.get("local_cooldown_reason")
+        if cooldown_reason not in (
+            None, "HTTP_RATE_LIMIT", "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE",
+            "UNKNOWN_HISTORICAL_COOLDOWN_REASON",
+        ):
+            raise ValueError("Unsafe deferred cooldown category")
+        not_before = result.get("next_attempt_not_before_utc")
+        if not_before is not None:
+            _timestamp(not_before)
+        return raw
     if (not isinstance(result, dict)
             or result.get("status") != raw.get("status")
             or any(result.get(k) is not v for k, v in NO_GOLD.items())
@@ -257,7 +316,21 @@ def diagnose_source_pattern_collector(
         and (recorded is None or _timestamp(launcher["finished_at_utc"])
              >= _timestamp(recorded["finished_at_utc"]))
     )
-    if failure_in_latest_launcher:
+    # Only elevate a blocked pacing receipt over the generic failed
+    # launcher when that *specific* collector audit belongs to the same
+    # Windows invocation, not an older stale failure on disk.
+    pacing_state_current = (
+        latest_report == "BLOCKED_LOCAL_YTDLP_PACING_STATE"
+        and launcher is not None and recorded is not None
+        and _timestamp(launcher["started_at_utc"])
+            <= _timestamp(recorded["started_at_utc"])
+        and _timestamp(recorded["finished_at_utc"])
+            <= _timestamp(launcher["finished_at_utc"])
+    )
+    if failure_in_latest_launcher and pacing_state_current:
+        status = "BLOCKED_LOCAL_YTDLP_PACING_STATE"
+        next_action = "REPAIR_LOCAL_YTDLP_PACING_STATE_BEFORE_NEXT_ATTEMPT"
+    elif failure_in_latest_launcher:
         status = "BLOCKED_LATEST_WINDOWS_LAUNCH"
         next_action = "INSPECT_LAUNCHER_LOG_AND_LOCAL_TOOLCHAIN"
     elif tools["status"] == "MISSING_LOCAL_DEPENDENCIES":
@@ -269,6 +342,12 @@ def diagnose_source_pattern_collector(
     elif latest_report == "UNKNOWN_COLLECTION_EXECUTION_FAILURE":
         status = "UNKNOWN_COLLECTION_FAILED"
         next_action = "INSPECT_LOCAL_COLLECTION_LOG"
+    elif latest_report == "DEFERRED_LOCAL_YTDLP_ACCESS":
+        status = "DEFERRED_LOCAL_YTDLP_ACCESS"
+        next_action = "CONTINUE_AT_NEXT_LOCAL_SCHEDULE_AFTER_PACING_GATE"
+    elif latest_report == "BLOCKED_LOCAL_YTDLP_PACING_STATE":
+        status = "BLOCKED_LOCAL_YTDLP_PACING_STATE"
+        next_action = "REPAIR_LOCAL_YTDLP_PACING_STATE_BEFORE_NEXT_ATTEMPT"
     elif latest_report == "MEASURED_UNREVIEWED_CONSTRUCTED_PUBLIC_VIDEO_PATTERNS":
         status = "RECORDED_UNREVIEWED_NEW_SOURCE_VIDEO_SAMPLES"
         next_action = "CONTINUE_BOUNDED_UNREVIEWED_EVIDENCE_COLLECTION"
@@ -309,6 +388,17 @@ def diagnose_source_pattern_collector(
             if isinstance(discovery, dict) else None
         ),
         "last_collector_status": latest_report,
+        "last_run_access_deferred": latest_report in {
+            "DEFERRED_LOCAL_YTDLP_ACCESS",
+            "BLOCKED_LOCAL_YTDLP_PACING_STATE",
+        },
+        "last_run_deferred_access_status": (
+            recorded["result"].get("local_access_state")
+            if latest_report in {
+                "DEFERRED_LOCAL_YTDLP_ACCESS",
+                "BLOCKED_LOCAL_YTDLP_PACING_STATE",
+            } else None
+        ),
         "last_collector_error_class": (
             recorded.get("error_class") if recorded else None
         ),

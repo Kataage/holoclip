@@ -30,7 +30,8 @@ def _run(tmp_path, **overrides):
         cycles=2, discover=False,
     )
     options.update(overrides)
-    return asyncio.run(run_locked_source_pattern_collection(None, **options))
+    provider = options.pop("provider", None)
+    return asyncio.run(run_locked_source_pattern_collection(provider, **options))
 
 
 def test_success_writes_audit_without_gold(tmp_path, monkeypatch):
@@ -159,3 +160,264 @@ def test_report_cannot_clobber_source_files(tmp_path, which):
     with pytest.raises(ValueError, match="overwrite"):
         _run(tmp_path, report_path=path)
     assert not path.exists()
+
+
+def test_scheduled_collector_respects_cooldown_then_resumes_after_local_expiry(
+    tmp_path, monkeypatch,
+):
+    from holoclip import source_pattern_worker as worker
+    from holoclip import source_ytdlp_pacing as pacing
+    from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collector
+
+    now = [10_000.0]
+    monkeypatch.setattr(pacing.time, "time", lambda: now[0])
+    gate = pacing.LocalYtDlpPacer(tmp_path / "runtime" / "gate.sqlite3")
+    gate.impose_cooldown("HTTP_RATE_LIMIT")
+
+    class Provider:
+        pacer = gate
+
+    measurements = []
+
+    async def collector(_provider, **_kwargs):
+        measurements.append(True)
+        return {
+            "status": "UNKNOWN_NO_REAL_PUBLIC_VIDEO_PATTERN_MEASUREMENTS",
+            "new_unique_video_samples_this_run": 0,
+            "new_distinct_candidate_streams_this_run": 0,
+            **NO_GOLD,
+        }
+
+    monkeypatch.setattr(worker, "collect_public_source_patterns", collector)
+
+    report = _run(tmp_path, provider=Provider())
+    assert report["status"] == "DEFERRED_LOCAL_YTDLP_ACCESS"
+    assert report["collection_started"] is False
+    assert report["new_unique_video_samples_this_run"] is None
+    assert report["new_distinct_candidate_streams_this_run"] is None
+    assert report["local_access_state"] == (
+        "COOLDOWN_AFTER_YOUTUBE_ACCESS_RESTRICTION"
+    )
+    assert report["local_cooldown_reason"] == "HTTP_RATE_LIMIT"
+    assert measurements == []
+    assert not (tmp_path / "state.json").exists()
+
+    saved = json.loads((tmp_path / "last-run.json").read_text(encoding="utf-8"))
+    assert saved["status"] == "DEFERRED_LOCAL_YTDLP_ACCESS"
+    assert saved["result"]["new_unique_video_samples_this_run"] is None
+    assert saved["ready"] is False
+    diagnosis = diagnose_source_pattern_collector(
+        state_path=tmp_path / "state.json",
+        report_path=tmp_path / "last-run.json",
+        launcher_path=tmp_path / "launcher.json",
+        check_tools=False, media_output=tmp_path / "videos",
+    )
+    assert diagnosis["status"] == "DEFERRED_LOCAL_YTDLP_ACCESS"
+    assert diagnosis["local_collection_health"]["primary_blocker"] == (
+        "LOCAL_YTDLP_ACCESS_PAUSED"
+    )
+    assert diagnosis["new_unique_video_samples_last_run"] is None
+    assert diagnosis["last_run_access_deferred"] is True
+
+    # Scheduled recurrence after the *actual* locally recorded six-hour
+    # cooldown enters the regular bounded collector. The reader performs
+    # no probing; actual yt-dlp still rechecks its own exclusive gate.
+    now[0] += 21600
+    resumed = _run(tmp_path, provider=Provider())
+    assert resumed["status"] == "UNKNOWN_NO_REAL_PUBLIC_VIDEO_PATTERN_MEASUREMENTS"
+    assert resumed["new_unique_video_samples_this_run"] == 0
+    assert measurements == [True]
+    assert resumed["ready"] is False
+
+
+def test_active_lease_skips_entire_collection_without_false_zeroes(tmp_path, monkeypatch):
+    from holoclip import source_pattern_worker as worker
+    from holoclip.source_ytdlp_pacing import LocalYtDlpPacer
+
+    async def forbidden(_provider, **_kwargs):
+        pytest.fail("an active host lease must not start a second collector")
+
+    monkeypatch.setattr(worker, "collect_public_source_patterns", forbidden)
+    gate = LocalYtDlpPacer(tmp_path / "shared.db")
+
+    class Provider:
+        pacer = gate
+
+    with gate.reserve(timeout_seconds=90):
+        report = _run(tmp_path, provider=Provider())
+    assert report["status"] == "DEFERRED_LOCAL_YTDLP_ACCESS"
+    assert report["local_access_state"] == "ACTIVE_OTHER_LOCAL_YTDLP_PROCESS"
+    assert report["new_unique_video_samples_this_run"] is None
+
+
+def test_corrupt_local_pacing_state_blocks_scheduled_collector(tmp_path, monkeypatch):
+    from holoclip import source_pattern_worker as worker
+    from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collector
+    from holoclip.source_ytdlp_pacing import LocalYtDlpPacer
+
+    async def forbidden(_provider, **_kwargs):
+        pytest.fail("unsafe local yt-dlp state may never start collection")
+
+    monkeypatch.setattr(worker, "collect_public_source_patterns", forbidden)
+    path = tmp_path / "access.sqlite3"
+    path.write_text("corrupt SQLite", encoding="utf-8")
+    gate = LocalYtDlpPacer(path)
+
+    class Provider:
+        pacer = gate
+
+    blocked = _run(tmp_path, provider=Provider())
+    assert blocked["status"] == "BLOCKED_LOCAL_YTDLP_PACING_STATE"
+    assert blocked["collection_started"] is False
+    assert blocked["new_unique_video_samples_this_run"] is None
+    diagnostic = diagnose_source_pattern_collector(
+        state_path=tmp_path / "state.json",
+        report_path=tmp_path / "last-run.json",
+        launcher_path=tmp_path / "launcher.json",
+        check_tools=False, media_output=tmp_path / "videos",
+    )
+    assert diagnostic["status"] == "BLOCKED_LOCAL_YTDLP_PACING_STATE"
+    assert diagnostic["local_collection_health"]["primary_blocker"] == (
+        "LOCAL_YTDLP_PACING_STORAGE_BLOCKED"
+    )
+    assert diagnostic["ready"] is False
+
+
+def test_deferred_cooldown_audit_rejects_fabricated_measurements(tmp_path, monkeypatch):
+    from holoclip import source_pattern_worker as worker
+    from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collector
+    from holoclip.source_ytdlp_pacing import LocalYtDlpPacer
+
+    monkeypatch.setattr(
+        worker, "collect_public_source_patterns",
+        lambda *_args, **_kwargs: pytest.fail("defer must skip collection"),
+    )
+    path = tmp_path / "pacing.db"
+    gate = LocalYtDlpPacer(path)
+    gate.impose_cooldown("HTTP_RATE_LIMIT")
+
+    class Provider:
+        pacer = gate
+
+    _run(tmp_path, provider=Provider())
+    saved_path = tmp_path / "last-run.json"
+    audit = json.loads(saved_path.read_text(encoding="utf-8"))
+    audit["result"]["new_unique_video_samples_this_run"] = 99
+    saved_path.write_text(json.dumps(audit), encoding="utf-8")
+    with pytest.raises(ValueError, match="Deferred"):
+        diagnose_source_pattern_collector(
+            state_path=tmp_path / "state.json", report_path=saved_path,
+            launcher_path=tmp_path / "launcher.json", check_tools=False,
+        )
+    audit["result"]["new_unique_video_samples_this_run"] = None
+    audit["result"]["editor_cut_precision"] = 0.99
+    saved_path.write_text(json.dumps(audit), encoding="utf-8")
+    with pytest.raises(ValueError, match="Deferred"):
+        diagnose_source_pattern_collector(
+            state_path=tmp_path / "state.json", report_path=saved_path,
+            launcher_path=tmp_path / "launcher.json", check_tools=False,
+        )
+    audit["result"]["editor_cut_precision"] = None
+    audit["result"]["fabricated_finished_video_evidence"] = True
+    saved_path.write_text(json.dumps(audit), encoding="utf-8")
+    with pytest.raises(ValueError, match="Deferred"):
+        diagnose_source_pattern_collector(
+            state_path=tmp_path / "state.json", report_path=saved_path,
+            launcher_path=tmp_path / "launcher.json", check_tools=False,
+        )
+
+
+def test_corrupt_gate_returns_nonzero_cli_without_network(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from holoclip import cli
+    from holoclip import source_pattern_worker as worker
+    from holoclip.source_ytdlp_pacing import LocalYtDlpPacer
+
+    path = tmp_path / "corrupt.db"
+    path.write_text("unsafe sqlite file", encoding="utf-8")
+    gate = LocalYtDlpPacer(path)
+
+    class Provider:
+        pacer = gate
+
+    async def forbidden(*_args, **_kwargs):
+        pytest.fail("CLI cannot enter real collection with corrupt access state")
+
+    monkeypatch.setattr(worker, "collect_public_source_patterns", forbidden)
+    monkeypatch.setattr(cli, "YtDlpSourceProvider", lambda **_kw: Provider())
+    monkeypatch.setattr(cli, "load_policy_rules", lambda *_args: [])
+
+    response = CliRunner().invoke(cli.app, [
+        "examples-collect-source-patterns",
+        "--store", str(tmp_path / "examples.jsonl"),
+        "--state", str(tmp_path / "state.json"),
+        "--output", str(tmp_path / "video"),
+        "--report-path", str(tmp_path / "last-run.json"),
+    ])
+    assert response.exit_code == 6, response.output
+    result = json.loads(response.stdout)
+    assert result["status"] == "BLOCKED_LOCAL_YTDLP_PACING_STATE"
+    assert result["collection_started"] is False
+    assert result["ready"] is False
+    assert not (tmp_path / "state.json").exists()
+
+
+def test_current_failed_launcher_preserves_same_run_pacing_blocker(
+    tmp_path, monkeypatch,
+):
+    from datetime import datetime, timedelta
+
+    from holoclip import source_pattern_worker as worker
+    from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collector
+    from holoclip.source_ytdlp_pacing import LocalYtDlpPacer
+
+    async def forbidden(*_args, **_kwargs):
+        pytest.fail("broken pacing database must stop before network access")
+
+    monkeypatch.setattr(worker, "collect_public_source_patterns", forbidden)
+    path = tmp_path / "unsafe.db"
+    path.write_bytes(b"not a SQLite gate")
+
+    class Provider:
+        pacer = LocalYtDlpPacer(path)
+
+    _run(tmp_path, provider=Provider())
+    audit = json.loads((tmp_path / "last-run.json").read_text(encoding="utf-8"))
+    start = datetime.fromisoformat(audit["started_at_utc"]) - timedelta(seconds=3)
+    end = datetime.fromisoformat(audit["finished_at_utc"]) + timedelta(seconds=3)
+    (tmp_path / "launcher.json").write_text(json.dumps({
+        "version": "source-pattern-windows-launcher-v1",
+        "status": "FAILED_COLLECTOR_PROCESS", "exit_code": 6,
+        "error_class": None, "ran_collector": True,
+        "started_at_utc": start.isoformat(),
+        "finished_at_utc": end.isoformat(),
+        **{key: NO_GOLD[key] for key in (
+            "source_identity_verified", "reviewed_gold_available",
+            "qualification_allowed", "ready", "production_ready",
+        )},
+    }), encoding="utf-8")
+    diagnosis = diagnose_source_pattern_collector(
+        state_path=tmp_path / "state.json", report_path=tmp_path / "last-run.json",
+        launcher_path=tmp_path / "launcher.json", check_tools=False,
+    )
+    assert diagnosis["status"] == "BLOCKED_LOCAL_YTDLP_PACING_STATE"
+    assert diagnosis["local_collection_health"]["primary_blocker"] == (
+        "LOCAL_YTDLP_PACING_STORAGE_BLOCKED"
+    )
+    # Do not use a past corrupt state audit for a DIFFERENT launcher failure.
+    latest_launcher = json.loads(
+        (tmp_path / "launcher.json").read_text(encoding="utf-8")
+    )
+    latest_launcher["started_at_utc"] = (
+        end + timedelta(seconds=1)
+    ).isoformat()
+    latest_launcher["finished_at_utc"] = (
+        end + timedelta(seconds=2)
+    ).isoformat()
+    (tmp_path / "launcher.json").write_text(json.dumps(latest_launcher), encoding="utf-8")
+    stale = diagnose_source_pattern_collector(
+        state_path=tmp_path / "state.json", report_path=tmp_path / "last-run.json",
+        launcher_path=tmp_path / "launcher.json", check_tools=False,
+    )
+    assert stale["status"] == "BLOCKED_LATEST_WINDOWS_LAUNCH"

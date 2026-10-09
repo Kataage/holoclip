@@ -17,6 +17,43 @@ The target is evidence-backed **corpus-level editorial pattern learning**, not
 necessarily LLM weight fine-tuning. Model fine-tuning can be evaluated later but
 does not replace original-stream/video verification, dataset splits or calibrated QA.
 
+## Safe unattended native source collection across local cooldowns
+
+Before invoking any corpus discovery, probe, bounded video acquisition
+or constructed self-control, the native scheduled collector inspects
+its provider's local yt-dlp pacing database while holding the existing
+exclusive corpus lock. A live bot/429 cooldown or a separate in-flight
+local yt-dlp process yields an explicit zero-network
+`DEFERRED_LOCAL_YTDLP_ACCESS` worker audit. A malformed/unreadable
+pacing DB yields `BLOCKED_LOCAL_YTDLP_PACING_STATE` and a nonzero
+scheduled CLI exit, never deletion or unlocked network fallback.
+
+Both audit statuses use `collection_started=false`, **null** new
+samples/source streams and fixed non-gold state/action codes. Neither
+status is an empty discovery result, failed finished/source video match,
+negative example, successful acquisition, nor completed constructed
+pattern test. Existing launcher history reads the deferral as no
+same-run-correlated sample counts; its zero-acquisition and visual
+noncorroboration streaks must not count a paused invocation. The
+offline doctor rejects artificially positive/new sample counts in
+these audits and distinguishes current same-invocation pacing failures
+from stale prior audits.
+
+After the cooldown has expired, the **next native Windows Task Scheduler
+recurrence** enters the same existing bounded pipeline. This does
+not schedule an additional immediate retry, nor guarantee that YouTube
+has lifted its remote restrictions. The final yt-dlp reservation is
+always checked atomically again immediately before traffic. The local
+task currently defaults to one daily recurrence, independent of the
+six-hour access cooldown.
+
+Local SQLite locking coordinates only processes sharing that
+specific database. Separate PCs under a shared public IP remain
+**uncoordinated**, and a generic SQLite file on SMB/NAS must not be
+claimed as a tested cross-PC distributed lock. This scope is explicit
+rather than making false host-wide/no-ban assertions. No hosted
+GitHub CI media access or account-control bypass is introduced.
+
 ## Local yt-dlp cooldown observability and schema continuity
 
 The optional read-only `examples-ytdlp-access-status` CLI and
