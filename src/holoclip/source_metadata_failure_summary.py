@@ -9,9 +9,6 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from holoclip.corpus_growth import CorpusGrowthState
-
-
 def _public_probe_failure_category(message: str) -> str:
     """Only finite categorical public-access diagnostics, no raw URL or log."""
     normalized = message.casefold()
@@ -58,6 +55,8 @@ def _public_probe_failure_category(message: str) -> str:
 
 def _saved_metadata_probe_failures(state_path: Path) -> dict:
     """Count failed public clip probes without exposing source URLs or stderr."""
+    from holoclip.corpus_growth import CorpusGrowthState
+
     result = {
         "retryable_clip_records": 0,
         "exception_class_counts": {},
