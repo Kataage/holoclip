@@ -109,9 +109,9 @@ try {
             ready = $false
         }
     }
-    [Console]::Out.WriteLine(($result | ConvertTo-Json -Compress -Depth 3))
+    Write-Output ($result | ConvertTo-Json -Compress -Depth 3)
 } catch {
-    [Console]::Out.WriteLine('{"status":"WINDOWS_INSPECTION_FAILED","ready":false}')
+    Write-Output '{"status":"WINDOWS_INSPECTION_FAILED","ready":false}'
     exit 6
 }
 ) {
