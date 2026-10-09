@@ -17,6 +17,50 @@ The target is evidence-backed **corpus-level editorial pattern learning**, not
 necessarily LLM weight fine-tuning. Model fine-tuning can be evaluated later but
 does not replace original-stream/video verification, dataset splits or calibrated QA.
 
+## Optional authenticated trusted-LAN shared-IP pacing coordinator
+
+The native yt-dlp provider may opt into a standard-library LAN
+coordinator through `HOLOCLIP_YTDLP_COORDINATOR_URL` and
+`HOLOCLIP_YTDLP_COORDINATOR_SECRET_FILE`. **Both** must be
+supplied in **every** yt-dlp-capable Windows PC sharing a public
+outward IP; partial configuration, invalid secret, invalid/private
+IP, timeout, connection refusal, redirect, malformed reply,
+invalid HMAC or server outage **fail closed** without falling
+back to a per-PC-only permit. Unconfigured providers retain their
+pre-existing local gate but **must not** be represented as globally
+rate-coordinated.
+
+The coordinator binds to loopback by default; binding to a
+specific RFC1918 LAN IPv4 is explicit and network firewall scope
+must be restricted. Public IPs, hostnames, wildcard binds and
+server redirects are disallowed. A 256-bit secret is user-scoped
+and must be protected/copied by a secure channel; the service
+uses request and response HMAC-SHA256, fresh nonce, timestamp
+acceptance window and replay cache. HTTPS/TLS is **not** provided,
+so deploy only on a trusted LAN: HMAC is not network
+encryption and does not prevent hostile packet dropping. No
+remote media URLs, credentials, account identifiers, clip titles
+or source labels travel over this protocol.
+
+The central persisted SQLite store provides one exclusive timed
+lease, a 20-second minimum between serialized subprocesses, and
+a six-hour shared cooldown on YouTube 429/interactivity challenges.
+Only the owner holding a valid opaque random lease token can
+release it. An unclean client loss or coordinator restart retains
+the active lease until its deadline; early release requires an
+authenticated owner. All known site access violations should
+be reported to the central cooldown before yielding the lease.
+A second local SQLite gate remains defense in depth; it does not
+override a refused/unavailable LAN coordinator.
+
+The coordinator status validates authentication but **cannot
+prove all other PCs are enrolled**, nor guarantee YouTube will
+allow the next request. All tests exercise only loopback/native
+simulated processes (no GitHub-hosted YouTube search or download).
+Human editor/original match evidence remains absent,
+`ready=false`. Real two-host networking and Windows Task
+Scheduler environment propagation remain deployment checks.
+
 ## Safe unattended native source collection across local cooldowns
 
 Before invoking any corpus discovery, probe, bounded video acquisition
