@@ -53,6 +53,11 @@ def test_success_writes_audit_without_gold(tmp_path, monkeypatch):
     assert report["started_at_utc"] <= report["finished_at_utc"]
     assert report["ready"] is False
     assert report["reviewed_gold_available"] is False
+    cache = report["result"]["source_cache_byte_attestation"]
+    assert cache["status"] == "UNKNOWN_NO_SOURCE_CACHE_EVIDENCE"
+    assert cache["source_identity_verified"] is False
+    assert cache["actual_public_video_verified"] is False
+    assert cache["ready"] is False
     # Existing lock file is normal: the OS lock is released on exit.
     assert (tmp_path / ".source-pattern-collector.lock").exists()
     result2 = _run(tmp_path)
