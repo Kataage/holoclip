@@ -17,6 +17,37 @@ The target is evidence-backed **corpus-level editorial pattern learning**, not
 necessarily LLM weight fine-tuning. Model fine-tuning can be evaluated later but
 does not replace original-stream/video verification, dataset splits or calibrated QA.
 
+## Durable Windows operational history and meaningful deltas
+
+The native Task Scheduler launcher now stores up to **90** sanitized,
+append-in-time operational events next to its launcher audit. Events are
+written after each launch (including failed preflight or failed Python/uv
+process) without depending on successful Python import or YouTube access.
+An exclusive local file lock and atomic replacement protect the bounded
+JSON ring, and corrupted/symlinked history fails closed rather than being
+overwritten. Current Windows launcher exit can become nonzero on a history
+write failure; the independent launcher audit and log remain separate.
+
+Historical sample/stream counts are attached to a given event only when
+the collector's last-run JSON is **bounded to that launch's wall-clock
+interval**, with non-gold flags false and finite nonnegative values.
+Otherwise counts remain unknown/null. Such temporal correlation is
+operational bookkeeping, **not** independently verified source identity or
+a human-to-original media match. Do not call a cached cumulative sample
+total "new" because a recent launcher succeeded.
+
+`examples-collector-health` reads this ring without mutation; it rejects
+contradictory status/exit codes, forged positive gold/readiness,
+out-of-order duplicate runs, invalid timestamps, unexpected keys,
+stale counts and oversized event lists. Its summary reports the latest
+two events, last seven events, consecutive failures, status counts and
+differences between two comparable **per-invocation** counts. Null deltas
+mean no basis for comparison. Old events beyond 90 are explicitly outside
+the retained horizon. Raw stderr, clip URLs, titles, saved paths,
+credentials and media are never written into this history. The separate
+offline doctor remains authoritative for current cache SHA attestation.
+Production remains `ready=false` until independent editor/source gold.
+
 ## Local collection health: acquisition-stage diagnosis is not gold
 
 `examples-collector-health` provides a read-only, local-only compact
