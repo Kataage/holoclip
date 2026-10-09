@@ -197,6 +197,56 @@ def test_failed_uv_launch_still_writes_non_green_json(tmp_path, monkeypatch):
     assert report["ready"] is False
 
 
+def test_live_probe_categories_are_no_url_or_raw_stderr(tmp_path):
+    from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
+
+    state = CorpusGrowthState()
+    reasons = [
+        "YtDlpError: ERROR: [youtube] Sign in to confirm you're not a bot "
+        "https://www.youtube.com/watch?v=AAAAAAAAAAA",
+        "YtDlpTimeout: metadata timed out after 240s",
+        "YtDlpError: HTTP Error 403: Forbidden",
+        "YtDlpError: This is a private video; login required",
+        "YtDlpError: ERROR: Unable to extract initial data",
+    ]
+    for index, reason in enumerate(reasons):
+        state.items[f"retry-{index}"] = CorpusGrowthItem(
+            clip_url=f"https://www.youtube.com/watch?v={index:011d}",
+            query="test query", status="retryable", reason=reason,
+        )
+    state_path = tmp_path / "state.json"
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+    found = smoke._saved_metadata_probe_failures(state_path)
+    assert found["retryable_clip_records"] == 5
+    assert found["exception_class_counts"] == {
+        "YtDlpError": 4, "YtDlpTimeout": 1,
+    }
+    assert found["failure_category_counts"] == {
+        "EXTRACTOR_UNSUPPORTED_OR_CHANGED": 1,
+        "HTTP_FORBIDDEN": 1,
+        "NETWORK_OR_PROCESS_TIMEOUT": 1,
+        "VIDEO_REQUIRES_LOGIN_OR_RESTRICTED": 1,
+        "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE": 1,
+    }
+    assert found["raw_error_text_included"] is False
+    assert "youtube.com" not in str(found)
+    assert "AAAAAAAAAAA" not in str(found)
+    audit, doctor = _inputs(samples=0, distinct=0, verified=0)
+    summary = smoke.summarize_smoke(
+        return_code=0, timed_out=False, collector_audit=audit,
+        diagnosis=doctor, metadata_probe_failures=found,
+    )
+    assert summary["public_clip_metadata_probe_failures"] == found
+    assert summary["ready"] is False
+    assert summary["is_unreviewed_operational_smoke_success"] is False
+
+
+def test_probe_classifier_keeps_unknown_failures_unknown():
+    assert smoke._public_probe_failure_category(
+        "unexpected transport problem: https://example.invalid/secret"
+    ) == "UNCLASSIFIED_METADATA_PROBE_FAILURE"
+
+
 def test_workflow_is_single_push_attempt_with_no_video_artifacts():
     yaml = (Path(__file__).resolve().parents[1] /
             ".github/workflows/public-video-smoke.yml").read_text(encoding="utf-8")
