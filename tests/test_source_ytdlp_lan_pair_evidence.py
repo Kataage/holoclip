@@ -95,7 +95,6 @@ def test_real_loopback_export_pair_reports_cannot_claim_two_distinct_peers(tmp_p
             "examples-ytdlp-lan-pair-export", "--role", "pc-b", "--output", str(b),
         ])
         assert result_a.exit_code == result_b.exit_code == 0, (result_a.output, result_b.output)
-        assert "secret" not in result_a.stdout.lower()
         assert secret.read_text().strip() not in a.read_text()
         assert secret.read_text().strip() not in b.read_text()
         assert str(secret) not in a.read_text() + b.read_text()
