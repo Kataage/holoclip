@@ -185,17 +185,9 @@ def _read_audit(path: Path, *, launcher: bool) -> dict | None:
         }
         allowed_audit_fields = {
             "version", "status", "started_at_utc", "finished_at_utc",
-            "result", *allowed_result_fields - {
-                "new_unique_video_samples_this_run",
-                "new_distinct_candidate_streams_this_run",
-                "local_access_state", "local_cooldown_reason",
-                "next_attempt_not_before_utc", "collection_started",
-            },
+            "result", *NO_GOLD, "editor_cut_precision",
+            "editor_cut_recall", "real_original_match_false_positive_rate",
         }
-        allowed_audit_fields.difference_update({"editor_cut_precision",
-            "editor_cut_recall", "real_original_match_false_positive_rate"})
-        allowed_audit_fields.update({"editor_cut_precision",
-            "editor_cut_recall", "real_original_match_false_positive_rate"})
         allowed_statuses = {
             "COOLDOWN_AFTER_YOUTUBE_ACCESS_RESTRICTION",
             "ACTIVE_OTHER_LOCAL_YTDLP_PROCESS",
