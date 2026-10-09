@@ -333,7 +333,10 @@ async def grow_corpus(
             persist()
         if metadata_access_paused:
             break
-    if not discover_only:
+    # This API is also used by full learning growth. A host-wide YouTube
+    # access challenge must not be followed by queued audio/video ingestion
+    # requests from that same local invocation.
+    if not discover_only and not metadata_access_paused:
         while attempted < max_new_examples:
             examples = load_human_clip_store(store)
             trusted = [
