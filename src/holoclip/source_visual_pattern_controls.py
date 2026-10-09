@@ -26,7 +26,7 @@ PATTERNS = {
     "brightness_shift": "constructed_positive",
     "center_zoom_108": "constructed_positive",
     "reversed_time": "constructed_temporal_decoy",
-    "cyclic_time_shift": "constructed_temporal_decoy",
+    "pairwise_time_swap": "constructed_temporal_decoy",
 }
 _NO_GOLD = {
     "source_identity_verified": False,
@@ -148,11 +148,19 @@ def measure_video_pattern_controls(window, *, root: Path, matcher=None) -> dict:
                 pts_seconds=float(i*2),
             ) for i, f in enumerate(reversed(ordinary))
         ]
-        variants["cyclic_time_shift"] = [
+        # Cyclic rotation is NOT a clean negative for a partial subsequence
+        # matcher: 4 frames rotated by one still contain 3 correctly ordered
+        # source frames. Adjacent swaps leave no increasing run of 3 pairs.
+        pairwise = [
+            ordinary[i + 1] if i % 2 == 0 and i + 1 < len(ordinary)
+            else ordinary[i - 1] if i % 2 == 1 else ordinary[i]
+            for i in range(len(ordinary))
+        ]
+        variants["pairwise_time_swap"] = [
             SimpleNamespace(
-                id=f"cyc-{i}", locator=f.locator, checksum=f.checksum,
+                id=f"swap-{i}", locator=f.locator, checksum=f.checksum,
                 pts_seconds=float(i*2),
-            ) for i, f in enumerate(ordinary[1:] + ordinary[:1])
+            ) for i, f in enumerate(pairwise)
         ]
         cases = {}
         for name, expected in PATTERNS.items():
