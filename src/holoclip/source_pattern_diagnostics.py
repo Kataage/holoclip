@@ -175,6 +175,27 @@ def _read_audit(path: Path, *, launcher: bool) -> dict | None:
     if raw["status"] in {
         "DEFERRED_LOCAL_YTDLP_ACCESS", "BLOCKED_LOCAL_YTDLP_PACING_STATE",
     }:
+        allowed_result_fields = {
+            "status", "new_unique_video_samples_this_run",
+            "new_distinct_candidate_streams_this_run", "local_access_state",
+            "local_cooldown_reason", "next_attempt_not_before_utc",
+            "collection_started", *NO_GOLD,
+            "editor_cut_precision", "editor_cut_recall",
+            "real_original_match_false_positive_rate",
+        }
+        allowed_audit_fields = {
+            "version", "status", "started_at_utc", "finished_at_utc",
+            "result", *allowed_result_fields - {
+                "new_unique_video_samples_this_run",
+                "new_distinct_candidate_streams_this_run",
+                "local_access_state", "local_cooldown_reason",
+                "next_attempt_not_before_utc", "collection_started",
+            },
+        }
+        allowed_audit_fields.difference_update({"editor_cut_precision",
+            "editor_cut_recall", "real_original_match_false_positive_rate"})
+        allowed_audit_fields.update({"editor_cut_precision",
+            "editor_cut_recall", "real_original_match_false_positive_rate"})
         allowed_statuses = {
             "COOLDOWN_AFTER_YOUTUBE_ACCESS_RESTRICTION",
             "ACTIVE_OTHER_LOCAL_YTDLP_PROCESS",
@@ -185,6 +206,16 @@ def _read_audit(path: Path, *, launcher: bool) -> dict | None:
             else None
         )
         if (not isinstance(result, dict)
+                or set(result) != allowed_result_fields
+                or set(raw) != allowed_audit_fields
+                or any(result.get(key) is not None for key in (
+                    "editor_cut_precision", "editor_cut_recall",
+                    "real_original_match_false_positive_rate",
+                ))
+                or any(raw.get(key) is not None for key in (
+                    "editor_cut_precision", "editor_cut_recall",
+                    "real_original_match_false_positive_rate",
+                ))
                 or result.get("status") != raw["status"]
                 or any(result.get(k) is not v for k, v in NO_GOLD.items())
                 or result.get("collection_started") is not False
