@@ -22,7 +22,9 @@ from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings
 from holoclip.corpus_growth import grow_corpus
 from holoclip.source_candidate_visual import verify_pending_source_visual
 from holoclip.source_visual_control_report import report_saved_source_controls
-from holoclip.source_pattern_worker import run_locked_source_pattern_collection
+from holoclip.source_pattern_worker import (
+    _state_lock, run_locked_source_pattern_collection,
+)
 from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
@@ -1036,6 +1038,19 @@ def examples_holdout_status(
     typer.echo(json.dumps({**report, "output": str(output)}, ensure_ascii=False, indent=2))
 
 
+def _blocked_corpus_state_writer(state_path: Path) -> None:
+    """Never let a skipped writer masquerade as a successful run."""
+    typer.echo(json.dumps({
+        "status": "BLOCKED_CONCURRENT_CORPUS_STATE_WRITER",
+        "state_path": str(state_path),
+        "ready": False,
+        "production_ready": False,
+        "qualification_allowed": False,
+        "reviewed_gold_available": False,
+    }, ensure_ascii=False))
+    raise typer.Exit(6)
+
+
 @app.command("examples-source-controls-report")
 def examples_source_controls_report(
     state: Path = typer.Option(Path("data/examples/corpus_growth.json")),
@@ -1087,11 +1102,14 @@ def examples_verify_source_visual(
     """Probe pending public source videos visually; never certify source identity."""
     _load_env_file()
     provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
-    report = verify_pending_source_visual(
-        provider, store=store, state_path=state, output=output,
-        policy_rules=load_policy_rules(policy_file), max_clips=max_clips,
-        max_candidates=max_candidates, progress=typer.echo,
-    )
+    with _state_lock(state) as acquired:
+        if not acquired:
+            _blocked_corpus_state_writer(state)
+        report = verify_pending_source_visual(
+            provider, store=store, state_path=state, output=output,
+            policy_rules=load_policy_rules(policy_file), max_clips=max_clips,
+            max_candidates=max_candidates, progress=typer.echo,
+        )
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
 
@@ -1184,7 +1202,10 @@ def examples_grow_corpus(
                             and ready_profile is not None):
                         break
                 return report
-    report = asyncio.run(run())
+    with _state_lock(state) as acquired:
+        if not acquired:
+            _blocked_corpus_state_writer(state)
+        report = asyncio.run(run())
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
 

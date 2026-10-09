@@ -22,7 +22,10 @@ does not replace original-stream/video verification, dataset splits or calibrate
 `examples-collect-source-patterns` is a bounded, restartable batch runner for
 the already implemented five constructed video patterns. It runs metadata-only
 public clip discovery (optional), then the existing policy-checked yt-dlp
-source/video cross-check across persisted round-robin pending clip keys. Each sampled shortlisted\noriginal (up to two per pending clip/cycle) receives independent constructed\ncontrols on its already acquired bounded video; one decoder or control-suite\nerror does not suppress another candidate's diagnostics. Each
+source/video cross-check across persisted round-robin pending clip keys. Each sampled shortlisted
+original (up to two per pending clip/cycle) receives independent constructed
+controls on its already acquired bounded video; one decoder or control-suite
+error does not suppress another candidate's diagnostics. Each
 cycle reports attempted clip keys, latest acquisition/decoder/policy outcomes
 and the **change in globally deduplicated** measured source samples. Results
 are saved by the established SHA-bound control histories in corpus state.
@@ -57,10 +60,15 @@ record (with only the exception **class**) on error. Intermediate clip
 observations are checkpointed by the existing collection pipeline. An error
 record is never counted as a measurement or used to infer success.
 
-This guards only invocations routed through this worker. Independent
-`examples-grow-corpus` or `examples-verify-source-visual` calls touching
-the same state must not run at the same time, or would need a shared lock in a
-separate increment. Running GitHub CI and synthetic MP4 fixtures does **not**
+The CLI entrypoints `examples-grow-corpus` (including `--discover-only`) and
+`examples-verify-source-visual` now use the same state-directory lock as
+`examples-collect-source-patterns`. An overlapping CLI writer exits with
+code 6 and a `BLOCKED_CONCURRENT_CORPUS_STATE_WRITER` diagnostic **before
+media acquisition**, rather than clobbering another run's persisted cursor or
+evidence. This protects supported public CLI writers, not independent Python
+imports or third-party tools writing the same JSON. The lock is OS-released
+after crashes; no deletion of its sentinel file is required. Running GitHub
+CI and synthetic MP4 fixtures does **not**
 count as measured Hololive public-stream data. Source-pattern accuracy
 without reviewed gold remains unmeasured, and `ready=false` is mandatory.
 

@@ -34,7 +34,8 @@ with preserved artifacts. See [production provider setup](docs/production-provid
 
 The source-pattern collector combines **metadata-only public clip discovery**
 with rotating, bounded yt-dlp video checks. It reuses the acquired sections,
-persists the existing SHA-bound five-pattern histories for each sampled\nsource candidate (up to two per clip per cycle), and returns a
+persists the existing SHA-bound five-pattern histories for each sampled
+source candidate (up to two per clip per cycle), and returns a
 source-diverse report with explicit unknowns. No cloud model, GPU, URLs, gold
 labels or paid service are required:
 
@@ -73,11 +74,16 @@ and public YouTube videos accessible. Requires Windows Task Scheduler, `uv`,
 FFmpeg/FFprobe, Deno >=2.3 or Node >=22; yt-dlp itself is managed by uv.
 The installer does not start a live collection by itself.
 
-A concurrent collector invocation exits with a nonzero code (rather than\nreporting a skipped scheduled run as success).\n\nThe collector now holds an OS-released cross-process advisory lock on its state
-file directory: two scheduled/manual collector instances cannot update the same
-state concurrently; a crashed process releases its lock. Persisted state can
-still be modified by unrelated direct commands, so do not run separate corpus
-growth/verification commands against the same state simultaneously. A compact
+A concurrent collector invocation exits with a nonzero code (rather than
+reporting a skipped scheduled run as success).
+
+The collector now holds an OS-released cross-process advisory lock on its state
+file directory: the collector, `examples-grow-corpus` and
+`examples-verify-source-visual` now share a single nonblocking lock on their
+state-file directory. Overlapping CLI operations exit nonzero before accessing
+public video, so the unattended collector cannot race these manual commands.
+A crashed process releases its OS lock. Other direct Python callers that write
+the same corpus state must explicitly use the shared lock. A compact
 last-run audit, including failures, is saved at
 `data/examples/source-pattern-last-run.json`. It remains unreviewed and is
 never proof of cut precision, source identity or production readiness. Standard
