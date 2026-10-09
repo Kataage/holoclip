@@ -46,7 +46,7 @@ def test_five_real_mp4_decoded_control_patterns_are_measured_without_gold(tmp_pa
     assert len(result["measured_frame_sha256s"]) == 4
     assert result["patterns"]["jpeg_overlay"]["behaved_as_constructed"] is True
     assert result["patterns"]["reversed_time"]["behaved_as_constructed"] is True
-    assert result["patterns"]["cyclic_time_shift"]["behaved_as_constructed"] is True
+    assert result["patterns"]["pairwise_time_swap"]["behaved_as_constructed"] is True
     assert result["source_identity_verified"] is False
     assert result["real_human_editor_labels"] is False
     assert result["official_hololive_source_verified"] is False
