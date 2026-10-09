@@ -66,6 +66,99 @@ def _latest_attempt_outcomes(state_path: Path, keys: list[str]) -> dict:
     return dict(sorted(counts.items()))
 
 
+def _latest_attempt_stage_diagnostics(state_path: Path, keys: list[str]) -> dict:
+    """Disjoint diagnostics for each stage, not a proxy for real-video gold.
+
+    The historic single combined outcome prefers a successful constructed
+    control over a failed source/finished visual match. Keep those independent
+    so the unattended operator can locate acquisition and evidence gaps.
+    Every count here is a *saved record*, not verified video identity.
+    """
+    if len(keys) != len(set(keys)) or not all(isinstance(k, str) for k in keys):
+        raise ValueError("Duplicate or malformed attempted visual clip keys")
+    candidate_statuses: dict[str, int] = {}
+    pattern_statuses: dict[str, int] = {}
+    probe_modes: dict[str, int] = {}
+    clip_statuses: dict[str, int] = {}
+    candidate_count = 0
+    sampled_source_section_records = 0
+    finished_sha_recorded_clips = 0
+    pattern_execution_failures = 0
+    cross_revisit_attempted_clips = 0
+    if keys:
+        state = CorpusGrowthState.model_validate_json(
+            state_path.read_text(encoding="utf-8")
+        )
+        for key in keys:
+            item = state.items.get(key)
+            if item is None or item.status != "source_visual_pending":
+                raise ValueError("Missing or changed attempted visual clip")
+            probe = (item.source_scout or {}).get("visual_probe")
+            if not isinstance(probe, dict):
+                raise ValueError("Missing persisted source-visual attempt")
+            status = probe.get("status")
+            observations = probe.get("candidate_observations")
+            if not isinstance(status, str) or not status:
+                raise ValueError("Invalid persisted visual clip status")
+            if not isinstance(observations, list):
+                raise ValueError("Malformed source acquisition observations")
+            clip_statuses[status] = clip_statuses.get(status, 0) + 1
+            if probe.get("finished_video_sha256") is not None:
+                digest = probe["finished_video_sha256"]
+                if (not isinstance(digest, str) or len(digest) != 64
+                        or any(c not in "0123456789abcdef" for c in digest)):
+                    raise ValueError("Invalid recorded finished video SHA-256")
+                finished_sha_recorded_clips += 1
+            if "cross_revisit_step_before" in probe:
+                cross_revisit_attempted_clips += 1
+            for observed in observations:
+                if not isinstance(observed, dict):
+                    raise ValueError("Invalid source acquisition observation")
+                outcome = observed.get("status")
+                if not isinstance(outcome, str) or not outcome:
+                    raise ValueError("Invalid source acquisition status")
+                candidate_count += 1
+                candidate_statuses[outcome] = candidate_statuses.get(outcome, 0) + 1
+                mode = observed.get("probe_mode")
+                if mode is not None:
+                    if not isinstance(mode, str) or not mode:
+                        raise ValueError("Malformed source probe mode")
+                    probe_modes[mode] = probe_modes.get(mode, 0) + 1
+                windows = observed.get("sampled_source_windows")
+                if not isinstance(windows, list):
+                    raise ValueError("Malformed sampled source section records")
+                sampled_source_section_records += len(windows)
+                pattern = observed.get("constructed_pattern_observation")
+                if pattern is not None:
+                    result = pattern.get("result") if isinstance(pattern, dict) else None
+                    pattern_status = result.get("status") if isinstance(result, dict) else None
+                    if not isinstance(pattern_status, str) or not pattern_status:
+                        raise ValueError("Invalid constructed pattern status")
+                    pattern_statuses[pattern_status] = (
+                        pattern_statuses.get(pattern_status, 0) + 1
+                    )
+                if "constructed_pattern_error_class" in observed:
+                    if pattern is not None or not isinstance(
+                        observed["constructed_pattern_error_class"], str
+                    ):
+                        raise ValueError("Contradictory pattern execution observation")
+                    pattern_execution_failures += 1
+    return {
+        "attempted_clip_records": len(keys),
+        "candidate_observation_records": candidate_count,
+        "finished_video_sha_recorded_clips": finished_sha_recorded_clips,
+        "source_window_section_records": sampled_source_section_records,
+        "constructed_pattern_execution_failures": pattern_execution_failures,
+        "cross_revisit_attempted_clips": cross_revisit_attempted_clips,
+        "clip_status_counts": dict(sorted(clip_statuses.items())),
+        "candidate_visual_status_counts": dict(sorted(candidate_statuses.items())),
+        "constructed_pattern_status_counts": dict(sorted(pattern_statuses.items())),
+        "source_probe_mode_counts": dict(sorted(probe_modes.items())),
+        "measured_original_match_gold": False,
+        "record_counts_are_verified_public_media": False,
+    }
+
+
 async def _no_ingest(**_kwargs):
     raise AssertionError("Metadata-only source discovery must never ingest media")
 
@@ -122,6 +215,9 @@ async def collect_public_source_patterns(
             "attempted_clips": observed["attempted"],
             "verification_outcomes": observed["counts"],
             "source_pattern_attempt_outcomes": counts,
+            "stage_diagnostics": _latest_attempt_stage_diagnostics(
+                state_path, keys,
+            ),
             "new_unique_video_samples": (
                 updated["real_measured_source_video_samples"]
                 - previous["real_measured_source_video_samples"]
