@@ -89,9 +89,16 @@ acquisition. A timed-out native process produces a diagnostic
 `YtDlpTimeout` and is **not retried** just because a fresh nightly yt-dlp
 version might exist. The next scheduled run can resume from persisted
 cursors when the direct process has ended; no timeout counts as a negative
-source match or reviewed gold. This process deadline does not guarantee
-recursive cleanup of descendant FFmpeg processes if a platform leaves one
-running; such leftovers require separate OS-level supervision.
+source match or reviewed gold. The subprocess runner now creates a private POSIX process group or
+Windows process group, and on timeout sends a group kill (POSIX) or
+`taskkill /PID /T /F` (Windows) to target the original process **and
+its descendants** before bounded pipe draining. A failed cleanup is
+reported as `TREE_CLEANUP_UNCONFIRMED` instead of claiming recovery.
+This has real OS-process regression tests on Ubuntu and Windows that
+spawn an offline grandchild and verify it cannot execute after timeout.
+Descendants that intentionally detach into a separate session or escape
+the Windows parent tree remain outside the guarantee; no user or
+unrelated process groups are targeted.
 
 ### Windows unattended source-pattern collection
 

@@ -47,6 +47,9 @@ jobs:
       - name: Verify Windows corpus locks and fail-closed diagnostics
         run: |
           pytest -q tests/test_source_pattern_worker.py tests/test_corpus_state_writer_lock.py tests/test_source_pattern_diagnostics.py
+      - name: Verify real Windows native descendant cleanup without media
+        run: |
+          pytest -q tests/test_source_ytdlp.py -k "native_process or timeout_terminates_descendant_process"
       - name: Exercise Windows PowerShell launcher with mocked local binaries
         run: |
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-source-pattern-windows.ps1"
