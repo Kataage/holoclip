@@ -17,6 +17,29 @@ The target is evidence-backed **corpus-level editorial pattern learning**, not
 necessarily LLM weight fine-tuning. Model fine-tuning can be evaluated later but
 does not replace original-stream/video verification, dataset splits or calibrated QA.
 
+## Local collection health: acquisition-stage diagnosis is not gold
+
+`examples-collector-health` provides a read-only, local-only compact
+diagnosis using the same optional Windows JSON settings file as the native
+Task Scheduler launcher. It checks the latest launcher and collector audit,
+persisted retryable metadata categories, stage-funnel records, and the
+**currently rehashed** bounded on-disk source cache. All results use fixed
+status/action codes with no raw metadata error text, clip URL, title,
+cookie or filesystem path. The full `examples-collector-doctor` report
+exposes the same information as a `local_collection_health` member.
+
+Triage prioritizes real prelaunch/tool/runtime failures and host-wide
+YouTube challenges before interpreting any downstream missing evidence;
+it also distinguishes corrupt local cache from partial cache coverage,
+a missing finished-video record, missing original source sections,
+sampled (unreviewed) visual corroboration and constructed control
+measurements. Historical stage counts and SHA/receipt checks are separate.
+A positive local cache byte check is **not** a verified YouTube download,
+candidate-original identity, editorial correctness or precision/recall.
+No status promotes learned examples, human gold or `ready`.
+All CI cases are mocked and offline; the real Windows source collector is
+opt-in and maintains its own evidence and recovery cursors.
+
 ## Versioned Windows-local collection configuration
 
 A native Windows Task Scheduler launch can optionally load the
