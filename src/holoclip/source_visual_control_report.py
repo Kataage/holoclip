@@ -12,6 +12,7 @@ from pathlib import Path
 from holoclip.corpus_growth import CorpusGrowthState
 from holoclip.examples import human_clip_identity
 from holoclip.source_visual_real_controls import VERSION as CONTROL_VERSION
+from holoclip.source_visual_pattern_report import report_saved_patterns
 
 VERSION = "real-acquisition-constructed-control-observer-v1"
 MAX_HISTORY = 24
@@ -155,7 +156,8 @@ def report_saved_source_controls(state_path: Path) -> dict:
     if not state_path.is_file():
         return {**summarize_control_history([]),
                 "status": "UNKNOWN_NO_CORPUS_STATE",
-                "saved_source_state_checked": False}
+                "saved_source_state_checked": False,
+                "constructed_pattern_audit": report_saved_patterns(state_path)}
     state = CorpusGrowthState.model_validate_json(
         state_path.read_text(encoding="utf-8")
     )
@@ -178,6 +180,7 @@ def report_saved_source_controls(state_path: Path) -> dict:
         histories.extend(records)
     return {**summarize_control_history(histories),
             "saved_source_state_checked": True,
+            "constructed_pattern_audit": report_saved_patterns(state_path),
             "pending_clip_count": sum(
                 item.status == "source_visual_pending"
                 for item in state.items.values()

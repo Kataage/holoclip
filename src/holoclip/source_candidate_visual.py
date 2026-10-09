@@ -30,6 +30,13 @@ from holoclip.source_visual_control_report import (
     VERSION as CONTROL_REPORT_VERSION, checked_control_history,
     add_control_result, summarize_control_history,
 )
+from holoclip.source_visual_pattern_controls import (
+    VERSION as PATTERN_VERSION, measure_video_pattern_controls,
+)
+from holoclip.source_visual_pattern_report import (
+    VERSION as PATTERN_REPORT_VERSION, checked_pattern_history,
+    add_pattern_result, summarize_pattern_results,
+)
 from holoclip.providers.source.yt_dlp import YtDlpSourceProvider
 from holoclip.source_visual_refinement import (
     VERSION as REFINEMENT_VERSION, adaptive_refinement_starts, make_weak_hint,
@@ -42,7 +49,7 @@ from holoclip.source_visual_assessment import (
     checked_visual_candidate_assessment,
 )
 
-VERSION = "bounded-shortlist-video-probes-v6"
+VERSION = "bounded-shortlist-video-probes-v7"
 WINDOW_SECONDS = 12.
 MAX_CLIPS = 2
 MAX_CANDIDATES = 2
@@ -335,6 +342,8 @@ def verify_pending_source_visual(
             "independent_pixel_check_version": PIXEL_VERSION,
             "measured_video_control_version": CONTROL_VERSION,
             "measured_control_report_version": CONTROL_REPORT_VERSION,
+            "measured_pattern_suite_version": PATTERN_VERSION,
+            "measured_pattern_report_version": PATTERN_REPORT_VERSION,
             **_NO_GOLD,
         }
 
@@ -393,6 +402,14 @@ def verify_pending_source_visual(
             )
         except ValueError:
             finish("BLOCKED_INVALID_REAL_VIDEO_CONTROL_HISTORY")
+            continue
+        try:
+            pattern_history = checked_pattern_history(
+                scout.get("real_video_pattern_history"),
+                clip_id=clip_id, candidate_ids=candidate_ids,
+            )
+        except ValueError:
+            finish("BLOCKED_INVALID_REAL_VIDEO_PATTERN_HISTORY")
             continue
         saved_refinements = scout.get("visual_refinements", {})
         if not isinstance(saved_refinements, dict):
@@ -578,6 +595,23 @@ def verify_pending_source_visual(
                         report["constructed_control_summary"] = (
                             summarize_control_history(control_history)
                         )
+                        pattern_result = measure_video_pattern_controls(
+                            windows[0], root=output / "pattern-controls",
+                        )
+                        pattern_history, new_pattern = add_pattern_result(
+                            pattern_history, clip_id=clip_id,
+                            candidate_ids=candidate_ids,
+                            source_id=source.external_id, result=pattern_result,
+                        )
+                        scout["real_video_pattern_history"] = pattern_history
+                        report["constructed_pattern_observation"] = {
+                            "source_stream_id": source.external_id,
+                            "new_measured_pattern_sample": new_pattern,
+                            "result": pattern_result,
+                        }
+                        report["constructed_pattern_summary"] = (
+                            summarize_pattern_results(pattern_history)
+                        )
                     visual = compare_sequences(finished, windows)
                     if (not isinstance(visual, dict)
                             or any(visual.get(flag) is not False for flag in _NO_GOLD)
@@ -670,6 +704,9 @@ def verify_pending_source_visual(
             scout["visual_candidate_assessment"] = assessment
             report["constructed_control_summary"] = summarize_control_history(
                 control_history
+            )
+            report["constructed_pattern_summary"] = summarize_pattern_results(
+                pattern_history
             )
             report["cumulative_source_visual_support"] = ledger["summary"]
             report["candidate_assessment"] = assessment
