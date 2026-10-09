@@ -58,6 +58,27 @@ persistent background daemon or proof that live media has already been collected
 Output may contain zero measured cases; unsupported or failed acquisitions remain
 unknown, never measured negatives or human-editor gold. `ready=false` holds.
 
+### Offline unattended collector diagnosis
+
+The no-download, no-API doctor can be run **before installing the scheduled
+task** and again after any unattended execution:
+
+```powershell
+uv run --extra media holoclip examples-collector-doctor
+# To inspect saved evidence without checking installed tools:
+uv run holoclip examples-collector-doctor --no-check-tools
+```
+
+It checks whether `uv`, FFmpeg, FFprobe, and a supported Deno/Node runtime
+are installed (no network or media download), summarizes the persisted
+pending queue, most recent probe failure categories, recorded new samples
+vs cumulative totals, and the latest local launch/collector failure. It
+never claims real editor precision, verified source identity or readiness.
+The launcher writes a **separate**
+`data/examples/source-pattern-launcher-last-run.json` even when `uv`
+or FFmpeg is unavailable, so a previous successful collector report cannot
+hide the most recent failed scheduled invocation.
+
 ### Windows unattended source-pattern collection
 
 An opt-in Windows Task Scheduler installation is available for machines running
