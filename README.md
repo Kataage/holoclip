@@ -133,20 +133,27 @@ Counters `source_visual_newly_pending` and
 visual evidence work from existing pending clips. Existing training/holdout
 assignments are not rewritten or silently migrated.
 
-### Exhausted source scans do not redownload finished video
+### Finite output/source pairing revisits after original-source scans
 
-A persisted shortlist whose **every** original has exhausted its bounded,
-non-repeating source-window cursor (and has no pending local refinement) is
-checked against fresh public-source metadata and current policy **before**
-another finished-video acquisition. If IDs, durations and rights are still
-unchanged, the collector records
-`UNKNOWN_ALL_CANDIDATE_SOURCE_SCANS_EXHAUSTED` and performs no media
-download for that attempt. If a candidate is still unscanned, metadata
-cannot be confirmed, or source properties changed, the ordinary guarded
-measurement path runs instead. The clip remains pending and unverified.
-Source-window exhaustion is **not** exhaustive source/finished cross-product
-coverage, an editor negative, original-stream proof, or reviewer gold.
-A separate multi-window revisit strategy is required for broader recall.
+After every saved original-source scan reaches its deterministic budget,
+the collector attempts a **finite** second pass against other finished-clip
+windows. For each eligible finished window and source-candidate batch it
+checks only the first two groups of three original windows (at most six
+source intervals per candidate/finished combination). Separate durable
+`visual_cross_revisit_step` and layout metadata resume across runs without
+resetting old source-scan cursors, replacing saved source hashes or falsely
+extending original-search coverage. A changed shortlist, finished-window
+layout or per-run candidate batch size is explicitly blocked instead of
+reinterpreting the old cursor. All media acquisition, identity, and current
+rights checks remain in force.
+
+Once the finite paired-revisit budget is consumed, the collector rechecks
+candidate public metadata and policy before declining further media
+downloads with `UNKNOWN_ALL_CANDIDATE_SOURCE_SCANS_EXHAUSTED`. The new
+revisit fields remain **sample-only** observations, not a full source by
+output Cartesian search, an editor negative, gold source identity, recall
+or permission to change `ready=false`. Missing or unsafe current metadata
+does not count as successful pair verification.
 
 ### Windows unattended source-pattern collection
 

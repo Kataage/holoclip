@@ -49,7 +49,8 @@ from holoclip.source_visual_assessment import (
     checked_visual_candidate_assessment,
 )
 
-VERSION = "bounded-shortlist-video-probes-v7"
+VERSION = "bounded-shortlist-video-probes-v8"
+CROSS_REVISIT_SOURCE_GROUPS = 2  # two distinct 3-window groups per output interval
 WINDOW_SECONDS = 12.
 MAX_CLIPS = 2
 MAX_CANDIDATES = 2
@@ -307,6 +308,54 @@ def _all_saved_source_scans_exhausted(scout: dict) -> bool:
     return True
 
 
+def _bounded_cross_revisit_schedule(
+    scout: dict, finished_starts: list[float], max_candidates: int,
+) -> dict | None:
+    """Choose a finite, persisted finished/source recheck after coarse exhaustion.
+
+    This is a small *sample* of pairs, not an exhaustive output x source
+    search. A separate step cursor avoids mutating original scan history.
+    """
+    candidates = scout["candidate_sources"]
+    step = scout.get("visual_cross_revisit_step", 0)
+    if type(step) is not int or step < 0:
+        raise ValueError("Invalid cross-window revisit cursor")
+    # Revisiting the same single output interval adds no pairing diversity.
+    batches = math.ceil(len(candidates) / max_candidates)
+    total = (len(finished_starts) * batches * CROSS_REVISIT_SOURCE_GROUPS
+             if len(finished_starts) >= 2 else 0)
+    # A schedule step has no meaning if a later invocation changes batch
+    # width, shortlist identity/order, or the finished duration/window set.
+    # Never silently reinterpret a persisted counter under a new layout.
+    layout = {
+        "version": "bounded-output-source-pairs-v1",
+        "candidate_ids": [entry["source_stream_id"] for entry in candidates],
+        "finished_starts": finished_starts,
+        "max_candidates": max_candidates,
+    }
+    saved_layout = scout.get("visual_cross_revisit_layout")
+    if ((saved_layout is not None and saved_layout != layout)
+            or (saved_layout is None and step != 0)):
+        raise ValueError("Cross-window revisit layout changed or missing")
+    if step > total:
+        raise ValueError("Cross-window revisit cursor exceeds bounded schedule")
+    if step == total:
+        return None
+    position, source_group = divmod(step, CROSS_REVISIT_SOURCE_GROUPS)
+    finished_index, candidate_batch = divmod(position, batches)
+    start = candidate_batch * max_candidates
+    return {
+        "step": step,
+        "layout": layout,
+        "total_steps": total,
+        "source_group": source_group,
+        "finished_index": finished_index,
+        "candidate_indices": list(range(
+            start, min(len(candidates), start + max_candidates),
+        )),
+    }
+
+
 def _video_measure(acquired, root: Path, *, asset_id: str, start: float,
                    end: float, measure, probe):
     media = Path(acquired.media_path)
@@ -413,6 +462,8 @@ def verify_pending_source_visual(
                 or scout.get("visual_candidate_round", 0) < 0
                 or type(scout.get("visual_finished_round", 0)) is not int
                 or scout.get("visual_finished_round", 0) < 0
+                or type(scout.get("visual_cross_revisit_step", 0)) is not int
+                or scout.get("visual_cross_revisit_step", 0) < 0
                 or not all(isinstance(entry, dict)
                            and isinstance(entry.get("source_stream_id"), str)
                            for entry in scout["candidate_sources"])
@@ -476,12 +527,24 @@ def verify_pending_source_visual(
             if not finished_starts:
                 finish("BLOCKED_NO_VALID_FINISHED_WINDOWS")
                 continue
-            # Reaching the end of *every* saved source scan is not a
-            # source-mismatch judgment. Avoid a redundant finished-video
-            # download on future unattended runs, but re-probe all current
-            # public originals: duration, identity and rights may have changed.
-            # Missing/stale metadata falls through to the guarded normal path.
+            # After all original-only scan ranges are consumed, recheck a
+            # finite sample of distinct output/source window pairs. Persist
+            # the revisit position separately; never reset coarse cursors or
+            # claim the resulting sparse sample is exhaustive source truth.
+            cross_revisit = None
             if _all_saved_source_scans_exhausted(scout):
+                try:
+                    cross_revisit = _bounded_cross_revisit_schedule(
+                        scout, finished_starts, max_candidates,
+                    )
+                except ValueError:
+                    finish("BLOCKED_INVALID_CROSS_REVISIT_SCHEDULE")
+                    continue
+            # Once these bounded rechecks are also spent, avoid pointless
+            # finished-video downloads. Validate current original metadata
+            # and rights first; drift falls through to the normal guarded path.
+            if (_all_saved_source_scans_exhausted(scout)
+                    and cross_revisit is None):
                 unchanged = True
                 for candidate in scout["candidate_sources"]:
                     url = candidate.get("source_url")
@@ -512,10 +575,18 @@ def verify_pending_source_visual(
                         scout["candidate_sources"]
                     )
                     report["scan_exhaustion_is_editor_negative"] = False
+                    report["cross_revisit_budget_complete"] = True
                     finish("UNKNOWN_ALL_CANDIDATE_SOURCE_SCANS_EXHAUSTED")
                     continue
             finished_round = scout.get("visual_finished_round", 0)
-            if saved_refinements:
+            if cross_revisit is not None:
+                clip_start = finished_starts[cross_revisit["finished_index"]]
+                report["cross_revisit_method"] = "bounded-output-source-pairs-v1"
+                report["cross_revisit_step_before"] = cross_revisit["step"]
+                report["cross_revisit_source_group"] = cross_revisit["source_group"]
+                report["cross_revisit_finished_index"] = cross_revisit["finished_index"]
+                report["cross_revisit_total_steps"] = cross_revisit["total_steps"]
+            elif saved_refinements:
                 clip_start = scout.get(
                     "visual_finished_focus_start", finished_starts[0],
                 )
@@ -558,10 +629,13 @@ def verify_pending_source_visual(
             round_number = scout.get("visual_candidate_round", 0)
             if type(round_number) is not int or round_number < 0:
                 raise ValueError("Invalid saved candidate rotation cursor")
-            selection = [
-                (round_number*max_candidates + i) % len(available)
-                for i in range(min(max_candidates, len(available)))
-            ]
+            selection = (
+                cross_revisit["candidate_indices"]
+                if cross_revisit is not None else [
+                    (round_number*max_candidates + i) % len(available)
+                    for i in range(min(max_candidates, len(available)))
+                ]
+            )
             report["candidate_round_before"] = round_number
             report["unprobed_shortlist_candidates"] = len(available) - len(selection)
             for index in selection:
@@ -608,7 +682,18 @@ def verify_pending_source_visual(
                         continue
                     hint = refinements.get(source.external_id)
                     mode = "coarse_breadth_first"
-                    if hint is not None:
+                    if cross_revisit is not None:
+                        # Cross-check already measured coarse positions with
+                        # other finished sections; never rewind saved source
+                        # cursors or replace SHA-bound local refinements.
+                        mode = "bounded_cross_revisit"
+                        starts = _starts(
+                            source.duration, cross_revisit["source_group"],
+                        )
+                        observed["cross_revisit_source_group"] = (
+                            cross_revisit["source_group"]
+                        )
+                    elif hint is not None:
                         try:
                             starts = adaptive_refinement_starts(
                                 hint, source_id=source.external_id,
@@ -736,7 +821,11 @@ def verify_pending_source_visual(
                         raise ValueError("Unverified image pair was promoted")
                     if weak_window is None and weak_count not in (0, None):
                         raise ValueError("Contradictory weak image hint count")
-                    if mode == "one_shot_local_refinement":
+                    if mode == "bounded_cross_revisit":
+                        # Reobservations do not rewrite existing source scan
+                        # coverage or create stale refinement hints.
+                        observed["scan_cursor_after"] = cursor
+                    elif mode == "one_shot_local_refinement":
                         # A local check consumes exactly one stored hint.
                         # The next cycle resumes the original broad search.
                         refinements.pop(source.external_id, None)
@@ -792,6 +881,11 @@ def verify_pending_source_visual(
                     persist()
             scout["visual_candidate_round"] = round_number + 1
             report["candidate_round_after"] = round_number + 1
+            if cross_revisit is not None:
+                scout["visual_cross_revisit_layout"] = cross_revisit["layout"]
+                scout["visual_cross_revisit_step"] = cross_revisit["step"] + 1
+                report["cross_revisit_step_after"] = cross_revisit["step"] + 1
+                report["cross_revisit_is_exhaustive_pair_coverage"] = False
             if scout.get("visual_refinements"):
                 # All queued local checks must use the exact same finished
                 # media interval, otherwise the SHA-bound hints are stale.
