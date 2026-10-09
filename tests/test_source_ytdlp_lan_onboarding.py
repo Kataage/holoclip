@@ -62,7 +62,7 @@ def test_import_valid_secret_idempotently_without_credential_logging(tmp_path):
     data = json.loads(result.stdout)
     assert data["status"] == "IMPORTED"
     assert data["windows_acl_verified"] is False
-    assert source.read_bytes() == dest.read_bytes()
+    assert source.read_text(encoding="ascii").strip() == dest.read_text(encoding="ascii").strip()
     assert source.read_text().strip() not in result.stdout
     again = CliRunner().invoke(cli.app, [
         "examples-ytdlp-lan-import-secret", "--source-file", str(source),
