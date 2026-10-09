@@ -15,6 +15,7 @@ from holoclip.corpus_growth import CorpusGrowthState
 from holoclip.providers.source.yt_dlp import detect_js_runtime
 from holoclip.source_pattern_worker import VERSION as WORKER_VERSION
 from holoclip.source_visual_pattern_report import report_saved_patterns
+from holoclip.source_metadata_failure_summary import _saved_metadata_probe_failures
 from holoclip.source_video_cache_audit import (
     audit_cached_source_video_sections, checked_cached_video_attestation,
 )
@@ -240,6 +241,15 @@ def diagnose_source_pattern_collector(
     tools = _local_tools(check_tools)
     latest_report = recorded["status"] if recorded else "UNKNOWN_NO_COLLECTOR_AUDIT"
     latest_launcher = launcher["status"] if launcher else "UNKNOWN_NO_LAUNCHER_AUDIT"
+    discovery = (
+        recorded["result"].get("discovery")
+        if recorded and isinstance(recorded.get("result"), dict) else None
+    )
+    metadata_paused = (
+        isinstance(discovery, dict)
+        and discovery.get("metadata_access_paused") is True
+    )
+    metadata_failures = _saved_metadata_probe_failures(state_path)
     failure_in_latest_launcher = (
         launcher is not None
         and launcher["status"] != "COMPLETED_COLLECTOR_PROCESS"
@@ -261,6 +271,9 @@ def diagnose_source_pattern_collector(
     elif latest_report == "MEASURED_UNREVIEWED_CONSTRUCTED_PUBLIC_VIDEO_PATTERNS":
         status = "RECORDED_UNREVIEWED_NEW_SOURCE_VIDEO_SAMPLES"
         next_action = "CONTINUE_BOUNDED_UNREVIEWED_EVIDENCE_COLLECTION"
+    elif metadata_paused:
+        status = "BLOCKED_LOCAL_YOUTUBE_METADATA_ACCESS"
+        next_action = "DEFER_LOCAL_YOUTUBE_REQUESTS_UNTIL_NEXT_SCHEDULE"
     else:
         status = "UNKNOWN_NO_NEW_SOURCE_VIDEO_SAMPLES"
         next_action = ("INSPECT_DISCOVERY_AND_SOURCE_PROBE_OUTCOMES"
@@ -284,6 +297,16 @@ def diagnose_source_pattern_collector(
         "corpus_queue_counts": dict(sorted(status_counts.items())),
         "pending_clip_last_probe_counts": dict(sorted(last_probe_counts.items())),
         "discovery_search_error_count": len(state.search_errors) if state else 0,
+        "local_retryable_metadata_failure_summary": metadata_failures,
+        "last_run_metadata_access_paused": metadata_paused,
+        "last_run_metadata_pause_reason": (
+            discovery.get("metadata_access_pause_reason")
+            if metadata_paused else None
+        ),
+        "last_run_metadata_failure_category_counts": (
+            discovery.get("metadata_failure_category_counts")
+            if isinstance(discovery, dict) else None
+        ),
         "last_collector_status": latest_report,
         "last_collector_error_class": (
             recorded.get("error_class") if recorded else None
