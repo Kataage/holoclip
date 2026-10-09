@@ -63,7 +63,7 @@ def resolve_local_diagnostic_paths(
             continue
         value = settings[key]
         if (not isinstance(value, str) or not value.strip()
-                or any(char in value for char in ('\\x00', '\\n', '\\r', '"'))):
+                or any(char in value for char in (chr(0), chr(10), chr(13), '"'))):
             raise ValueError("Invalid local settings path")
         if key in values:
             values[key] = value
@@ -170,6 +170,8 @@ def summarize_local_collection_health(doctor: dict) -> dict:
         blocker, action = "NO_SOURCE_VIDEO_RECORD", "INSPECT_SOURCE_VIDEO_ACQUISITION"
     elif verified_local == 0:
         blocker, action = "NO_REVALIDATED_SOURCE_BYTES", "CHECK_LOCAL_CACHE_BYTE_ATTESTATION"
+    elif cache is None or cache.get("complete_pending_queue_audited") is not True:
+        blocker, action = "PARTIAL_CACHE_SCOPE", "CHECK_FULL_BOUNDED_LOCAL_CACHE_SCOPE"
     elif sampled_correspondences == 0:
         blocker, action = "NO_VISUAL_SOURCE_CORROBORATION", "REVIEW_BOUNDED_PAIRING_DIAGNOSTICS"
     elif measured_controls == 0:
