@@ -298,6 +298,9 @@ def test_reader_rejects_corrupt_symlinked_or_forged_pacing_state(tmp_path):
     assert inspect_local_ytdlp_pacing(path, now_seconds=10000)["pacing_status"] == (
         "BLOCKED_UNREADABLE_LOCAL_PACING_STATE"
     )
+    with pytest.raises(LocalYtDlpDeferred, match="UNSAFE_STATE"):
+        with LocalYtDlpPacer(path).reserve(timeout_seconds=30):
+            pytest.fail("a forged cooldown cause cannot authorize access")
     target = tmp_path / "target.db"
     path.replace(target)
     try:
