@@ -430,6 +430,47 @@ PCs have actually enrolled, that the coordinator is reachable from both,
 or that the eventual video/edit quality is production ready. Only
 site-free loopback/CI simulations have been exercised so far;
 `ready=false` remains unchanged.
+#### One-command PC-A / PC-B LAN setup preflight (read-only)
+
+Run this after the earlier secret import/client enrollment. Every diagnostic
+is read-only: it does not install OpenSSH, register or start tasks, open a
+firewall, change ACLs, reserve a coordinator lease, run yt-dlp, or contact
+YouTube. It prints fixed status codes and repair guidance, never paths,
+host keys or credential bytes.
+
+On PC-A (replace PC-B's private IPv4):
+
+```powershell
+uv run holoclip examples-ytdlp-lan-setup-doctor --role pc-a --peer-ip 192.168.1.21
+```
+
+On PC-B, after client configuration and optionally SSH host pinning:
+
+```powershell
+uv run holoclip examples-ytdlp-lan-setup-doctor --role pc-b --ssh-host 192.168.1.20 --known-hosts "D:\AI\holoclip\data\runtime\pc-a-known-hosts"
+```
+
+Only pass `--ssh-host` / `--known-hosts` if SFTP onboarding is used. The
+presence check uses local `ssh-keygen -F` (including hashed known_hosts);
+it does **not** establish host authenticity or create/trust keys. Verify the
+fingerprint independently first. USB/manual import does not require SSH.
+
+For custom deployments, use `--secret-file`, `--port`, `--task-name`, and
+`--ssh-port` as needed. PC-A checks a locally valid secret, NTFS ACL,
+authenticated signed coordinator status, coordinator logon-task state,
+private listening port, inbound TCP firewall rule restricted to the
+specified peer, and optionally sshd service presence. PC-B checks
+client config, signed coordinator status, credential/ACL and optional
+pinned SSH host entry. Each failed check contains suggested next steps.
+
+The firewall observation is only a **matching Windows ActiveStore allow-rule**
+inspection. A broad matching allow rule is flagged, but this is not
+exhaustive GPO, adapter, router, or effective security-policy verification.
+Task state and listening port alone cannot prove the process belongs to
+Holoclip. Both machines must each run diagnostics on their own system.
+Even `LOCAL_SETUP_OBSERVATIONS_COMPLETE` is local evidence only;
+`two_host_verified=false`, `firewall_effective_policy_verified=false`,
+and production `ready=false` are always retained.
 #### Optional PC-A Windows autostart and crash recovery
 
 After creating the shared secret, install the **PC-A coordinator only** as
