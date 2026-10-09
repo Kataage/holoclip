@@ -50,6 +50,51 @@ persistent background daemon or proof that live media has already been collected
 Output may contain zero measured cases; unsupported or failed acquisitions remain
 unknown, never measured negatives or human-editor gold. `ready=false` holds.
 
+### Windows unattended source-pattern collection
+
+An opt-in Windows Task Scheduler installation is available for machines running
+Holoclip locally. After **one** installation, it launches the same bounded CPU-only
+public-video collector once a day, from the actual repository working directory,
+with no clip URLs or labels to prepare. It does **not** run automatically just
+because the code was merged:
+
+```powershell
+# Run once from the cloned repository on the Windows collector PC:
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pattern-task.ps1
+# Optional: customize the local daily start time, e.g. 04:30:
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pattern-task.ps1 -At "04:30"
+```
+
+The scheduled action runs `scripts/run-source-pattern-worker.ps1`, invoking
+`uv run --extra media holoclip examples-collect-source-patterns --cycles 3`.
+Install is **opt-in**: it changes the local user's scheduled tasks, not GitHub
+Actions or a cloud service. The PC must be on, the installing user logged on,
+and public YouTube videos accessible. Requires Windows Task Scheduler, `uv`,
+FFmpeg/FFprobe, Deno >=2.3 or Node >=22; yt-dlp itself is managed by uv.
+The installer does not start a live collection by itself.
+
+The collector now holds an OS-released cross-process advisory lock on its state
+file directory: two scheduled/manual collector instances cannot update the same
+state concurrently; a crashed process releases its lock. Persisted state can
+still be modified by unrelated direct commands, so do not run separate corpus
+growth/verification commands against the same state simultaneously. A compact
+last-run audit, including failures, is saved at
+`data/examples/source-pattern-last-run.json`. It remains unreviewed and is
+never proof of cut precision, source identity or production readiness. Standard
+output and errors are logged under `data/logs/source-pattern-*.log`, with the
+most recent 30 retained. In Task Scheduler, disable the task to stop automatic
+future runs, or unregister it:
+
+```powershell
+Unregister-ScheduledTask -TaskName "Holoclip Source Patterns" -Confirm:$false
+```
+
+The installer configures a **single** daily local task at 03:00 by default,
+runs only in the current user's interactive session, will not force-stop a
+running instance at a fixed deadline, and skips overlapping starts. It cannot
+collect media if the PC remains off or unavailable. No hosted task or recurring
+cloud billing is created.
+
 ## Unattended data and evaluation policy
 
 For measured clip-to-original correspondence (no cloud AI inference),

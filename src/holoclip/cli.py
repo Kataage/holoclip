@@ -22,7 +22,7 @@ from holoclip.config import GroqTranscriptionSettings, NimEmbeddingSettings
 from holoclip.corpus_growth import grow_corpus
 from holoclip.source_candidate_visual import verify_pending_source_visual
 from holoclip.source_visual_control_report import report_saved_source_controls
-from holoclip.source_pattern_collection import collect_public_source_patterns
+from holoclip.source_pattern_worker import run_locked_source_pattern_collection
 from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
@@ -1057,16 +1057,17 @@ def examples_collect_source_patterns(
     scan_limit: int = typer.Option(20, min=1, max=100),
     target_distinct_streams: int = typer.Option(3, min=1, max=50),
     discover: bool = typer.Option(True, "--discover/--no-discover"),
+    report_path: Path = typer.Option(Path("data/examples/source-pattern-last-run.json")),
 ) -> None:
     """Discover and measure bounded public source-video controls; no gold claims."""
     _load_env_file()
     provider = YtDlpSourceProvider(channel=os.getenv("HOLOCLIP_YTDLP_CHANNEL", "nightly"))
-    report = asyncio.run(collect_public_source_patterns(
+    report = asyncio.run(run_locked_source_pattern_collection(
         provider, store=store, state_path=state, output=output,
         policy_rules=load_policy_rules(policy_file), cycles=cycles,
         max_clips=max_clips, max_candidates=max_candidates,
         scan_limit=scan_limit, target_distinct_streams=target_distinct_streams,
-        discover=discover, progress=typer.echo,
+        discover=discover, report_path=report_path, progress=typer.echo,
     ))
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
