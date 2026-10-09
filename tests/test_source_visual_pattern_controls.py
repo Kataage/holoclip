@@ -12,7 +12,7 @@ from holoclip.source_visual_pattern_report import (
     VERSION, add_pattern_result, checked_pattern_history,
     report_saved_patterns, summarize_pattern_results,
 )
-from test_source_candidate_visual import A, make_state, Provider, verify
+from test_source_candidate_visual import make_state, Provider, verify
 from test_source_visual_real_controls import _window
 
 CLIP = "youtube:AAAAAAAAAAA"
