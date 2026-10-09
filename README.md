@@ -115,14 +115,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pat
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pattern-task.ps1 -At "04:30"
 ```
 
-During one-time installation, the script verifies `uv`, FFmpeg and FFprobe
-are locally discoverable and pins the absolute `uv` executable path into
-the task action. This prevents loss of `uv` when Task Scheduler runs with
-a different PATH. The launcher also prepends uv's directory to the child
-PATH, so yt-dlp's nested `uvx` / `uv tool run` invocation can find the
-same installation. Missing required tools stop registration rather than
-installing a broken repeating task. At actual execution time, FFmpeg/FFprobe
-and Deno/Node must still be accessible; the offline doctor checks these.
+During one-time installation, the script checks `uv`, FFmpeg, FFprobe,
+and **Deno >=2.3 or Node >=22**, rejecting missing/unsupported JavaScript
+runtimes *before* registering any repeating task. It pins absolute executable
+paths for the chosen tools in the task action and adds their directories to
+the scheduled subprocess PATH; a different interactive vs Task Scheduler
+PATH cannot by itself hide these selected executables. If a pinned tool is
+moved or removed after installation, the launcher fails closed and records
+`FAILED_PRELAUNCH` rather than fabricating new video evidence. The offline
+doctor remains available to check actual runtime readiness. Re-run the
+installer after moving/updating tools or changing their paths.
 
 The scheduled action runs `scripts/run-source-pattern-worker.ps1`, invoking
 `uv run --extra media holoclip examples-collect-source-patterns --cycles 3`.
@@ -157,7 +159,8 @@ CI now includes a **Windows runner** that checks actual Windows advisory-lock
 behavior and Windows PowerShell 5.1 launcher execution. It invokes only mock
 `uv`/`ffmpeg`/`ffprobe` executables in an isolated temporary directory,
 and tests prelaunch failure, nonzero collector process, zero-exit status,
-pinned uv paths (including spaces), and an invalid pinned path.
+pinned uv/FFmpeg/FFprobe/JavaScript runtime paths (including spaces), and
+invalid pinned paths.
 including durable launcher audit replacement. A separate Windows PowerShell 5.1 test invokes the installer under
 **mocked ScheduledTasks cmdlets** to verify preflight, paths, principal,
 daily schedule and no-overlap policy without registering a task.

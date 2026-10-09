@@ -17,13 +17,17 @@ function Create-Mock([string]$name, [string]$body) {
         ([System.Text.Encoding]::ASCII))
 }
 function Run-Launcher([string]$expectedStatus, [int]$expectedCode, [bool]$expectedInvocation,
-                      [string]$UvOverride = '') {
+                      [string]$UvOverride = '', [string]$FFmpegOverride = '',
+                      [string]$FFprobeOverride = '', [string]$JsOverride = '') {
     $marker = Join-Path $temporary 'was-invoked.txt'
     Remove-Item -LiteralPath $marker -ErrorAction SilentlyContinue
     $args = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
         '-File', (Join-Path $fakeScripts 'run-source-pattern-worker.ps1'),
         '-Cycles', '1', '-MaxClips', '1')
     if ($UvOverride) { $args += @('-UvExecutable', $UvOverride) }
+    if ($FFmpegOverride) { $args += @('-FFmpegExecutable', $FFmpegOverride) }
+    if ($FFprobeOverride) { $args += @('-FFprobeExecutable', $FFprobeOverride) }
+    if ($JsOverride) { $args += @('-JsRuntimeExecutable', $JsOverride) }
     & $psExe @args
     $actualCode = [int]$LASTEXITCODE
     $auditFile = Join-Path $temporary 'data\examples\source-pattern-launcher-last-run.json'
@@ -102,8 +106,24 @@ try {
     Assert-Condition ((Get-Content -LiteralPath $pathProof -Raw).Contains($pinnedUv)) 'Nested yt-dlp cannot discover pinned uv'
     $fifth = Run-Launcher 'FAILED_PRELAUNCH' 1 $false (Join-Path $pinnedDir 'missing-uv.exe')
     Assert-Condition ($fifth.error_class -ne $null) 'Missing pinned uv must fail closed'
+    # Simulate scheduled PATH without uv, ffmpeg, ffprobe, Deno/Node;
+    # all installed absolute paths still need to reach the nested child.
+    $pinnedFFmpeg = Join-Path $pinnedDir 'ffmpeg.cmd'
+    $pinnedFFprobe = Join-Path $pinnedDir 'ffprobe.cmd'
+    $pinnedNode = Join-Path $pinnedDir 'node.cmd'
+    Copy-Item -LiteralPath (Join-Path $fakeBin 'ffmpeg.cmd') -Destination $pinnedFFmpeg
+    Copy-Item -LiteralPath (Join-Path $fakeBin 'ffprobe.cmd') -Destination $pinnedFFprobe
+    Remove-Item -LiteralPath (Join-Path $fakeBin 'ffmpeg.cmd') -Force
+    Remove-Item -LiteralPath (Join-Path $fakeBin 'ffprobe.cmd') -Force
+    Create-Mock 'node' 'echo v22.3.0'
+    Copy-Item -LiteralPath (Join-Path $fakeBin 'node.cmd') -Destination $pinnedNode
+    Remove-Item -LiteralPath (Join-Path $fakeBin 'node.cmd') -Force
+    $sixth = Run-Launcher 'COMPLETED_COLLECTOR_PROCESS' 0 $true $pinnedUv $pinnedFFmpeg $pinnedFFprobe $pinnedNode
+    Assert-Condition ($sixth.error_class -eq $null) 'All pinned media executables must start'
+    $seventh = Run-Launcher 'FAILED_PRELAUNCH' 1 $false $pinnedUv $pinnedFFmpeg $pinnedFFprobe (Join-Path $pinnedDir 'missing-node.cmd')
+    Assert-Condition ($seventh.error_class -ne $null) 'Missing pinned JS must fail closed'
     # Runner only: no user task should be registered.
-    Write-Host 'WindowsPowerShell 5.1 launcher: 5 sandboxed scenarios passed (no video download)'
+    Write-Host 'WindowsPowerShell 5.1 launcher: 7 sandboxed scenarios passed (no video download)'
 }
 finally {
     $env:PATH = $originalPath
