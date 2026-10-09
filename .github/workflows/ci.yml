@@ -58,3 +58,7 @@ jobs:
         run: |
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-source-pattern-install.ps1"
           if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell installer contract tests failed: $LASTEXITCODE" }
+      - name: Verify LAN coordinator Windows startup and restart offline
+        run: |
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-task.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "Windows LAN coordinator task tests failed: $LASTEXITCODE" }

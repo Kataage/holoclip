@@ -299,6 +299,53 @@ access **never falls back to a local-only gate**. A crashed coordinator
 retains unexpired leases via its own SQLite; an abandoned lease
 eventually expires based on the bounded yt-dlp process deadline.
 
+#### Optional PC-A Windows autostart and crash recovery
+
+After creating the shared secret, install the **PC-A coordinator only** as
+a Windows scheduled task. From PC-A's Holoclip directory run `uv sync`
+once to install the local environment. Then in Windows PowerShell:
+
+```powershell
+.\scripts\install-ytdlp-lan-task.ps1 -BindIp 192.168.1.20
+```
+
+Replace the example address with PC-A's **actual static private LAN IPv4**.
+The installer checks the secret format, environment, bind address and absolute
+paths. It only registers a **limited-privilege current-user logon task**;
+it does NOT start the server, access media, or open Windows Firewall.
+Restrict inbound TCP 8878 on PC-A to **PC-B's trusted LAN address only**
+before starting. Do not port-forward or use an untrusted network.
+
+```powershell
+Start-ScheduledTask -TaskName 'Holoclip yt-dlp LAN Coordinator'
+Get-ScheduledTask -TaskName 'Holoclip yt-dlp LAN Coordinator' | Get-ScheduledTaskInfo
+# To stop the coordinator:
+Stop-ScheduledTask -TaskName 'Holoclip yt-dlp LAN Coordinator'
+# To remove the startup registration:
+Unregister-ScheduledTask -TaskName 'Holoclip yt-dlp LAN Coordinator' -Confirm:$false
+```
+
+The task starts **after the same Windows user logs on**, not before login.
+The supervised process uses `uv run --offline --no-sync` so Task Scheduler
+never updates/downloads Python packages. Unexpected server exits are retried
+with bounded exponential backoff (at most five minutes); Task Scheduler also
+provides three one-minute restarts if the supervisor itself exits unexpectedly.
+A local mutex prevents duplicate supervisors and the TCP bind prevents
+duplicate servers. The previous SQLite lease and cooldown are never wiped
+on restart. Configured clients continue to **fail closed** during downtime.
+
+Windows sleep, logoff, missing local environments, credential errors, network
+changes and long outages can still prevent automatic service availability.
+Both client PCs must have their own coordinator environment configured; this
+installer does not enroll them or propagate secrets. Check
+`examples-ytdlp-lan-status` separately on both PCs. To change the bind IP,
+port or credential/state locations, re-register this same task with new
+arguments; do not run another coordinator concurrently.
+
+Windows CI only mocks scheduler cmdlets and a failing local executable.
+It never registers a real task, downloads media, or verifies actual
+two-PC deployment. These features do not establish `ready=true`.
+
 This is an **opt-in** capability: if the coordinator variables are
 absent, the pre-existing local-only pacing remains in effect and
 does **not** guarantee shared-IP coordination. If just one of the

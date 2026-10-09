@@ -61,6 +61,27 @@ Human editor/original match evidence remains absent,
 `ready=false`. Real two-host networking and Windows Task
 Scheduler environment propagation remain deployment checks.
 
+## Increment: opt-in Windows LAN coordinator supervision
+
+On PC-A only, `scripts/install-ytdlp-lan-task.ps1` registers an
+ordinary-user at-logon (not pre-login) Task Scheduler job without
+launching a process or modifying the firewall. It validates the
+credential format, existing environment, IPv4 and file paths before
+registering. The process runner `scripts/run-ytdlp-lan-coordinator.ps1`
+uses `uv run --offline --no-sync`, a local mutex, and bounded
+exponential restart delay. Task Scheduler additionally restarts the
+supervisor after external process crashes. Durable SQLite lease
+and six-hour challenge cooldown are unaffected by any restarts.
+Correctly enrolled clients fail closed whenever the service is unavailable.
+This does not cover a client that has never been configured.
+
+Offline tests mock the Windows scheduled-task cmdlets and a failing
+child process; they never register a task, run yt-dlp or fetch media.
+Trusted-LAN firewall scoping, real Windows login sessions, real two-host
+connectivity and crash recovery remain untested deployment work.
+No source identity, editor accuracy, gold or production qualification
+can be inferred: `ready=false` remains mandatory.
+
 ## Safe unattended native source collection across local cooldowns
 
 Before invoking any corpus discovery, probe, bounded video acquisition
