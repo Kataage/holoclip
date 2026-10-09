@@ -2,7 +2,8 @@
 param(
     [string]$TaskName = 'Holoclip Source Patterns',
     [ValidatePattern('^([01]\d|2[0-3]):[0-5]\d$')]
-    [string]$At = '03:00'
+    [string]$At = '03:00',
+    [string]$ConfigPath = ''
 )
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows -and $PSVersionTable.PSEdition -eq 'Core') {
@@ -77,6 +78,25 @@ $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.e
 $taskArgs = ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" ' +
     '-UvExecutable "{1}" -FFmpegExecutable "{2}" -FFprobeExecutable "{3}" ' +
     '-JsRuntimeExecutable "{4}"') -f $runner, $uvPath, $ffmpegPath, $ffprobePath, $jsPath
+# An explicit config path is pinned in the task; the default JSON is
+# automatically discovered by the runner and can be edited later without
+# reinstalling the task. Refuse missing or unsafe external config paths.
+if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) {
+    $configAbsolute = if ([System.IO.Path]::IsPathRooted($ConfigPath)) {
+        [System.IO.Path]::GetFullPath($ConfigPath)
+    } else {
+        [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ConfigPath))
+    }
+    if (-not (Test-Path -LiteralPath $configAbsolute -PathType Leaf) -or
+            $configAbsolute.Contains('"')) {
+        throw 'Invalid custom source-pattern config file'
+    }
+    $configFile = Get-Item -LiteralPath $configAbsolute
+    if (($configFile.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Source-pattern config cannot be a reparse point'
+    }
+    $taskArgs += (' -ConfigPath "{0}"' -f $configAbsolute)
+}
 $action = New-ScheduledTaskAction -Execute $psExe -Argument $taskArgs -WorkingDirectory $repoRoot
 $startAt = [datetime]::ParseExact($At, 'HH:mm', [Globalization.CultureInfo]::InvariantCulture)
 $trigger = New-ScheduledTaskTrigger -Daily -At $startAt
