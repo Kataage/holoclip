@@ -214,8 +214,8 @@ The next audit stage measures **multiple constructed editing patterns on
 real acquired bounded original video** without user data preparation. Each
 real `YtDlpSourceProvider` source-video measurement can be tested on five
 controlled changes to its SHA256-verified decoded frames: JPEG overlay,
-brightness shift, small center zoom, reversed temporal order and cyclic
-temporal shift. ORB geometry plus independent DCT-temporal verification
+brightness shift, small center zoom, reversed temporal order and adjacent
+frame-pair time swaps (which cannot leave three source frames in order). ORB geometry plus independent DCT-temporal verification
 are exercised for every case. Only explicit measured correspondence or
 evaluated time-sequence noncorrespondence can count as a pattern outcome;
 decoder failures, comparison limits and unrecognized statuses are
