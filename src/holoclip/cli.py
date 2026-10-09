@@ -29,6 +29,7 @@ from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collecto
 from holoclip.source_pattern_local_health import resolve_local_diagnostic_paths
 from holoclip.source_pattern_local_history import read_launcher_history
 from holoclip.source_ytdlp_lan_onboarding import diagnose_lan_client, import_lan_secret
+from holoclip.source_ytdlp_lan_pair_evidence import export_lan_pair_evidence, compare_lan_pair_evidence
 from holoclip.source_ytdlp_lan_setup_doctor import inspect_lan_setup
 from holoclip.source_ytdlp_lan_ssh_transfer import pull_lan_secret_sftp, _secure_windows_path
 from holoclip.source_ytdlp_pacing import DEFAULT_PACING_PATH, inspect_local_ytdlp_pacing
@@ -1207,6 +1208,49 @@ def examples_ytdlp_lan_secret_acl(
     typer.echo(json.dumps({
         "status": "ACL_SECURE", "acl_verified": True, "ready": False,
     }))
+
+
+@app.command("examples-ytdlp-lan-pair-export")
+def examples_ytdlp_lan_pair_export(
+    role: str = typer.Option(..., "--role", help="PC label: pc-a or pc-b."),
+    output: Path = typer.Option(..., "--output",
+        help="Local signed report destination. Existing reports are never overwritten."),
+) -> None:
+    """Export signed per-PC coordinator observation without yt-dlp or lease."""
+    _load_env_file()
+    try:
+        report = export_lan_pair_evidence(role=role, output=output)
+    except (ValueError, OSError, UnicodeError, LocalYtDlpDeferred) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_PAIR_EXPORT_REJECTED",
+            "reason": (str(exc) if str(exc).startswith(("LAN_PAIR_", "LOCAL_YTDLP_"))
+                       else type(exc).__name__),
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report))
+
+
+@app.command("examples-ytdlp-lan-pair-verify")
+def examples_ytdlp_lan_pair_verify(
+    pc_a: Path = typer.Option(..., "--pc-a", help="Signed PC-A report file."),
+    pc_b: Path = typer.Option(..., "--pc-b", help="Signed PC-B report file."),
+) -> None:
+    """Compare signed observations offline; not physical host attestation."""
+    _load_env_file()
+    try:
+        report = compare_lan_pair_evidence(pc_a=pc_a, pc_b=pc_b)
+    except (ValueError, OSError, UnicodeError, LocalYtDlpDeferred) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_PAIR_VERIFY_REJECTED",
+            "reason": (str(exc) if str(exc).startswith(("LAN_PAIR_", "LOCAL_YTDLP_"))
+                       else type(exc).__name__),
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report))
+    if report["status"] != "LAN_PAIR_OBSERVATIONS_MATCH":
+        raise typer.Exit(6)
 
 
 @app.command("examples-ytdlp-lan-setup-doctor")
