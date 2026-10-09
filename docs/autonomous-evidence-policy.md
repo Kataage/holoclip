@@ -1486,7 +1486,8 @@ video downloads. `examples-source-controls-report` now also produces
 `constructed_pattern_audit` with each pattern's observed, evaluable,
 correct, incorrect and unevaluable counts, an honest fraction with
 null for zero evaluated samples, distinct original candidate source
-IDs and a deduplicated total across clips that share exactly the
+IDs, per-source edit-pattern results with separate denominators,
+and a deduplicated total across clips that share exactly the
 same original video bytes. Distinct samples on the same stream do
 not count as multiple independent streams. Source diversity is never
 marked sufficient for real-world generalization using only these
