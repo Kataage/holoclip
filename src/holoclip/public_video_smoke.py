@@ -203,7 +203,7 @@ def main() -> int:
     if summary_path:
         with Path(summary_path).open("a", encoding="utf-8") as handle:
             handle.write("### Bounded public-video smoke (unreviewed)\n\n")
-            handle.write("\`" + result["status"] + "\`\n\n")
+            handle.write(chr(96) + result["status"] + chr(96) + "\\n\\n")
             handle.write("Original-stream identity and editor gold remain unverified.\n")
     # A nominally exited collector with zero new real measurements is NOT green.
     return 0 if result["is_unreviewed_operational_smoke_success"] else 1
