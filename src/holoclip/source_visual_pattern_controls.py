@@ -16,6 +16,11 @@ from holoclip.video_measurement import checksum_file
 
 VERSION = "source-measured-video-pattern-controls-v1"
 APPROVED = "VISUAL_SEQUENCE_CORROBORATED_NOT_SOURCE_GOLD"
+EVALUABLE_NONMATCH = {
+    "UNKNOWN_NO_VISUAL_SEQUENCE",
+    "UNKNOWN_MULTIPLE_VISUAL_TRAJECTORIES",
+    "UNKNOWN_INDEPENDENT_PIXEL_NOT_CORROBORATED",
+}
 PATTERNS = {
     "jpeg_overlay": "constructed_positive",
     "brightness_shift": "constructed_positive",
@@ -167,9 +172,14 @@ def measure_video_pattern_controls(window, *, root: Path, matcher=None) -> dict:
                 actual = response.get("status")
                 if not isinstance(actual, str) or len(actual) > 128:
                     raise ValueError("Unsupported video matcher status")
-                confirmed = actual == APPROVED
-                correct = (confirmed if expected == "constructed_positive"
-                           else not confirmed)
+                if actual == APPROVED:
+                    correct = expected == "constructed_positive"
+                elif actual in EVALUABLE_NONMATCH:
+                    correct = expected == "constructed_temporal_decoy"
+                else:
+                    # Decode, budget, unsafe state and unrecognized outcomes
+                    # are NOT ground truth for a constructed negative.
+                    correct = None
                 cases[name] = {
                     "expected": expected,
                     "observed_status": actual,
