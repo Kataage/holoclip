@@ -91,39 +91,40 @@ class LocalYtDlpPacer:
         if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 3600:
             raise ValueError("Invalid yt-dlp pacing process timeout")
         token = None
+        waited_seconds = 0.0
         try:
-            with closing(self._connect()) as db, db:
-                # BEGIN IMMEDIATE guarantees a one-at-a-time cross-process
-                # reservation; sleeping occurs only *outside* SQL transactions.
-                db.execute("BEGIN IMMEDIATE")
-                now = time.time()
-                next_at, active, cooldown = db.execute(
-                    "SELECT next_at, active_until, cooldown_until "
-                    "FROM access WHERE id=1"
-                ).fetchone()
-                if cooldown > now:
-                    raise LocalYtDlpDeferred("LOCAL_YTDLP_COOLDOWN_ACTIVE")
-                if active > now:
-                    raise LocalYtDlpDeferred("LOCAL_YTDLP_OTHER_PROCESS_ACTIVE")
-                if next_at > now:
-                    wait = next_at - now
-                    if wait > MAX_PACING_WAIT_SECONDS:
-                        raise LocalYtDlpDeferred("LOCAL_YTDLP_PACING_WAIT_TOO_LONG")
-                    # Commit by leaving context then retry from the outside.
-                else:
-                    token = now + timeout_seconds + 30
-                    db.execute(
-                        "UPDATE access SET next_at=?, active_until=? WHERE id=1",
-                        (now + self.gap_seconds, token),
-                    )
-                    wait = 0.0
-            if token is None:
-                time.sleep(max(0.0, wait))
-                # Recheck reservation after sleeping: another process may
-                # have reserved the slot in the meantime.
-                with self.reserve(timeout_seconds=timeout_seconds):
-                    yield
-                return
+            while token is None:
+                with closing(self._connect()) as db, db:
+                    # BEGIN IMMEDIATE serializes reservation across local
+                    # processes. Never sleep while holding a SQL write lock.
+                    db.execute("BEGIN IMMEDIATE")
+                    now = time.time()
+                    next_at, active, cooldown = db.execute(
+                        "SELECT next_at, active_until, cooldown_until "
+                        "FROM access WHERE id=1"
+                    ).fetchone()
+                    if cooldown > now:
+                        raise LocalYtDlpDeferred("LOCAL_YTDLP_COOLDOWN_ACTIVE")
+                    if active > now:
+                        raise LocalYtDlpDeferred("LOCAL_YTDLP_OTHER_PROCESS_ACTIVE")
+                    if next_at > now:
+                        wait = next_at - now
+                        if waited_seconds + wait > MAX_PACING_WAIT_SECONDS:
+                            raise LocalYtDlpDeferred(
+                                "LOCAL_YTDLP_PACING_WAIT_TOO_LONG"
+                            )
+                    else:
+                        token = now + timeout_seconds + 30
+                        db.execute(
+                            "UPDATE access SET next_at=?, active_until=? WHERE id=1",
+                            (now + self.gap_seconds, token),
+                        )
+                        wait = 0.0
+                if token is None:
+                    # An unrelated process may take the slot while we sleep;
+                    # bounded iterative rechecks avoid unbounded recursion.
+                    time.sleep(wait)
+                    waited_seconds += wait
             try:
                 yield
             finally:
