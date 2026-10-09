@@ -174,6 +174,29 @@ def test_timeout_kills_only_the_smoke_process_group(tmp_path, monkeypatch):
     ]
 
 
+def test_failed_uv_launch_still_writes_non_green_json(tmp_path, monkeypatch):
+    import json
+
+    if smoke.os.name != "posix":
+        return  # The live workflow is explicitly Linux-only
+    monkeypatch.chdir(tmp_path)
+
+    def failed(*_args):
+        raise FileNotFoundError("simulated uv not installed")
+
+    monkeypatch.setattr(smoke, "_invoke_bounded_collector", failed)
+    assert smoke.main() == 1
+    report = json.loads(
+        (tmp_path / "data/public-video-smoke/summary.json").read_text(
+            encoding="utf-8",
+        )
+    )
+    assert report["status"] == "UNKNOWN_PUBLIC_VIDEO_SMOKE_COMMAND_FAILURE"
+    assert report["diagnostic_error_class"] == "FileNotFoundError"
+    assert report["is_unreviewed_operational_smoke_success"] is False
+    assert report["ready"] is False
+
+
 def test_workflow_is_single_push_attempt_with_no_video_artifacts():
     yaml = (Path(__file__).resolve().parents[1] /
             ".github/workflows/public-video-smoke.yml").read_text(encoding="utf-8")
