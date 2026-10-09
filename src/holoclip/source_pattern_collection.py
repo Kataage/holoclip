@@ -101,8 +101,13 @@ async def collect_public_source_patterns(
         )
     runs = []
     previous = report_saved_patterns(state_path)
+    distinct_before = before_patterns["distinct_candidate_source_streams_measured"]
+    # The target is fresh candidate sources measured THIS invocation, not a
+    # lifetime quota. Otherwise scheduled runs stop forever after the first
+    # successful three-stream day and cannot learn about newer public videos.
     for cycle in range(cycles):
-        if previous["distinct_candidate_source_streams_measured"] >= target_distinct_streams:
+        if (previous["distinct_candidate_source_streams_measured"] - distinct_before
+                >= target_distinct_streams):
             break
         observed = verify_pending_source_visual(
             provider, store=store, state_path=state_path, output=output,
@@ -137,11 +142,22 @@ async def collect_public_source_patterns(
             break
     final = report_saved_source_controls(state_path)
     patterns = final["constructed_pattern_audit"]
+    new_samples = (
+        patterns["real_measured_source_video_samples"]
+        - before_patterns["real_measured_source_video_samples"]
+    )
+    new_sources = (
+        patterns["distinct_candidate_source_streams_measured"] - distinct_before
+    )
+    if new_samples < 0 or new_sources < 0:
+        raise ValueError("Persisted video pattern history shrank during collection")
     return {
         "version": VERSION,
         "status": (
             "MEASURED_UNREVIEWED_CONSTRUCTED_PUBLIC_VIDEO_PATTERNS"
-            if patterns["real_measured_source_video_samples"]
+            if new_samples > 0
+            else "UNKNOWN_NO_NEW_PUBLIC_VIDEO_PATTERN_MEASUREMENTS"
+            if patterns["real_measured_source_video_samples"] > 0
             else "UNKNOWN_NO_REAL_PUBLIC_VIDEO_PATTERN_MEASUREMENTS"
         ),
         "discovery": discovery,
@@ -150,18 +166,15 @@ async def collect_public_source_patterns(
         "observed_source_samples_before": (
             before_patterns["real_measured_source_video_samples"]
         ),
-        "new_unique_video_samples_this_run": (
-            patterns["real_measured_source_video_samples"]
-            - before_patterns["real_measured_source_video_samples"]
-        ),
+        "new_unique_video_samples_this_run": new_samples,
         "distinct_candidate_streams_measured": (
             patterns["distinct_candidate_source_streams_measured"]
         ),
+        "distinct_candidate_streams_before": distinct_before,
+        "new_distinct_candidate_streams_this_run": new_sources,
+        "target_scope": "this_run_new_distinct_candidate_streams",
         "target_distinct_streams": target_distinct_streams,
-        "target_reached": (
-            patterns["distinct_candidate_source_streams_measured"]
-            >= target_distinct_streams
-        ),
+        "target_reached": new_sources >= target_distinct_streams,
         "controls": final,
         **_NO_GOLD,
     }
