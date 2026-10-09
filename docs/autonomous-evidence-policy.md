@@ -140,6 +140,33 @@ real two-PC network is exercised in GitHub. Cryptographic host
 identity verification by the operator and physical two-host
 commissioning remain outstanding. Shared-IP pacing remains an
 opt-in feature and `ready=false` remains mandatory.
+## Increment: read-only PC-A/PC-B deployment preflight
+
+`examples-ytdlp-lan-setup-doctor --role pc-a|pc-b` aggregates authenticated
+coordinator status, local credential validation, read-only NTFS ACL audit,
+and selected Windows Task Scheduler / listener / active firewall / SSH
+observations. Local SSH known-hosts presence is optionally checked via
+`ssh-keygen -F` without initiating an SSH handshake; fingerprint identity
+requires out-of-band verification. The inspector never starts/stops tasks,
+modifies system configuration, executes yt-dlp, requests a coordination
+lease or downloads media. Report output is deliberately limited to
+fixed codes, non-sensitive remediations, and allowlisted gate states.
+
+PC-A firewall inspection requires an explicit peer IPv4 and recognizes
+an exact-peer allow rule while flagging broad allow rules, but **cannot**
+prove the effective Windows Firewall/GPO/router policy. Likewise an
+observed process/tcp listener does not establish its identity and a
+signed status from one machine never proves that the other PC is
+enrolled. Unavailable cmdlets, ACL failures, missing/invalid credentials,
+bad configuration, unknown host pin and coordinator failures never
+count as observed local completion. CI uses only loopback and Windows
+cmdlet mocks, not an actual two-PC LAN deployment.
+
+`LOCAL_SETUP_OBSERVATIONS_COMPLETE` is explicitly NOT a production
+qualification result; reports always set `ready=false`,
+`production_ready=false`, `two_host_verified=false` and
+`firewall_effective_policy_verified=false`. Independent source-video
+truth and human-editor reference evidence are still required.
 ## Increment: opt-in Windows LAN coordinator supervision
 
 On PC-A only, `scripts/install-ytdlp-lan-task.ps1` registers an
