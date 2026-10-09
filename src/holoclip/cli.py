@@ -26,6 +26,7 @@ from holoclip.source_pattern_worker import (
     _state_lock, run_locked_source_pattern_collection,
 )
 from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collector
+from holoclip.source_pattern_local_health import resolve_local_diagnostic_paths
 from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
@@ -1070,6 +1071,28 @@ def examples_collector_doctor(
         media_output=media_output, audit_media_cache=audit_media_cache,
     )
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+@app.command("examples-collector-health")
+def examples_collector_health(
+    config_path: Path | None = typer.Option(None, "--config-path"),
+    check_tools: bool = typer.Option(True, "--check-tools/--no-check-tools"),
+    audit_media_cache: bool = typer.Option(
+        True, "--audit-media-cache/--no-audit-media-cache",
+    ),
+) -> None:
+    """Compact local-only collection diagnosis using Windows JSON settings."""
+    paths, loaded = resolve_local_diagnostic_paths(
+        Path.cwd(), config_path=config_path,
+    )
+    doctor = diagnose_source_pattern_collector(
+        state_path=paths["state"], report_path=paths["report_path"],
+        launcher_path=paths["launcher_audit_path"],
+        check_tools=check_tools, media_output=paths["output"],
+        audit_media_cache=audit_media_cache,
+    )
+    compact = {**doctor["local_collection_health"], "local_settings_loaded": loaded}
+    typer.echo(json.dumps(compact, ensure_ascii=False, indent=2))
 
 
 @app.command("examples-source-controls-report")
