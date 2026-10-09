@@ -25,8 +25,11 @@ URLs, local Windows access, credentials, GPU, paid AI providers or Docker.
 Unlike offline CI fixtures, the runner executes the standard yt-dlp
 `examples-collect-source-patterns` entrypoint with strict one-cycle,
 one-clip, one-candidate, five-metadata-record discovery caps and a maximum
-12-minute dedicated-process-group deadline; the overall job stops at
-18 minutes. No recurring cron is enabled: public traffic and GitHub Actions
+12-minute process-tree deadline; the runner snapshots and terminates
+same-user Linux descendants including independently-grouped yt-dlp / FFmpeg
+processes before stopping its outer uv group. The overall job stops at
+18 minutes. Deliberately detached processes that escape the parent tree
+before the deadline cannot be guaranteed to be enumerated. No recurring cron is enabled: public traffic and GitHub Actions
 private-repository minutes are not presumed free without limit.
 
 The one-shot collector writes its independent report and source-video
