@@ -66,3 +66,8 @@ jobs:
         run: |
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-acl.ps1"
           if ($LASTEXITCODE -ne 0) { throw "Windows LAN credential ACL tests failed: $LASTEXITCODE" }
+
+      - name: Verify Windows LAN setup inspection using mocked cmdlets
+        run: |
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-setup-doctor.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "Windows LAN setup doctor tests failed: $LASTEXITCODE" }
