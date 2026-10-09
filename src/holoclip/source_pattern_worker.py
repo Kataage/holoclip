@@ -116,9 +116,22 @@ async def run_locked_source_pattern_collection(
             # Automatically inspect bounded on-disk source sections after the
             # collection. Saved history alone is not evidence bytes still
             # exist, and even valid bytes do not prove an actual original match.
+            # Diagnose the clips actually attempted THIS invocation instead
+            # of repeatedly hashing the same old, sorted-prefix queue. The
+            # finite cap remains explicit when the run attempts more clips.
+            recent_clip_keys = []
+            for row in result.get("cycle_diagnostics", []):
+                for key in row.get("attempted_clip_keys", []):
+                    if key in recent_clip_keys:
+                        recent_clip_keys.remove(key)
+                    recent_clip_keys.append(key)
+            selection = (
+                {"clip_keys": recent_clip_keys[-4:]}
+                if "cycle_diagnostics" in result else {}
+            )
             result["source_cache_byte_attestation"] = (
                 audit_cached_source_video_sections(
-                    state_path=state_path, output_root=output,
+                    state_path=state_path, output_root=output, **selection,
                 )
             )
             audit = {
