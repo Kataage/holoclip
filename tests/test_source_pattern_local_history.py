@@ -148,6 +148,160 @@ def test_history_symlink_and_oversized_file_are_rejected(tmp_path):
         read_launcher_history(path)
 
 
+def _new_stage_event(index, *, count=0, streams=0,
+                     pairs=1, sections=2, corroborations=0):
+    result = event(index, count=count)
+    result["new_distinct_candidate_streams"] = streams
+    result.update(
+        stage_metrics_correlated=True,
+        last_run_visual_pair_attempts=pairs,
+        last_run_source_window_records=sections,
+        last_run_sampled_visual_correspondences=corroborations,
+    )
+    return result
+
+
+@pytest.mark.parametrize(("statuses", "expected"), [
+    (["FAILED_PRELAUNCH"] * 3, "REPEATED_NATIVE_LAUNCH_FAILURES"),
+    (["FAILED_COLLECTOR_PROCESS"] * 3, "REPEATED_NATIVE_LAUNCH_FAILURES"),
+])
+def test_three_consecutive_failed_native_launches_trigger_only_local_warning(
+    tmp_path, statuses, expected,
+):
+    path = tmp_path / "history.json"
+    persist(path, [
+        event(i, status=status) for i, status in enumerate(statuses)
+    ])
+    report = read_launcher_history(path)
+    alert = report["operational_stall"]
+    assert alert["primary_signal"] == expected
+    assert alert["consecutive_failed_launcher_runs"] == 3
+    assert alert["consecutive_correlated_zero_sample_runs"] == 0
+    assert alert["source_identity_verified"] is False
+    assert alert["ready"] is False
+
+
+def test_five_correlated_zero_sample_runs_are_a_stall_not_a_false_negative(
+    tmp_path,
+):
+    path = tmp_path / "history.json"
+    persist(path, [_new_stage_event(i, count=0, pairs=0, sections=0)
+                   for i in range(5)])
+    report = read_launcher_history(path)
+    signal = report["operational_stall"]
+    assert signal["primary_signal"] == "REPEATED_ZERO_NEW_PATTERN_SAMPLES"
+    assert signal["consecutive_correlated_zero_sample_runs"] == 5
+    assert signal["consecutive_correlated_noncorroborated_visual_runs"] == 0
+    assert signal["visual_negative_or_editor_gold_proven"] is False
+    assert report["last_run"]["new_unique_video_samples"] == 0
+
+
+def test_uncorrelated_and_failed_runs_break_zero_progress_streak(tmp_path):
+    path = tmp_path / "history.json"
+    records = [_new_stage_event(i, count=0, pairs=0, sections=0)
+               for i in range(4)]
+    records.insert(2, event(2))
+    # Repair chronological positions after inserting the legacy unknown.
+    for i, row in enumerate(records):
+        row["started_at_utc"] = event(i)["started_at_utc"]
+        row["finished_at_utc"] = event(i)["finished_at_utc"]
+    persist(path, records)
+    result = read_launcher_history(path)["operational_stall"]
+    assert result["consecutive_correlated_zero_sample_runs"] == 2
+    assert result["primary_signal"] is None
+
+
+def test_visual_noncorroboration_requires_three_real_recorded_pairing_runs(
+    tmp_path,
+):
+    path = tmp_path / "history.json"
+    persist(path, [
+        _new_stage_event(i, count=1, streams=1, pairs=2, sections=4)
+        for i in range(3)
+    ])
+    report = read_launcher_history(path)
+    alert = report["operational_stall"]
+    assert alert["primary_signal"] == "REPEATED_BOUNDED_VISUAL_NONCORROBORATION"
+    assert alert["consecutive_correlated_noncorroborated_visual_runs"] == 3
+    assert alert["visual_negative_or_editor_gold_proven"] is False
+    assert report["last_run"]["last_run_visual_pair_attempts"] == 2
+    # A verified positive *bounded* sampled control breaks this streak but
+    # still does not provide independent correct-original/editor gold.
+    persist(path, [
+        _new_stage_event(0, count=1, streams=1, pairs=2, sections=4),
+        _new_stage_event(1, count=1, streams=1, pairs=2, sections=4),
+        _new_stage_event(2, count=1, streams=1, pairs=2, sections=4,
+                         corroborations=1),
+    ])
+    result = read_launcher_history(path)["operational_stall"]
+    assert result["consecutive_correlated_noncorroborated_visual_runs"] == 0
+    assert result["primary_signal"] is None
+
+
+def test_visual_stall_does_not_infer_metadata_only_or_legacy_runs_as_pairs(
+    tmp_path,
+):
+    path = tmp_path / "history.json"
+    records = [
+        _new_stage_event(0, count=1, streams=1, pairs=2, sections=2),
+        event(1, count=1),  # Old v1 event with NO stage fields
+        _new_stage_event(2, count=1, streams=1, pairs=2, sections=2),
+        _new_stage_event(3, count=1, streams=1, pairs=2, sections=2),
+    ]
+    persist(path, records)
+    result = read_launcher_history(path)
+    assert result["legacy_runs_without_stage_metrics"] == 1
+    assert result["operational_stall"][
+        "consecutive_correlated_noncorroborated_visual_runs"
+    ] == 2
+    assert result["operational_stall"]["primary_signal"] is None
+    assert result["last_seven_runs"][1]["stage_metrics_correlated"] is False
+
+
+def test_distinct_source_stall_only_when_patterns_measured_but_streams_not_new(
+    tmp_path,
+):
+    path = tmp_path / "history.json"
+    persist(path, [
+        _new_stage_event(i, count=1, streams=0, pairs=2, sections=3,
+                         corroborations=1)
+        for i in range(5)
+    ])
+    result = read_launcher_history(path)["operational_stall"]
+    assert result["primary_signal"] == "REPEATED_NO_NEW_DISTINCT_SOURCE_CANDIDATES"
+    assert result["consecutive_correlated_no_new_distinct_source_runs"] == 5
+    assert result["consecutive_correlated_zero_sample_runs"] == 0
+
+
+@pytest.mark.parametrize("malformed", [
+    "partial", "positive_without_correlated", "above_pair_budget",
+    "visual_correspondences_exceed_attempts", "correlated_without_samples",
+    "negative", "promoted_editor_readiness",
+])
+def test_forged_visual_stage_history_fails_closed(tmp_path, malformed):
+    path = tmp_path / "history.json"
+    row = _new_stage_event(0, count=1, streams=1, pairs=2, sections=3)
+    if malformed == "partial":
+        del row["last_run_source_window_records"]
+    elif malformed == "positive_without_correlated":
+        row["stage_metrics_correlated"] = False
+    elif malformed == "above_pair_budget":
+        row["last_run_source_window_records"] = 7
+    elif malformed == "visual_correspondences_exceed_attempts":
+        row["last_run_sampled_visual_correspondences"] = 3
+    elif malformed == "correlated_without_samples":
+        row["collector_report_correlated"] = False
+        row["new_unique_video_samples"] = None
+        row["new_distinct_candidate_streams"] = None
+    elif malformed == "negative":
+        row["last_run_visual_pair_attempts"] = -1
+    elif malformed == "promoted_editor_readiness":
+        row["source_identity_verified"] = True
+    persist(path, [row])
+    with pytest.raises(ValueError):
+        read_launcher_history(path)
+
+
 def test_one_command_health_discovers_local_launcher_history(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     dest = tmp_path / "data/examples"
