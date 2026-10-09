@@ -255,6 +255,40 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pat
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pattern-task.ps1 -At "04:30"
 ```
 
+#### Repeated Windows acquisition and pairing stalls (local only)
+
+`examples-collector-health` now derives `native_launcher_history.operational_stall`
+from **consecutive, actually recorded native invocations**. It surfaces
+separate diagnostic signals when:
+
+- **3 consecutive Windows launch failures** occur (including prelaunch uv or
+  Task Scheduler toolchain problems);
+- **5 consecutive successful, fresh-audit-correlated runs yield zero new
+  constructed-pattern samples**;
+- **5 consecutive fresh runs measure patterns but add zero new candidate
+  source-stream IDs**, indicating stagnant diversity rather than outright
+  download failure;
+- **3 consecutive fresh native runs inspect at least one finished/source
+  pairing with saved original sections but report no bounded visual
+  corroboration**.
+
+The per-run pairing, original-section and visual-corroboration counters
+are recorded from the Python collector report **only if that report
+finished within the same Windows launch** and every stage has a strict
+non-gold schema. Historic runs saved before this feature remain valid,
+but their missing stage metrics are **unknown**, never reconstructed or
+counted as failed comparisons. Missing audits, tool failures or a run
+without acquired source sections break the relevant progress/visual
+streak rather than producing invented negatives.
+
+`operational_stall` returns fixed signal/action codes, exact qualifying
+run counts and explicit thresholds. It is **not** a prediction about
+calendar days: task scheduling cadence is independently configurable.
+A lack of visual corroboration from bounded samples cannot establish a
+false match or a model recall estimate; public source identity, editor
+gold, and `ready` all remain unverified. Signals never start downloads,
+modify scheduled tasks or automatically bypass rate limits.
+
 #### Automatic bounded Windows launch history (offline)
 
 The native `run-source-pattern-worker.ps1` now automatically retains the

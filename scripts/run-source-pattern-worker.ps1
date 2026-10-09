@@ -301,6 +301,13 @@ try {
             new_unique_video_samples = $null
             new_distinct_candidate_streams = $null
             collector_report_correlated = $false
+            # Legacy events have no stage measurements. New metrics stay null
+            # unless this same launch has independently bounded collector
+            # stage diagnostics; no retrospective synthetic reconstruction.
+            stage_metrics_correlated = $false
+            last_run_visual_pair_attempts = $null
+            last_run_source_window_records = $null
+            last_run_sampled_visual_correspondences = $null
             ready = $false
             production_ready = $false
         }
@@ -327,11 +334,26 @@ try {
                     $finish = [DateTimeOffset]::Parse($entry.finished_at_utc)
                     $newSamples = $col.result.new_unique_video_samples_this_run
                     $newStreams = $col.result.new_distinct_candidate_streams_this_run
+                    $collectorStatusValid = (
+                        ($col.status -ceq 'MEASURED_UNREVIEWED_CONSTRUCTED_PUBLIC_VIDEO_PATTERNS' -and
+                         $newSamples -gt 0) -or
+                        ($col.status -clike 'UNKNOWN_*' -and $newSamples -eq 0)
+                    )
+                    $collectorFlagsValid = $true
+                    foreach ($flag in @('source_identity_verified',
+                                        'reviewed_gold_available',
+                                        'qualification_allowed',
+                                        'ready', 'production_ready')) {
+                        if ($col.$flag -ne $false -or
+                                $col.result.$flag -ne $false) {
+                            $collectorFlagsValid = $false
+                            break
+                        }
+                    }
                     if ($col.version -ceq 'source-pattern-unattended-run-v1' -and
-                            $col.ready -eq $false -and
-                            $col.production_ready -eq $false -and
-                            $col.result.ready -eq $false -and
-                            $col.result.production_ready -eq $false -and
+                            $col.result.status -ceq $col.status -and
+                            $collectorStatusValid -and
+                            $collectorFlagsValid -and
                             $began -ge $start -and $ended -ge $began -and
                             $ended -le $finish) {
                         if (($newSamples -is [int] -or $newSamples -is [long]) -and
@@ -341,6 +363,63 @@ try {
                             $entry.new_unique_video_samples = [int]$newSamples
                             $entry.new_distinct_candidate_streams = [int]$newStreams
                             $entry.collector_report_correlated = $true
+                            # Only record stage counts if EVERY cycle has the
+                            # current exact non-gold stage schema and bounded
+                            # numeric observations. Older report versions
+                            # preserve unknown/null per-run pairing counts.
+                            $rows = $col.result.cycle_diagnostics
+                            if ($rows -is [array] -and $rows.Count -gt 0) {
+                                $validStages = $true
+                                $pairs = 0
+                                $sections = 0
+                                $corroborations = 0
+                                foreach ($row in $rows) {
+                                    $stage = $row.stage_diagnostics
+                                    if ($null -eq $stage -or
+                                            $stage.measured_original_match_gold -ne $false -or
+                                            $stage.record_counts_are_verified_public_media -ne $false -or
+                                            $stage.candidate_visual_status_counts -isnot [pscustomobject]) {
+                                        $validStages = $false
+                                        break
+                                    }
+                                    $p = $stage.candidate_observation_records
+                                    $w = $stage.source_window_section_records
+                                    if ((($p -isnot [int]) -and ($p -isnot [long])) -or
+                                            (($w -isnot [int]) -and ($w -isnot [long])) -or
+                                            $p -lt 0 -or $p -gt 100000 -or
+                                            $w -lt 0 -or $w -gt 100000 -or
+                                            $w -gt ($p * 3)) {
+                                        $validStages = $false
+                                        break
+                                    }
+                                    $matched = 0
+                                    $property = $stage.candidate_visual_status_counts.PSObject.Properties[
+                                        'VISUAL_SEQUENCE_CORROBORATED_NOT_SOURCE_GOLD'
+                                    ]
+                                    if ($null -ne $property) {
+                                        $matched = $property.Value
+                                    }
+                                    if ((($matched -isnot [int]) -and ($matched -isnot [long])) -or
+                                            $matched -lt 0 -or $matched -gt $p) {
+                                        $validStages = $false
+                                        break
+                                    }
+                                    $pairs += [int]$p
+                                    $sections += [int]$w
+                                    $corroborations += [int]$matched
+                                    if ($pairs -gt 100000 -or $sections -gt 100000 -or
+                                            $corroborations -gt 100000) {
+                                        $validStages = $false
+                                        break
+                                    }
+                                }
+                                if ($validStages) {
+                                    $entry.last_run_visual_pair_attempts = [int]$pairs
+                                    $entry.last_run_source_window_records = [int]$sections
+                                    $entry.last_run_sampled_visual_correspondences = [int]$corroborations
+                                    $entry.stage_metrics_correlated = $true
+                                }
+                            }
                         }
                     }
                 }

@@ -16,6 +16,106 @@ _ALLOWED = {
     "FAILED_PRELAUNCH", "FAILED_COLLECTOR_PROCESS", "COMPLETED_COLLECTOR_PROCESS",
 }
 
+# The existing v1 ring stays readable: these are optional *additive*
+# measurements on NEW events, not fabricated fields on legacy events.
+_STAGE_FIELDS = {
+    "stage_metrics_correlated", "last_run_visual_pair_attempts",
+    "last_run_source_window_records", "last_run_sampled_visual_correspondences",
+}
+_BASE_FIELDS = {
+    "started_at_utc", "finished_at_utc", "status", "exit_code",
+    "ran_collector", "error_class", "new_unique_video_samples",
+    "new_distinct_candidate_streams", "collector_report_correlated",
+    "ready", "production_ready",
+}
+FAILURE_THRESHOLD = 3
+ZERO_SAMPLE_THRESHOLD = 5
+ZERO_NEW_SOURCE_THRESHOLD = 5
+VISUAL_STALL_THRESHOLD = 3
+
+
+def _trailing_streak(events: list[dict], predicate) -> int:
+    streak = 0
+    for event in reversed(events):
+        if not predicate(event):
+            break
+        streak += 1
+    return streak
+
+
+def _stall_signals(events: list[dict]) -> dict:
+    """Observed *runs*, never assumed days, editorial negatives or source gold."""
+    failure = _trailing_streak(
+        events, lambda e: e["status"] != "COMPLETED_COLLECTOR_PROCESS",
+    )
+    zero_samples = _trailing_streak(
+        events, lambda e: (
+            e["collector_report_correlated"]
+            and e["new_unique_video_samples"] == 0
+        ),
+    )
+    zero_new_sources = _trailing_streak(
+        events, lambda e: (
+            e["collector_report_correlated"]
+            and e["new_unique_video_samples"] > 0
+            and e["new_distinct_candidate_streams"] == 0
+        ),
+    )
+    # Each observation must come from a SAME-RUN non-gold stage report with
+    # actual original interval records AND paired comparison attempts. A
+    # legacy event or a failed/missing source section breaks the streak.
+    visual = _trailing_streak(
+        events, lambda e: (
+            e["stage_metrics_correlated"]
+            and e["last_run_visual_pair_attempts"] > 0
+            and e["last_run_source_window_records"] > 0
+            and e["last_run_sampled_visual_correspondences"] == 0
+        ),
+    )
+    signals = []
+    if failure >= FAILURE_THRESHOLD:
+        signals.append("REPEATED_NATIVE_LAUNCH_FAILURES")
+    if visual >= VISUAL_STALL_THRESHOLD:
+        signals.append("REPEATED_BOUNDED_VISUAL_NONCORROBORATION")
+    if zero_samples >= ZERO_SAMPLE_THRESHOLD:
+        signals.append("REPEATED_ZERO_NEW_PATTERN_SAMPLES")
+    if zero_new_sources >= ZERO_NEW_SOURCE_THRESHOLD:
+        signals.append("REPEATED_NO_NEW_DISTINCT_SOURCE_CANDIDATES")
+    priority = signals[0] if signals else None
+    action_map = {
+        "REPEATED_NATIVE_LAUNCH_FAILURES": "INSPECT_LOCAL_WINDOWS_LAUNCH_FAILURES",
+        "REPEATED_BOUNDED_VISUAL_NONCORROBORATION":
+            "INSPECT_NATIVE_BOUNDED_PAIRING_AND_SOURCE_WINDOWS",
+        "REPEATED_ZERO_NEW_PATTERN_SAMPLES":
+            "INSPECT_LOCAL_DISCOVERY_AND_MEASUREMENT_FUNNEL",
+        "REPEATED_NO_NEW_DISTINCT_SOURCE_CANDIDATES":
+            "INSPECT_LOCAL_CANDIDATE_STREAM_DIVERSITY",
+    }
+    return {
+        "status": ("OPERATIONAL_STALL_SIGNAL_RECORDED" if priority else
+                   "UNKNOWN_INSUFFICIENT_LOCAL_STALL_EVIDENCE"),
+        "primary_signal": priority,
+        "signals": signals,
+        "next_action_code": action_map.get(
+            priority, "CONTINUE_BOUNDED_LOCAL_DIAGNOSIS",
+        ),
+        "consecutive_failed_launcher_runs": failure,
+        "consecutive_correlated_zero_sample_runs": zero_samples,
+        "consecutive_correlated_no_new_distinct_source_runs": zero_new_sources,
+        "consecutive_correlated_noncorroborated_visual_runs": visual,
+        "thresholds": {
+            "failed_launcher_runs": FAILURE_THRESHOLD,
+            "zero_sample_runs": ZERO_SAMPLE_THRESHOLD,
+            "no_new_distinct_source_runs": ZERO_NEW_SOURCE_THRESHOLD,
+            "noncorroborated_visual_runs": VISUAL_STALL_THRESHOLD,
+        },
+        "calendar_duration_inferred": False,
+        "visual_negative_or_editor_gold_proven": False,
+        "source_identity_verified": False,
+        "ready": False,
+        "production_ready": False,
+    }
+
 
 def _time(value: object) -> datetime:
     if not isinstance(value, str):
@@ -34,13 +134,21 @@ def _nonnegative_count(value: object) -> bool:
 
 
 def _validate_event(event: object) -> dict:
-    if not isinstance(event, dict) or set(event) != {
-        "started_at_utc", "finished_at_utc", "status", "exit_code",
-        "ran_collector", "error_class", "new_unique_video_samples",
-        "new_distinct_candidate_streams", "collector_report_correlated",
-        "ready", "production_ready",
-    }:
+    if not isinstance(event, dict) or set(event) not in (
+        _BASE_FIELDS, _BASE_FIELDS | _STAGE_FIELDS,
+    ):
         raise ValueError("Invalid or incomplete launcher history event")
+    # Allow older v1 events unchanged on disk, but NEVER synthesize known
+    # per-run stage measurements from historical launches.
+    event = {
+        **{
+            "stage_metrics_correlated": False,
+            "last_run_visual_pair_attempts": None,
+            "last_run_source_window_records": None,
+            "last_run_sampled_visual_correspondences": None,
+        },
+        **event,
+    }
     if (event["status"] not in _ALLOWED
             or event["ready"] is not False
             or event["production_ready"] is not False
@@ -74,6 +182,21 @@ def _validate_event(event: object) -> dict:
     elif (event["new_unique_video_samples"] is not None
           or event["new_distinct_candidate_streams"] is not None):
         raise ValueError("Uncorrelated old collection report was promoted")
+    if type(event["stage_metrics_correlated"]) is not bool:
+        raise ValueError("Invalid visual stage evidence flag")
+    stage_fields = (
+        event["last_run_visual_pair_attempts"],
+        event["last_run_source_window_records"],
+        event["last_run_sampled_visual_correspondences"],
+    )
+    if event["stage_metrics_correlated"]:
+        if (not success or not event["collector_report_correlated"]
+                or not all(_nonnegative_count(value) for value in stage_fields)
+                or stage_fields[1] > stage_fields[0] * 3
+                or stage_fields[2] > stage_fields[0]):
+            raise ValueError("Invalid or promoted per-run visual stage counts")
+    elif any(value is not None for value in stage_fields):
+        raise ValueError("Uncorrelated visual pairing was promoted")
     return event
 
 
@@ -92,6 +215,8 @@ def read_launcher_history(path: Path) -> dict:
         "consecutive_failure_runs": 0,
         "status_counts": {},
         "last_seven_runs": [],
+        "legacy_runs_without_stage_metrics": 0,
+        "operational_stall": _stall_signals([]),
         "ready": False, "production_ready": False,
     }
     if path.is_symlink():
@@ -111,6 +236,8 @@ def read_launcher_history(path: Path) -> dict:
             or not isinstance(saved["events"], list)
             or len(saved["events"]) > MAX_EVENTS):
         raise ValueError("Invalid launcher history envelope")
+    legacy_rows = sum(set(row) == _BASE_FIELDS for row in saved["events"]
+                      if isinstance(row, dict))
     records = [_validate_event(row) for row in saved["events"]]
     starts = [_time(row["started_at_utc"]) for row in records]
     if any(second <= first for first, second in zip(starts, starts[1:])):
@@ -136,6 +263,11 @@ def read_launcher_history(path: Path) -> dict:
             "new_unique_video_samples": row["new_unique_video_samples"],
             "new_distinct_candidate_streams": row["new_distinct_candidate_streams"],
             "collector_report_correlated": row["collector_report_correlated"],
+            "stage_metrics_correlated": row["stage_metrics_correlated"],
+            "last_run_visual_pair_attempts": row["last_run_visual_pair_attempts"],
+            "last_run_source_window_records": row["last_run_source_window_records"],
+            "last_run_sampled_visual_correspondences":
+                row["last_run_sampled_visual_correspondences"],
         }
 
     def delta(key: str) -> int | None:
@@ -160,4 +292,6 @@ def read_launcher_history(path: Path) -> dict:
         "consecutive_failure_runs": failure_streak,
         "status_counts": dict(sorted(counters.items())),
         "last_seven_runs": [compact(row) for row in records[-7:]],
+        "legacy_runs_without_stage_metrics": legacy_rows,
+        "operational_stall": _stall_signals(records),
     }

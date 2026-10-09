@@ -17,6 +17,33 @@ The target is evidence-backed **corpus-level editorial pattern learning**, not
 necessarily LLM weight fine-tuning. Model fine-tuning can be evaluated later but
 does not replace original-stream/video verification, dataset splits or calibrated QA.
 
+## Bounded consecutive-run stall signals (unreviewed only)
+
+The local Windows source-pattern health summary computes *diagnostic*
+streaks from the validated 90-event launcher history. Fixed thresholds
+are three failed launches, five fresh success-correlated zero-measurement
+runs, five successful runs measuring constructed source patterns but
+adding no new candidate source IDs, or three consecutive runs with
+strictly recorded finished/source visual attempts and source-window
+records but no bounded visual-sequence corroboration.
+
+The latter requires additional optional, null-by-default stage fields on
+new launcher events: attempted candidate pairs, original section records,
+and non-gold sampled visual corroborations. PowerShell copies those counts
+only from the current launch's timestamp-bounded collector report when
+**all** cycle stage observations are structurally valid and each local
+confidence/provenance flag remains false. Old history events remain
+backwards-compatible but cannot be retroactively promoted to observed
+visual failures; gaps, crashed invocations, unknown metrics, or absent
+original sections break a streak. A handful of attempts is not assumed
+to represent a day or any other calendar duration, and no signal
+states that human cuts are incorrect, a candidate original is genuine,
+or any measured negative/accuracy is gold. `ready=false` stays enforced.
+
+All signal codes and thresholds are deterministic, data remains local,
+and GitHub CI exercises only simulated JSON/native Windows mock binaries;
+no GitHub-hosted yt-dlp or YouTube media probe is introduced.
+
 ## Durable Windows operational history and meaningful deltas
 
 The native Task Scheduler launcher now stores up to **90** sanitized,
