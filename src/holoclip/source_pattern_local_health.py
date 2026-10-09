@@ -152,6 +152,14 @@ def summarize_local_collection_health(doctor: dict) -> dict:
         blocker, action = "NO_LOCAL_RUN", "CHECK_NATIVE_WINDOWS_COLLECTOR_TASK"
     elif status == "UNKNOWN_COLLECTION_FAILED":
         blocker, action = "COLLECTOR_EXECUTION", "INSPECT_SANITIZED_LOCAL_RUN_DIAGNOSTICS"
+    elif status == "DEFERRED_LOCAL_YTDLP_ACCESS":
+        blocker, action = (
+            "LOCAL_YTDLP_ACCESS_PAUSED", "CONTINUE_AT_NEXT_LOCAL_SCHEDULE"
+        )
+    elif status == "BLOCKED_LOCAL_YTDLP_PACING_STATE":
+        blocker, action = (
+            "LOCAL_YTDLP_PACING_STORAGE_BLOCKED", "REPAIR_LOCAL_PACING_STORAGE"
+        )
     elif doctor.get("last_run_metadata_access_paused") is True:
         blocker, action = "YOUTUBE_ACCESS", "DEFER_TO_NEXT_LOCAL_SCHEDULE"
     elif corrupted_local:
@@ -189,8 +197,13 @@ def summarize_local_collection_health(doctor: dict) -> dict:
             "BLOCKED_LOCAL_YOUTUBE_METADATA_ACCESS",
             "RECORDED_UNREVIEWED_NEW_SOURCE_VIDEO_SAMPLES",
             "UNKNOWN_NO_NEW_SOURCE_VIDEO_SAMPLES",
+            "DEFERRED_LOCAL_YTDLP_ACCESS", "BLOCKED_LOCAL_YTDLP_PACING_STATE",
         } else "UNKNOWN_LOCAL_COLLECTOR_STATUS",
         "last_run_new_pattern_samples": last_samples,
+        "last_run_access_deferred": doctor.get("last_run_access_deferred") is True,
+        "last_run_deferred_access_status": doctor.get(
+            "last_run_deferred_access_status"
+        ),
         "last_run_attempted_clip_records": attempted if funnel is not None else None,
         "last_run_finished_sha_records": finished_hashes if funnel is not None else None,
         "last_run_source_section_records": original_sections if funnel is not None else None,
