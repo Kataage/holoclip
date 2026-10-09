@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
 
@@ -105,7 +105,7 @@ class LanCoordinatorClient:
     def __init__(self, url: str, *, secret_file: Path):
         self.url = _url(url)
         self.secret = _secret(secret_file)
-        self._opener = build_opener(_NoRedirect())
+        self._opener = build_opener(ProxyHandler({}), _NoRedirect())
 
     @classmethod
     def from_env(cls) -> LanCoordinatorClient | None:
