@@ -37,6 +37,33 @@ original-stream false-positive rate, training gold or production qualification
 may be inferred. `ready=false` remains mandatory. Real collection must actually
 run against public media before any observed source result is claimed.
 
+## Unattended Windows collection and provenance checkpoint (2026-10-09)
+
+The opt-in local Windows Task Scheduler scripts install exactly one daily
+bounded `examples-collect-source-patterns` command for the current interactive
+user. The repository's path is resolved at installation time and set as the
+task working directory. The scheduled task neither grants any AI provider
+qualification nor enables cloud compute. The user may change the scheduled
+start time and disable/remove the task; installation itself does not execute
+network collection.
+
+`run_locked_source_pattern_collection` protects the shared corpus growth
+state using a platform OS advisory file lock. Overlapping collector processes
+fail closed with `BLOCKED_CONCURRENT_COLLECTION` rather than race and overwrite
+source histories. The file remains after the process exits; its OS lock does
+**not**, including after crashes. A validated, atomic last-run report is
+written on success or an explicit `UNKNOWN_COLLECTION_EXECUTION_FAILURE`
+record (with only the exception **class**) on error. Intermediate clip
+observations are checkpointed by the existing collection pipeline. An error
+record is never counted as a measurement or used to infer success.
+
+This guards only invocations routed through this worker. Independent
+`examples-grow-corpus` or `examples-verify-source-visual` calls touching
+the same state must not run at the same time, or would need a shared lock in a
+separate increment. Running GitHub CI and synthetic MP4 fixtures does **not**
+count as measured Hololive public-stream data. Source-pattern accuracy
+without reviewed gold remains unmeasured, and `ready=false` is mandatory.
+
 ## Acquisition and safe data allocation
 
 1. Discover public ended clips by metadata; check source/channel/range policy and
