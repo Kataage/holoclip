@@ -111,6 +111,35 @@ identical repeated import, wrong shared secret, broker unreachability,
 corrupt profile latch, spoofed status and real loopback-signed responses.
 These are **not** two physical PC tests, editor-gold tests, or hosted
 YouTube access tests. `ready=false` and all quality gates remain.
+## Increment: strict SSH credential transport and Windows NTFS ACLs
+
+`examples-ytdlp-lan-pull-secret` optionally retrieves a pre-existing PC-A
+credential using OpenSSH SFTP with a **previously verified** known_hosts
+file and public-key-only authentication. It disables first-use acceptance,
+password prompts, SSH proxies/jump hosts, forwarding and silent fallback.
+The remote SFTP path and SSH user/IP are constrained; the command
+never prints remote stderr, file bytes, command passwords or SSH secrets.
+A mismatched existing credential is never overwritten. SSH server
+setup, independent out-of-band host fingerprint verification and
+firewall scoping are prerequisites, **not performed** by the CLI.
+
+On Windows only, the SFTP staging directory must be NTFS DACL-protected
+before credentials are downloaded, and the imported target must pass
+an ACL lockdown. The PowerShell 5.1 helper restricts allow access
+to the invoking user, SYSTEM and Administrators and rejects unexpected
+file ownership, inherited/unapproved allow rights and reparse points.
+Windows file rights are checked using stable SIDs rather than display
+names. Local ACL review is available separately, and applying changes
+requires an explicit CLI flag. A failed target lockdown rejects
+the operation and attempts to remove only a newly created target.
+
+Offline unit tests fake SFTP and its failure modes; Windows CI uses
+disposable temporary NTFS files/directories for the ACL checks.
+No external SSH server, YouTube video, personal credentials or
+real two-PC network is exercised in GitHub. Cryptographic host
+identity verification by the operator and physical two-host
+commissioning remain outstanding. Shared-IP pacing remains an
+opt-in feature and `ready=false` remains mandatory.
 ## Increment: opt-in Windows LAN coordinator supervision
 
 On PC-A only, `scripts/install-ytdlp-lan-task.ps1` registers an
