@@ -83,11 +83,19 @@ without reviewed gold remains unmeasured, and `ready=false` is mandatory.
 
 ## Windows-specific release regression checks
 
+The opt-in installer checks `uv`, FFmpeg and FFprobe before registration
+and pins the resolved absolute uv application path into its Windows task
+action, avoiding a different scheduled-session PATH for uv. Missing tools
+fail before task registration. This does not guarantee any public
+video is reachable from the installed user's session.
+
 The `windows-source-pattern` GitHub Actions job exercises Windows Python
 advisory locking and launcher audit scenarios under Windows PowerShell 5.1.
 It copies only the launcher into a temporary project and shadows uv/FFmpeg
-with local stubs to verify missing-tool, nonzero-child-exit and successful
-child-exit behavior. It must **never** run the task installer, real yt-dlp or
+with local stubs to verify missing-tool, nonzero-child-exit, successful
+child-exit, and pinned-uv-path behavior. The installer also runs with
+mocked ScheduledTasks cmdlets to validate its registration arguments and
+preflight checks without actually registering or starting tasks. It must **never** run the task installer, real yt-dlp or
 a real public video in CI. A successful exit from a fake uv is only a
 script-control fixture and counts as no verified source samples.
 
