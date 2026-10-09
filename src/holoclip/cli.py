@@ -28,6 +28,7 @@ from holoclip.source_pattern_worker import (
 from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collector
 from holoclip.source_pattern_local_health import resolve_local_diagnostic_paths
 from holoclip.source_pattern_local_history import read_launcher_history
+from holoclip.source_ytdlp_lan_onboarding import diagnose_lan_client, import_lan_secret
 from holoclip.source_ytdlp_pacing import DEFAULT_PACING_PATH, inspect_local_ytdlp_pacing
 from holoclip.source_ytdlp_lan_coordinator import (
     DEFAULT_COORDINATOR_STATE, DEFAULT_SECRET_PATH, DEFAULT_CLIENT_CONFIG,
@@ -1133,6 +1134,39 @@ def examples_ytdlp_lan_init(
     }))
 
 
+@app.command("examples-ytdlp-lan-import-secret")
+def examples_ytdlp_lan_import_secret(
+    source_file: Path = typer.Option(..., "--source-file",
+        help="Existing trusted local copy (USB or independently secured transfer)."),
+    secret_file: Path = typer.Option(DEFAULT_SECRET_PATH, "--secret-file",
+        help="Local credential destination; never overwritten."),
+) -> None:
+    """Import a validated LAN credential without printing or transmitting it."""
+    try:
+        result = import_lan_secret(source_file=source_file, secret_file=secret_file)
+    except (ValueError, OSError, UnicodeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_LAN_SECRET_IMPORT_REJECTED",
+            "reason": type(exc).__name__, "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps({
+        "status": result, "secret_printed": False,
+        "network_access": False, "windows_acl_verified": False,
+        "ready": False,
+    }))
+
+
+@app.command("examples-ytdlp-lan-doctor")
+def examples_ytdlp_lan_doctor() -> None:
+    """Authenticate to the coordinator without yt-dlp or a lease."""
+    _load_env_file()
+    report = diagnose_lan_client()
+    typer.echo(json.dumps(report))
+    if not report["authenticated"]:
+        raise typer.Exit(6)
+
+
 @app.command("examples-ytdlp-lan-configure")
 def examples_ytdlp_lan_configure(
     url: str = typer.Option(..., "--url",
@@ -1179,32 +1213,8 @@ def examples_ytdlp_lan_serve(
 
 @app.command("examples-ytdlp-lan-status")
 def examples_ytdlp_lan_status() -> None:
-    """Check configured trusted coordinator, never touch YouTube or a video."""
-    _load_env_file()
-    from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
-
-    try:
-        client = LanCoordinatorClient.from_env()
-        if client is None:
-            typer.echo(json.dumps({
-                "status": "NOT_CONFIGURED",
-                "shared_ip_coordination_verified": False, "ready": False,
-            }))
-            raise typer.Exit(6)
-        result = client.status()
-        if result.get("ok") is not True:
-            raise LocalYtDlpDeferred("LOCAL_YTDLP_COORDINATOR_UNAVAILABLE")
-        typer.echo(json.dumps({
-            "status": "AUTHENTICATED_LOCAL_LAN_COORDINATOR",
-            "remote_gate_status": result.get("code"),
-            "shared_ip_coordination_verified": False, "ready": False,
-        }))
-    except LocalYtDlpDeferred as exc:
-        typer.echo(json.dumps({
-            "status": str(exc), "shared_ip_coordination_verified": False,
-            "ready": False,
-        }))
-        raise typer.Exit(6) from exc
+    """Legacy alias of LAN doctor: signed status only, never YouTube."""
+    examples_ytdlp_lan_doctor()
 
 
 @app.command("examples-source-controls-report")
