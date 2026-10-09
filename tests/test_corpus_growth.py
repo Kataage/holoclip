@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from holoclip.corpus_growth import CorpusGrowthState, grow_corpus
+from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState, grow_corpus
 from holoclip.examples import load_human_clip_store, upsert_human_clip_examples
 from holoclip.providers.source.base import SourceCandidate, SourceMetadata
 from test_editorial_profile import trusted_example
@@ -357,3 +357,131 @@ async def test_metadata_only_explicit_candidate_failing_public_source_policy_is_
     item = next(iter(state.items.values()))
     assert item.source_url is None and item.source_stream_id is None
     assert item.source_scout["candidate_sources"] == []
+
+
+@pytest.mark.asyncio
+async def test_metadata_failed_probes_rotate_instead_of_starving_fresh_clips(
+    tmp_path,
+):
+    """Seven persistently failing clips must all be attempted within four runs."""
+    class FailedProbeProvider(PublicProvider):
+        def __init__(self):
+            super().__init__()
+            self.probes = []
+
+        def search_public_clips(self, query, *, limit, offset):
+            self.searches.append((query, offset))
+            return []
+
+        def probe(self, url):
+            self.probes.append(url)
+            raise OSError("offline fixture probe unavailable")
+
+    provider = FailedProbeProvider()
+
+    async def forbidden(**_kwargs):
+        pytest.fail("metadata-only may not ingest")
+
+    state_path = tmp_path / "state.json"
+    state = CorpusGrowthState()
+    urls = [f"https://youtu.be/{i:011d}" for i in range(7)]
+    for i, url in enumerate(urls):
+        state.items[f"clip-{i}"] = CorpusGrowthItem(
+            clip_url=url, query="test", clip_channel="editor",
+        )
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+
+    for _ in range(4):
+        report = await grow_corpus(
+            provider, store=tmp_path / "clips", state_path=state_path,
+            ingest=forbidden, policy_rules=[], discover_only=True,
+            scan_limit=2,
+        )
+        assert report["metadata_resolution_attempted"] == 2
+        assert report["metadata_resolution_pending"] == 7
+        assert sum(report["queue_counts"].values()) == 7
+    assert provider.probes[:7] == urls
+    persisted = CorpusGrowthState.model_validate_json(
+        state_path.read_text(encoding="utf-8")
+    )
+    assert persisted.cursors["corpus_metadata_pending_round_robin"] == 8
+
+
+@pytest.mark.asyncio
+async def test_queued_learning_items_do_not_consume_metadata_probe_slots(tmp_path):
+    provider = PublicProvider()
+
+    async def forbidden(**_kwargs):
+        pytest.fail("metadata-only must not ingest")
+
+    path = tmp_path / "state.json"
+    state = CorpusGrowthState()
+    for i in range(5):
+        state.items[f"queued-{i}"] = CorpusGrowthItem(
+            clip_url=f"https://youtu.be/{i:011d}", status="queued",
+            source_url="https://youtu.be/source",
+            source_stream_id="source", query="test", clip_channel="editor",
+        )
+    state.items["new"] = CorpusGrowthItem(
+        clip_url="https://youtu.be/new-clip", query="test", clip_channel="editor",
+    )
+    path.write_text(state.model_dump_json(), encoding="utf-8")
+    report = await grow_corpus(
+        provider, store=tmp_path / "store", state_path=path,
+        ingest=forbidden, policy_rules=[], discover_only=True, scan_limit=1,
+    )
+    assert report["metadata_resolution_attempted"] == 1
+    assert report["source_visual_newly_pending"] == 1
+    assert report["queue_counts"] == {"queued": 5, "source_visual_pending": 1}
+    assert provider.searches
+    state = CorpusGrowthState.model_validate_json(path.read_text(encoding="utf-8"))
+    assert state.items["new"].source_url is None
+    assert state.items["new"].source_stream_id is None
+
+
+@pytest.mark.asyncio
+async def test_metadata_only_does_not_steal_ingestion_retry_with_assigned_stream(
+    tmp_path,
+):
+    provider = PublicProvider()
+
+    async def forbidden(**_kwargs):
+        pytest.fail("metadata-only cannot run ingester")
+
+    path = tmp_path / "state.json"
+    state = CorpusGrowthState()
+    state.items["ingest-retry"] = CorpusGrowthItem(
+        clip_url="https://youtu.be/clip", source_url="https://youtu.be/source",
+        source_stream_id="source", status="retryable", query="test",
+    )
+    path.write_text(state.model_dump_json(), encoding="utf-8")
+    report = await grow_corpus(
+        provider, store=tmp_path / "clips", state_path=path,
+        ingest=forbidden, policy_rules=[], discover_only=True, scan_limit=1,
+    )
+    assert report["metadata_resolution_attempted"] == 0
+    assert report["metadata_resolution_pending"] == 0
+    assert report["queue_counts"] == {"retryable": 1}
+    state = CorpusGrowthState.model_validate_json(path.read_text(encoding="utf-8"))
+    assert state.items["ingest-retry"].source_url == "https://youtu.be/source"
+    assert state.items["ingest-retry"].source_stream_id == "source"
+    assert state.items["ingest-retry"].source_scout is None
+
+
+@pytest.mark.asyncio
+async def test_corrupt_metadata_pending_cursor_blocks_before_network(tmp_path):
+    provider = PublicProvider()
+
+    async def forbidden(**_kwargs):
+        pytest.fail("must reject corrupt metadata cursor without network")
+
+    path = tmp_path / "state.json"
+    state = CorpusGrowthState()
+    state.cursors["corpus_metadata_pending_round_robin"] = -1
+    path.write_text(state.model_dump_json(), encoding="utf-8")
+    with pytest.raises(ValueError, match="metadata resolution cursor"):
+        await grow_corpus(
+            provider, store=tmp_path / "clips", state_path=path,
+            ingest=forbidden, policy_rules=[], discover_only=True,
+        )
+    assert provider.searches == []

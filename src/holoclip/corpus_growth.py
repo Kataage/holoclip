@@ -92,6 +92,12 @@ async def grow_corpus(
     def persist():
         _atomic_json(state_path, state.model_dump(mode="json"))
 
+    # Fail closed *before* any remote metadata request when a checkpoint was
+    # corrupted. The cursor is shared across invocations, not just cycles.
+    pending_cursor = state.cursors.get("corpus_metadata_pending_round_robin", 0)
+    if type(pending_cursor) is not int or pending_cursor < 0:
+        raise ValueError("Invalid corpus metadata resolution cursor")
+
     examples = load_human_clip_store(store)
     # Preserve every legacy corpus stream as training, including review-only examples.
     # Queued learning items also claim their streams to prevent cross-clip leakage.
@@ -176,13 +182,43 @@ async def grow_corpus(
     resolved = 0
     source_visual_newly_pending = 0
     explicit_visual_newly_pending = 0
-    pending = [x for x in state.items.values() if x.status in {"discovered", "retryable", "queued"}]
-    # Resolve a bounded metadata page before selecting what to acquire.
-    for item in sorted(pending, key=lambda x: (editor_counts[x.clip_channel], x.clip_url))[
-        :scan_limit
-    ]:
-        if item.status == "queued":
-            continue
+    # A fixed sorted-first scan re-probed the same failed URLs forever and
+    # starved fresh clips once the backlog exceeded scan_limit. Already-queued
+    # learning items also used to waste the limited metadata resolution slots.
+    # In metadata-only mode, do not reclassify acquisition retries that already
+    # own a learning stream into unverified visual-only candidates.
+    pending = sorted(
+        (
+            (key, item) for key, item in state.items.items()
+            if item.status == "discovered"
+            or (
+                item.status == "retryable"
+                and (not discover_only or (
+                    item.source_url is None and item.source_stream_id is None
+                ))
+            )
+        ),
+        key=lambda entry: (
+            editor_counts[entry[1].clip_channel], entry[1].clip_url, entry[0],
+        ),
+    )
+    rotated = (
+        pending[pending_cursor % len(pending):]
+        + pending[:pending_cursor % len(pending)]
+        if pending else []
+    )
+    metadata_resolution_attempted = 0
+    metadata_retryable_attempted = 0
+    for _key, item in rotated[:scan_limit]:
+        metadata_resolution_attempted += 1
+        if item.status == "retryable":
+            metadata_retryable_attempted += 1
+        # Persist BEFORE probing network so a crash/timeout cannot strand
+        # later candidate clips behind the same permanently failing URL.
+        state.cursors["corpus_metadata_pending_round_robin"] = (
+            pending_cursor + metadata_resolution_attempted
+        )
+        persist()
         try:
             clip = provider.probe(item.clip_url)
             if not _public(clip):
@@ -344,6 +380,15 @@ async def grow_corpus(
         "search_page_wraps": search_page_wraps,
         "empty_search_pages": empty_search_pages,
         "resolved": resolved,
+        "metadata_resolution_attempted": metadata_resolution_attempted,
+        "metadata_retryable_attempted": metadata_retryable_attempted,
+        "metadata_resolution_pending": sum(
+            item.status in {"discovered", "retryable"}
+            and (not discover_only or (
+                item.source_url is None and item.source_stream_id is None
+            ))
+            for item in state.items.values()
+        ),
         "source_visual_newly_pending": source_visual_newly_pending,
         "explicit_source_visual_newly_pending": explicit_visual_newly_pending,
         "attempted": attempted,

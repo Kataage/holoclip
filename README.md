@@ -100,6 +100,21 @@ Descendants that intentionally detach into a separate session or escape
 the Windows parent tree remain outside the guarantee; no user or
 unrelated process groups are targeted.
 
+### Persistent fair metadata resolution (2026-10-09)
+
+Autonomous public-clip discovery now rotates **metadata probe attempts**
+across the `discovered` and metadata-`retryable` backlog using a
+persisted `corpus_metadata_pending_round_robin` cursor. The cursor is
+checkpointed before each network probe; a permanently failing clip cannot
+occupy the first `--scan-limit` candidates on every unattended run.
+Already-`queued` learning clips do not consume probe slots. When running
+metadata-only evidence collection, ingestion failures that already have
+canonical source URLs/stream assignments stay in the learning queue and
+are not reassigned to unverified visual probes. The report distinguishes
+`metadata_resolution_attempted`, `metadata_retryable_attempted` and
+`metadata_resolution_pending`. These count metadata work only, not real
+video downloads, human gold or successful original matches.
+
 ### Public source links reach the unreviewed measurement queue
 
 The unattended `examples-collect-source-patterns` command uses
