@@ -255,6 +255,39 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pat
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pattern-task.ps1 -At "04:30"
 ```
 
+#### One-command offline Windows collection health
+
+To see a **compact** operational diagnosis after a native scheduled run,
+or before installing a task, run this from the Holoclip repository:
+
+```powershell
+uv run --extra media holoclip examples-collector-health
+```
+
+The command automatically reads the same optional
+`data/examples/source-pattern-local-settings.json` as the Windows launcher.
+For a custom file pinned with `-ConfigPath` during task installation, pass
+`--config-path "D:\\Holoclip Data\\local-source-settings.json"`. You can
+also use `--no-check-tools` to skip checks for uv, FFmpeg and JavaScript.
+
+The output is **one small JSON summary** with `primary_blocker` and
+`next_action_code`, plus the latest clip/section attempt counts and
+independent on-disk cached-video SHA checks. It distinguishes a failed
+Task Scheduler launch, missing tools, YouTube rate/bot restrictions,
+missing finished/source video records, damaged or partial media cache,
+absent visual corroboration, absent constructed controls, and missing
+independent human/editor gold. The legacy
+`examples-collector-doctor` still provides the complete detailed report,
+now also including `local_collection_health`.
+
+This is read-only: no network, downloads, runtime models, corpus edits,
+cookies, clip titles or video URLs are included in the compact output.
+A saved source-window **record** and a verified **local-byte** receipt
+are not proof of public footage identity or correct original-to-finished
+editing; `ready=false` remains enforced even if all operational checks
+were measured. For safety, missing or incomplete measurements remain
+unknown, and a partial bounded cache audit cannot satisfy full coverage.
+
 #### Optional Windows local settings (no code edits)
 
 The native runner now reads
