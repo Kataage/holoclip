@@ -39,6 +39,19 @@ class YtDlpError(RuntimeError):
     pass
 
 
+class YtDlpTimeout(YtDlpError):
+    """A subprocess deadline expired; never retry a potentially hung child."""
+
+
+# Hard deadlines keep Task Scheduler from permanently skipping future runs
+# when a native extractor/update/FFmpeg subprocess hangs.
+VERSION_TIMEOUT_SECONDS = 30
+RUNTIME_UPDATE_TIMEOUT_SECONDS = 180
+METADATA_TIMEOUT_SECONDS = 240
+BOUNDED_VIDEO_TIMEOUT_SECONDS = 1200
+MEDIA_ACQUISITION_TIMEOUT_SECONDS = 1800
+
+
 class YtDlpRuntimeInfo(BaseModel):
     version: str
     channel: str
@@ -50,7 +63,10 @@ def _run_process(
     command: list[str],
     *,
     label: str = "command",
+    timeout_seconds: int = METADATA_TIMEOUT_SECONDS,
 ) -> subprocess.CompletedProcess[str]:
+    if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 3600:
+        raise ValueError("Invalid yt-dlp subprocess deadline")
     try:
         return subprocess.run(
             command,
@@ -59,7 +75,14 @@ def _run_process(
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=timeout_seconds,
         )
+    except subprocess.TimeoutExpired as exc:
+        # Never include the command, URL or transcript in a persisted status.
+        # subprocess.run kills and waits for the direct process on timeout.
+        raise YtDlpTimeout(
+            f"{label} exceeded {timeout_seconds}s process deadline"
+        ) from exc
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "").strip()
         if len(detail) > 1200:
@@ -78,7 +101,10 @@ def _version_tuple(raw: str) -> tuple[int, ...]:
 
 
 def _runtime_version(executable: str) -> tuple[int, ...]:
-    result = _run_process([executable, "--version"], label=executable)
+    result = _run_process(
+        [executable, "--version"], label="JavaScript runtime version",
+        timeout_seconds=VERSION_TIMEOUT_SECONDS,
+    )
     return _version_tuple(result.stdout.strip() or result.stderr.strip())
 
 
@@ -171,7 +197,10 @@ class ManagedYtDlpRuntime:
             resolve.extend(["--prerelease", "allow"])
         resolve.extend(["--from", "yt-dlp[default]", "yt-dlp", "--version"])
 
-        result = _run_process(resolve, label="yt-dlp runtime refresh")
+        result = _run_process(
+            resolve, label="yt-dlp runtime refresh",
+            timeout_seconds=RUNTIME_UPDATE_TIMEOUT_SECONDS,
+        )
         version = (result.stdout.strip() or result.stderr.strip()).splitlines()[-1].strip()
         if not version:
             raise YtDlpError("yt-dlp runtime refresh returned an empty version")
@@ -210,7 +239,10 @@ class ManagedYtDlpRuntime:
                 _run_process(
                     [executable, "--update-to", self.channel],
                     label=f"yt-dlp {self.channel} update",
+                    timeout_seconds=RUNTIME_UPDATE_TIMEOUT_SECONDS,
                 )
+            except YtDlpTimeout:
+                raise
             except YtDlpError as exc:
                 raise YtDlpError(
                     f"{exc}. This yt-dlp executable could not self-update. "
@@ -218,7 +250,10 @@ class ManagedYtDlpRuntime:
                     "or update the executable manually."
                 ) from exc
 
-        version_result = _run_process([executable, "--version"], label="yt-dlp version")
+        version_result = _run_process(
+            [executable, "--version"], label="yt-dlp version",
+            timeout_seconds=VERSION_TIMEOUT_SECONDS,
+        )
         version = (
             version_result.stdout.strip() or version_result.stderr.strip()
         ).splitlines()[-1].strip()
@@ -423,13 +458,19 @@ class YtDlpSourceProvider:
         args: list[str],
         *,
         label: str,
+        timeout_seconds: int = METADATA_TIMEOUT_SECONDS,
         retry_with_fresh_runtime: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         try:
             return _run_process(
                 self.runtime.command(args),
                 label=label,
+                timeout_seconds=timeout_seconds,
             )
+        except YtDlpTimeout:
+            # A hung native process is not an extractor-version problem.
+            # Don't refresh/retry the same media while its children may remain.
+            raise
         except YtDlpError as first_error:
             if not retry_with_fresh_runtime or not self.runtime.manage_updates:
                 raise
@@ -438,6 +479,7 @@ class YtDlpSourceProvider:
                 return _run_process(
                     self.runtime.command(args),
                     label=f"{label} after runtime refresh",
+                    timeout_seconds=timeout_seconds,
                 )
             except YtDlpError as second_error:
                 raise YtDlpError(
@@ -620,7 +662,10 @@ class YtDlpSourceProvider:
             "--paths", str(directory), "--output", "media.%(ext)s",
             "--print", "after_move:filepath", url,
         ]
-        completed = self._run_yt_dlp(args, label="yt-dlp bounded source video")
+        completed = self._run_yt_dlp(
+            args, label="yt-dlp bounded source video",
+            timeout_seconds=BOUNDED_VIDEO_TIMEOUT_SECONDS,
+        )
         paths = [Path(line.strip()) for line in completed.stdout.splitlines() if line.strip()]
         media = next((p for p in reversed(paths) if p.is_file()
                       and p.parent.resolve() == directory.resolve()), None)
@@ -697,6 +742,7 @@ class YtDlpSourceProvider:
         result = self._run_yt_dlp(
             args,
             label="yt-dlp acquisition",
+            timeout_seconds=MEDIA_ACQUISITION_TIMEOUT_SECONDS,
         )
 
         printed_paths = [

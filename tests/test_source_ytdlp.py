@@ -103,7 +103,7 @@ def test_training_acquisition_uses_audio_profile_and_reuses_file(
 ) -> None:
     calls: list[list[str]] = []
 
-    def fake_run(command: list[str], *, label: str = "command") -> subprocess.CompletedProcess[str]:
+    def fake_run(command: list[str], *, label: str = "command", timeout_seconds: int = 240) -> subprocess.CompletedProcess[str]:
         calls.append(command)
         if command[-1:] == ["--version"]:
             return subprocess.CompletedProcess(
@@ -177,7 +177,7 @@ def test_managed_runtime_refreshes_latest_nightly_once(monkeypatch) -> None:
             return "uvx"
         return None
 
-    def fake_run(command: list[str], *, label: str = "command"):
+    def fake_run(command: list[str], *, label: str = "command", timeout_seconds: int = 240):
         calls.append(command)
         return subprocess.CompletedProcess(
             command,
@@ -241,7 +241,7 @@ def test_download_failure_refreshes_runtime_and_retries_once(
     provider.runtime.manage_updates = True
     monkeypatch.setattr(provider.runtime, "refresh", fake_refresh)
 
-    def fake_run(command: list[str], *, label: str = "command"):
+    def fake_run(command: list[str], *, label: str = "command", timeout_seconds: int = 240):
         attempts["probe"] += 1
         if attempts["probe"] == 1:
             raise yt_dlp.YtDlpError("extractor broke")
@@ -265,3 +265,86 @@ def test_download_failure_refreshes_runtime_and_retries_once(
     assert metadata.external_id == "video"
     assert attempts["probe"] == 2
     assert refreshes["count"] == 1
+
+
+def test_native_process_deadline_is_enforced_without_url_in_error(monkeypatch):
+    captured = []
+
+    def blocked(command, **kwargs):
+        captured.append(kwargs)
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(yt_dlp.subprocess, "run", blocked)
+    with pytest.raises(yt_dlp.YtDlpTimeout) as exc:
+        yt_dlp._run_process(
+            ["yt-dlp", "https://example.invalid/private-id"],
+            label="bounded original video",
+            timeout_seconds=7,
+        )
+    assert "bounded original video" in str(exc.value)
+    assert "7s" in str(exc.value)
+    assert "https://" not in str(exc.value)
+    assert captured[0]["timeout"] == 7
+    assert captured[0]["capture_output"] is True
+
+
+def test_runtime_timeout_does_not_retry_or_refresh(monkeypatch):
+    provider = yt_dlp.YtDlpSourceProvider(
+        executable="yt-dlp", js_runtime="node", manage_updates=False,
+    )
+    monkeypatch.setattr(provider.runtime, "command",
+                        lambda args: ["yt-dlp", *args])
+    provider.runtime.manage_updates = True
+    called = []
+
+    def would_refresh():
+        called.append("refresh")
+        raise AssertionError("refresh may not extend timed-out process")
+
+    def timeout(_command, *, label="command", timeout_seconds=240):
+        called.append(("run", label, timeout_seconds))
+        raise yt_dlp.YtDlpTimeout("metadata extraction exceeded deadline")
+
+    monkeypatch.setattr(provider.runtime, "refresh", would_refresh)
+    monkeypatch.setattr(yt_dlp, "_run_process", timeout)
+    with pytest.raises(yt_dlp.YtDlpTimeout):
+        provider.probe("https://www.youtube.com/watch?v=AAAAAAAAAAA")
+    assert called == [("run", "yt-dlp metadata probe", yt_dlp.METADATA_TIMEOUT_SECONDS)]
+
+
+def test_bounded_video_and_bulk_audio_use_separate_deadlines(tmp_path, monkeypatch):
+    provider = yt_dlp.YtDlpSourceProvider(
+        executable="yt-dlp", js_runtime="node", manage_updates=False,
+    )
+    from holoclip.providers.source.base import SourceMetadata
+    meta = SourceMetadata(
+        provider="yt-dlp", url="https://www.youtube.com/watch?v=AAAAAAAAAAA",
+        external_id="AAAAAAAAAAA", title="source", duration=999,
+        availability="public", live_status="was_live",
+    )
+    monkeypatch.setattr(provider, "probe", lambda _url: meta)
+    calls = []
+
+    def timeout(_args, *, label, timeout_seconds=240, **kwargs):
+        calls.append((label, timeout_seconds))
+        raise yt_dlp.YtDlpTimeout("bounded test deadline")
+
+    monkeypatch.setattr(provider, "_run_yt_dlp", timeout)
+    with pytest.raises(yt_dlp.YtDlpTimeout):
+        provider.acquire_video_range(meta.url, tmp_path / "range", start=10, end=22)
+    with pytest.raises(yt_dlp.YtDlpTimeout):
+        provider.acquire(meta.url, tmp_path / "bulk")
+    assert calls == [
+        ("yt-dlp bounded source video", yt_dlp.BOUNDED_VIDEO_TIMEOUT_SECONDS),
+        ("yt-dlp acquisition", yt_dlp.MEDIA_ACQUISITION_TIMEOUT_SECONDS),
+    ]
+
+
+@pytest.mark.parametrize("limit", [0, -1, 3601, True, 2.5])
+def test_native_deadline_budget_validation_fails_without_spawning(monkeypatch, limit):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("bad timeout may not launch a process")
+
+    monkeypatch.setattr(yt_dlp.subprocess, "run", forbidden)
+    with pytest.raises(ValueError, match="deadline"):
+        yt_dlp._run_process(["uvx"], timeout_seconds=limit)

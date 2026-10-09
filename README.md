@@ -79,6 +79,20 @@ The launcher writes a **separate**
 or FFmpeg is unavailable, so a previous successful collector report cannot
 hide the most recent failed scheduled invocation.
 
+### Native extraction deadlines and unattended recovery
+
+All yt-dlp subprocess invocations now use explicit deadlines instead of
+waiting forever: 30 seconds for runtime-version checks, 180 seconds for
+yt-dlp installation/refresh, 240 seconds for metadata searches/probes,
+20 minutes for a bounded video section, and 30 minutes for a full audio/media
+acquisition. A timed-out native process produces a diagnostic
+`YtDlpTimeout` and is **not retried** just because a fresh nightly yt-dlp
+version might exist. The next scheduled run can resume from persisted
+cursors when the direct process has ended; no timeout counts as a negative
+source match or reviewed gold. This process deadline does not guarantee
+recursive cleanup of descendant FFmpeg processes if a platform leaves one
+running; such leftovers require separate OS-level supervision.
+
 ### Windows unattended source-pattern collection
 
 An opt-in Windows Task Scheduler installation is available for machines running
@@ -97,7 +111,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pat
 During one-time installation, the script verifies `uv`, FFmpeg and FFprobe
 are locally discoverable and pins the absolute `uv` executable path into
 the task action. This prevents loss of `uv` when Task Scheduler runs with
-a different PATH. Missing required tools stop registration rather than
+a different PATH. The launcher also prepends uv's directory to the child
+PATH, so yt-dlp's nested `uvx` / `uv tool run` invocation can find the
+same installation. Missing required tools stop registration rather than
 installing a broken repeating task. At actual execution time, FFmpeg/FFprobe
 and Deno/Node must still be accessible; the offline doctor checks these.
 

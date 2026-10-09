@@ -90,10 +90,16 @@ try {
     $pinnedDir = Join-Path $temporary 'Pinned Executables With Spaces'
     New-Item -ItemType Directory -Force -Path $pinnedDir | Out-Null
     $pinnedUv = Join-Path $pinnedDir 'uv.cmd'
+    # Probe the child's PATH through the mocked uv command. Its own absolute
+    # path should also be usable by the nested yt-dlp runtime.
+    Create-Mock 'uv' "where uv > `"%HOLOCLIP_FAKE_UV_MARKER%.path`"`r`necho invoked >> `"%HOLOCLIP_FAKE_UV_MARKER%`"`r`nexit /b 0"
     Copy-Item -LiteralPath (Join-Path $fakeBin 'uv.cmd') -Destination $pinnedUv
     Remove-Item -LiteralPath (Join-Path $fakeBin 'uv.cmd') -Force
     $fourth = Run-Launcher 'COMPLETED_COLLECTOR_PROCESS' 0 $true $pinnedUv
     Assert-Condition ($fourth.error_class -eq $null) 'Pinned uv path must start'
+    $pathProof = Join-Path $temporary 'was-invoked.txt.path'
+    Assert-Condition (Test-Path -LiteralPath $pathProof -PathType Leaf) 'Nested uv PATH probe absent'
+    Assert-Condition ((Get-Content -LiteralPath $pathProof -Raw).Contains($pinnedUv)) 'Nested yt-dlp cannot discover pinned uv'
     $fifth = Run-Launcher 'FAILED_PRELAUNCH' 1 $false (Join-Path $pinnedDir 'missing-uv.exe')
     Assert-Condition ($fifth.error_class -ne $null) 'Missing pinned uv must fail closed'
     # Runner only: no user task should be registered.

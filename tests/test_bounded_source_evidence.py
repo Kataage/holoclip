@@ -225,7 +225,8 @@ def test_yt_dlp_range_command_and_source_namespace(tmp_path, monkeypatch):
     monkeypatch.setattr(provider, "probe", lambda url: metadata)
     observed = []
 
-    def execute(args, *, label, retry_with_fresh_runtime=True):
+    def execute(args, *, label, timeout_seconds=240, retry_with_fresh_runtime=True):
+        assert timeout_seconds == 1200  # finite bounded-video extraction deadline
         observed.append(args)
         folder = Path(args[args.index("--paths") + 1])
         folder.mkdir(parents=True, exist_ok=True)

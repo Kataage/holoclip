@@ -81,6 +81,23 @@ CI and synthetic MP4 fixtures does **not**
 count as measured Hololive public-stream data. Source-pattern accuracy
 without reviewed gold remains unmeasured, and `ready=false` is mandatory.
 
+## Bounded native yt-dlp subprocess deadlines
+
+Local subprocess execution is time-bounded for runtime version/update,
+metadata extraction, bounded section download and full media download.
+Timeouts are explicit `YtDlpTimeout` unknowns and do not trigger
+the existing one-time runtime refresh/retry path. A timeout is not an
+observed negative or proof of real original alignment. Python kills
+and reaps the immediate timed-out subprocess, but Windows or POSIX may
+leave separately spawned media descendants; no guarantee of complete
+process-tree termination is claimed. This reduces infinite unattended
+job hangs while preserving unverified and `ready=false` gates.
+
+When `uv` is pinned in the Windows task action, the launcher adds its
+parent directory to the child PATH so managed yt-dlp refresh invokes a
+consistent nested uv/uvx runtime even if Task Scheduler provides a
+different default PATH.
+
 ## Windows-specific release regression checks
 
 The opt-in installer checks `uv`, FFmpeg and FFprobe before registration
