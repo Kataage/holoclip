@@ -9,7 +9,6 @@ import sqlite3
 import threading
 import time
 from contextlib import contextmanager
-from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -24,7 +23,6 @@ from holoclip.source_ytdlp_lan_pair_evidence import (
     PAIR_VERSION, _report_key, _canonical,
     compare_lan_pair_evidence, export_lan_pair_evidence,
 )
-from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
 
 
 @pytest.fixture(autouse=True)
