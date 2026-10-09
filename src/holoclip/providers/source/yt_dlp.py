@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 from pydantic import BaseModel
 
 from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred, LocalYtDlpPacer
+from holoclip.source_ytdlp_lan_coordinator import LanCoordinatorClient
 from holoclip.source_metadata_failure_summary import _public_probe_failure_category
 from holoclip.providers.source.base import (
     AcquiredSource,
@@ -510,6 +511,9 @@ class YtDlpSourceProvider:
             )
         )
         self.pacer = LocalYtDlpPacer(gate_path) if gate_path is not None else None
+        # Opt-in multi-PC mode is STRICTLY fail-closed. Partial setup fails
+        # rather than treating a separate-PC local SQLite gate as sufficient.
+        self.lan_coordinator = LanCoordinatorClient.from_env()
         self.runtime = ManagedYtDlpRuntime(
             channel=channel,
             executable=executable,
@@ -566,16 +570,26 @@ class YtDlpSourceProvider:
 
         def once(*, current_label: str):
             try:
-                cmd = self.runtime.command(safe_args)
-                if self.pacer is None:
-                    return _run_process(
-                        cmd, label=current_label, timeout_seconds=timeout_seconds,
-                    )
-                with self.pacer.reserve(timeout_seconds=timeout_seconds):
+                # Coordinator first: a locally successful reservation must
+                # NEVER override a missing/unreachable shared-IP permission.
+                # The second local gate remains defense in depth.
+                from contextlib import ExitStack
+
+                with ExitStack() as stack:
+                    if self.lan_coordinator is not None:
+                        stack.enter_context(
+                            self.lan_coordinator.reserve(
+                                timeout_seconds=timeout_seconds,
+                            )
+                        )
+                    if self.pacer is not None:
+                        stack.enter_context(
+                            self.pacer.reserve(timeout_seconds=timeout_seconds)
+                        )
+                    cmd = self.runtime.command(safe_args)
                     try:
                         return _run_process(
-                            cmd, label=current_label,
-                            timeout_seconds=timeout_seconds,
+                            cmd, label=current_label, timeout_seconds=timeout_seconds,
                         )
                     except YtDlpError as exc:
                         kind = _public_probe_failure_category(str(exc))
@@ -583,11 +597,19 @@ class YtDlpSourceProvider:
                             "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE",
                             "HTTP_RATE_LIMIT",
                         }:
-                            self.pacer.impose_cooldown(reason=kind)
+                            # Preserve local cooldown even if the coordinator
+                            # disappears; all configured remote clients then
+                            # fail closed until it returns.
+                            try:
+                                if self.lan_coordinator is not None:
+                                    self.lan_coordinator.impose_cooldown(kind)
+                            finally:
+                                if self.pacer is not None:
+                                    self.pacer.impose_cooldown(reason=kind)
                         raise
             except LocalYtDlpDeferred as exc:
-                # This is a locally held reservation/cooldown, not a reason to
-                # refresh yt-dlp or retry other metadata in a tight loop.
+                # Never refresh the extractor or retry if our LAN/host
+                # coordinator refused, crashed, or returned untrusted data.
                 raise YtDlpError(str(exc)) from exc
 
         try:

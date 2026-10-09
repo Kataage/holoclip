@@ -1,0 +1,390 @@
+"""Optional authenticated LAN yt-dlp coordination, entirely stdlib and offline-testable.
+
+A single private-LAN coordinator serializes *yt-dlp subprocesses*, not clips.
+Use on every PC sharing an outward IP; unconfigured PCs are OUTSIDE its gate.
+Failure to authenticate/reach a configured coordinator fails closed.
+"""
+from __future__ import annotations
+
+import hashlib
+import hmac
+import ipaddress
+import json
+import os
+import re
+import secrets
+import sqlite3
+import threading
+import time
+from contextlib import closing, contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.error import URLError
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+
+from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
+
+LAN_COORDINATOR_VERSION = "holoclip-lan-ytdlp-v1"
+DEFAULT_COORDINATOR_STATE = Path("data/runtime/yt-dlp-lan-coordinator.sqlite3")
+DEFAULT_SECRET_PATH = Path("data/runtime/yt-dlp-lan-secret.txt")
+_ALLOWED_REASONS = {"HTTP_RATE_LIMIT", "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE"}
+_ENV_URL = "HOLOCLIP_YTDLP_COORDINATOR_URL"
+_ENV_SECRET = "HOLOCLIP_YTDLP_COORDINATOR_SECRET_FILE"
+_MAX_REQUEST_BYTES = 1024
+_GAP_SECONDS = 20
+_COOLDOWN_SECONDS = 21600
+
+
+def _private_ipv4(raw: str) -> str:
+    try:
+        addr = ipaddress.IPv4Address(raw)
+    except ipaddress.AddressValueError as exc:
+        raise ValueError("Coordinator requires a literal private/loopback IPv4") from exc
+    if not (addr.is_loopback or addr in ipaddress.IPv4Network("10.0.0.0/8")
+            or addr in ipaddress.IPv4Network("172.16.0.0/12")
+            or addr in ipaddress.IPv4Network("192.168.0.0/16")):
+        raise ValueError("Coordinator address must be a trusted LAN IPv4")
+    return str(addr)
+
+
+def _url(url: str) -> str:
+    parts = urlsplit(url)
+    if (parts.scheme != "http" or parts.username is not None or
+            parts.password is not None or parts.path not in ("", "/")
+            or parts.query or parts.fragment or parts.hostname is None):
+        raise ValueError("Coordinator URL must be HTTP to a literal trusted LAN address")
+    host = _private_ipv4(parts.hostname)
+    try:
+        port = parts.port
+    except ValueError as exc:
+        raise ValueError("Invalid coordinator port") from exc
+    if port is None or not 1024 <= port <= 65535:
+        raise ValueError("Coordinator port out of range")
+    return f"http://{host}:{port}/request"
+
+
+def _secret(path: Path) -> bytes:
+    if path.is_symlink() or path.parent.is_symlink():
+        raise ValueError("Unsafe LAN coordinator secret symlink")
+    if not path.is_file() or not 64 <= path.stat().st_size <= 128:
+        raise ValueError("Missing or invalid LAN coordinator secret")
+    raw = path.read_text(encoding="ascii").strip()
+    if not re.fullmatch(r"[a-f0-9]{64}", raw):
+        raise ValueError("Invalid LAN coordinator secret encoding")
+    return bytes.fromhex(raw)
+
+
+def create_coordinator_secret(path: Path) -> None:
+    """One-time opt-in setup. Never overwrite an existing credential."""
+    if path.is_symlink() or path.parent.is_symlink():
+        raise ValueError("Unsafe LAN coordinator secret path")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(
+        path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="ascii") as handle:
+            handle.write(secrets.token_hex(32) + "\n")
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+
+
+def _signed(secret: bytes, nonce: str, timestamp: str, body: bytes) -> str:
+    message = nonce.encode("ascii") + b":" + timestamp.encode("ascii") + b":" + body
+    return hmac.new(secret, message, hashlib.sha256).hexdigest()
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise LocalYtDlpDeferred("LOCAL_YTDLP_COORDINATOR_UNAVAILABLE")
+
+
+class LanCoordinatorClient:
+    def __init__(self, url: str, *, secret_file: Path):
+        self.url = _url(url)
+        self.secret = _secret(secret_file)
+        self._opener = build_opener(ProxyHandler({}), _NoRedirect())
+
+    @classmethod
+    def from_env(cls) -> LanCoordinatorClient | None:
+        url = os.environ.get(_ENV_URL, "").strip()
+        secret_path = os.environ.get(_ENV_SECRET, "").strip()
+        if not url and not secret_path:
+            return None
+        # Partial or insecure configuration NEVER silently uses a local-only
+        # gate on a purportedly multi-PC setup.
+        try:
+            if not url or not secret_path:
+                raise ValueError("Missing LAN coordinator environment setting")
+            return cls(url, secret_file=Path(secret_path))
+        except (ValueError, OSError, UnicodeError) as exc:
+            raise LocalYtDlpDeferred(
+                "LOCAL_YTDLP_COORDINATOR_CONFIGURATION_INVALID"
+            ) from exc
+
+    def _call(self, operation: str, **parameters) -> dict:
+        payload = json.dumps(
+            {"op": operation, **parameters}, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")
+        nonce = secrets.token_hex(16)
+        stamp = str(int(time.time()))
+        request = Request(
+            self.url, data=payload, method="POST", headers={
+                "Content-Type": "application/json",
+                "X-Holoclip-Time": stamp,
+                "X-Holoclip-Nonce": nonce,
+                "X-Holoclip-Signature": _signed(
+                    self.secret, nonce, stamp, payload,
+                ),
+            },
+        )
+        try:
+            with self._opener.open(request, timeout=4) as response:
+                if response.status != 200:
+                    raise LocalYtDlpDeferred("LOCAL_YTDLP_COORDINATOR_UNAVAILABLE")
+                data = response.read(_MAX_REQUEST_BYTES + 1)
+                remote_signature = response.headers.get(
+                    "X-Holoclip-Response-Signature", "",
+                )
+            if len(data) > _MAX_REQUEST_BYTES or not hmac.compare_digest(
+                remote_signature,
+                _signed(self.secret, nonce, "response", data),
+            ):
+                raise LocalYtDlpDeferred(
+                    "LOCAL_YTDLP_COORDINATOR_RESPONSE_UNTRUSTED"
+                )
+            reply = json.loads(data)
+            if (not isinstance(reply, dict) or
+                    reply.get("version") != LAN_COORDINATOR_VERSION or
+                    type(reply.get("ok")) is not bool):
+                raise ValueError("Bad response schema")
+            return reply
+        except LocalYtDlpDeferred:
+            raise
+        except (URLError, OSError, TimeoutError, ValueError,
+                json.JSONDecodeError) as exc:
+            raise LocalYtDlpDeferred(
+                "LOCAL_YTDLP_COORDINATOR_UNAVAILABLE"
+            ) from exc
+
+    def status(self) -> dict:
+        return self._call("status")
+
+    @contextmanager
+    def reserve(self, *, timeout_seconds: int):
+        if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 3600:
+            raise ValueError("Invalid remote media process timeout")
+        response = self._call("reserve", timeout_seconds=timeout_seconds)
+        if response.get("ok") is not True:
+            raise LocalYtDlpDeferred("LOCAL_YTDLP_COORDINATOR_ACCESS_DEFERRED")
+        lease = response.get("lease_token")
+        if not isinstance(lease, str) or not re.fullmatch(r"[a-f0-9]{64}", lease):
+            raise LocalYtDlpDeferred("LOCAL_YTDLP_COORDINATOR_RESPONSE_UNTRUSTED")
+        try:
+            yield
+        finally:
+            release = self._call("release", lease_token=lease)
+            if release.get("ok") is not True:
+                raise LocalYtDlpDeferred(
+                    "LOCAL_YTDLP_COORDINATOR_RELEASE_UNCONFIRMED"
+                )
+
+    def impose_cooldown(self, reason: str) -> None:
+        if reason not in _ALLOWED_REASONS:
+            raise ValueError("Invalid LAN coordinator cooldown category")
+        if self._call("cooldown", reason=reason).get("ok") is not True:
+            raise LocalYtDlpDeferred(
+                "LOCAL_YTDLP_COORDINATOR_COOLDOWN_UNCONFIRMED"
+            )
+
+
+class _CoordinatorState:
+    """Central on-disk lease survives coordinator crashes and restarts."""
+
+    def __init__(self, path: Path):
+        if path.is_symlink() or path.parent.is_symlink():
+            raise ValueError("Unsafe LAN coordinator state symlink")
+        self.path = path
+
+    def execute(self, request: dict) -> dict:
+        op = request.get("op")
+        if op not in {"reserve", "release", "cooldown", "status"}:
+            return {"ok": False, "code": "INVALID_OPERATION"}
+        try:
+            if self.path.is_symlink() or self.path.parent.is_symlink():
+                return {"ok": False, "code": "UNSAFE_COORDINATOR_STORAGE"}
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with closing(sqlite3.connect(self.path, timeout=3)) as db, db:
+                db.execute("BEGIN IMMEDIATE")
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS access ("
+                    "id INTEGER PRIMARY KEY CHECK(id=1),"
+                    "next_at REAL NOT NULL, active_until REAL NOT NULL,"
+                    "cooldown_until REAL NOT NULL, cooldown_reason TEXT NOT NULL,"
+                    "lease_hash TEXT NOT NULL)"
+                )
+                db.execute(
+                    "INSERT OR IGNORE INTO access VALUES "
+                    "(1,0,0,0,'UNKNOWN_HISTORICAL_COOLDOWN_REASON','')"
+                )
+                row = db.execute(
+                    "SELECT next_at, active_until, cooldown_until,"
+                    "cooldown_reason, lease_hash FROM access WHERE id=1"
+                ).fetchone()
+                if row is None:
+                    return {"ok": False, "code": "CORRUPT_COORDINATOR_STORAGE"}
+                next_at, active, cooldown, reason, lease_hash = row
+                now = time.time()
+                if (any(type(v) not in (float, int) or
+                        not 0 <= v <= 253402300799
+                        for v in (next_at, active, cooldown))
+                        or reason not in (
+                            _ALLOWED_REASONS |
+                            {"UNKNOWN_HISTORICAL_COOLDOWN_REASON"}
+                        ) or not isinstance(lease_hash, str)):
+                    return {"ok": False, "code": "CORRUPT_COORDINATOR_STORAGE"}
+                if op == "status":
+                    return {
+                        "ok": True,
+                        "code": ("COOLDOWN" if cooldown > now else
+                                 "ACTIVE" if active > now else
+                                 "WAIT_GAP" if next_at > now else "AVAILABLE"),
+                    }
+                if op == "cooldown":
+                    reason = request.get("reason")
+                    if reason not in _ALLOWED_REASONS:
+                        return {"ok": False, "code": "INVALID_COOLDOWN_REASON"}
+                    db.execute(
+                        "UPDATE access SET cooldown_until=MAX(cooldown_until,?),"
+                        "cooldown_reason=? WHERE id=1",
+                        (now + _COOLDOWN_SECONDS, reason),
+                    )
+                    return {"ok": True, "code": "COOLDOWN_SAVED"}
+                if op == "release":
+                    token = request.get("lease_token")
+                    if (not isinstance(token, str) or
+                            not re.fullmatch("[a-f0-9]{64}", token) or
+                            not lease_hash or
+                            not hmac.compare_digest(
+                                hashlib.sha256(token.encode("ascii")).hexdigest(),
+                                lease_hash,
+                            )):
+                        return {"ok": False, "code": "LEASE_NOT_OWNED"}
+                    db.execute(
+                        "UPDATE access SET active_until=0, lease_hash='',"
+                        "next_at=MAX(next_at,?) WHERE id=1",
+                        (now + _GAP_SECONDS,),
+                    )
+                    return {"ok": True, "code": "LEASE_RELEASED"}
+                # New reservation, with both a *global* gap and an exclusive
+                # active lease. A lost client leaves a lease until deadline.
+                timeout = request.get("timeout_seconds")
+                if type(timeout) is not int or not 1 <= timeout <= 3600:
+                    return {"ok": False, "code": "INVALID_TIMEOUT"}
+                if cooldown > now:
+                    return {"ok": False, "code": "COOLDOWN"}
+                if active > now:
+                    return {"ok": False, "code": "ACTIVE"}
+                if next_at > now:
+                    return {"ok": False, "code": "WAIT_GAP"}
+                lease = secrets.token_hex(32)
+                db.execute(
+                    "UPDATE access SET active_until=?, next_at=?,"
+                    "lease_hash=? WHERE id=1",
+                    (now + timeout + 30, now + _GAP_SECONDS,
+                     hashlib.sha256(lease.encode("ascii")).hexdigest()),
+                )
+                return {"ok": True, "code": "LEASE_GRANTED",
+                        "lease_token": lease}
+        except (sqlite3.Error, OSError):
+            return {"ok": False, "code": "COORDINATOR_STORAGE_FAILURE"}
+
+
+class _CoordinatorServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def __init__(self, address, secret: bytes, state: _CoordinatorState):
+        super().__init__(address, _CoordinatorHandler)
+        self.secret = secret
+        self.state = state
+        self.seen = {}
+        self.nonce_lock = threading.Lock()
+
+
+class _CoordinatorHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.0"
+
+    def log_message(self, fmt, *args):
+        # No operator-controlled payloads/headers/IPs enter logs.
+        pass
+
+    def do_POST(self):
+        try:
+            if self.path != "/request":
+                self.send_error(404)
+                return
+            size_text = self.headers.get("Content-Length", "")
+            if not size_text.isdecimal() or not 1 <= int(size_text) <= _MAX_REQUEST_BYTES:
+                self.send_error(400)
+                return
+            nonce = self.headers.get("X-Holoclip-Nonce", "")
+            stamp = self.headers.get("X-Holoclip-Time", "")
+            signature = self.headers.get("X-Holoclip-Signature", "")
+            if (not re.fullmatch("[a-f0-9]{32}", nonce)
+                    or not stamp.isdecimal()
+                    or abs(int(stamp) - int(time.time())) > 90):
+                self.send_error(403)
+                return
+            data = self.rfile.read(int(size_text))
+            if not hmac.compare_digest(
+                signature, _signed(self.server.secret, nonce, stamp, data),
+            ):
+                self.send_error(403)
+                return
+            with self.server.nonce_lock:
+                now = time.time()
+                self.server.seen = {
+                    k: t for k, t in self.server.seen.items() if now - t < 181
+                }
+                if nonce in self.server.seen or len(self.server.seen) >= 4096:
+                    self.send_error(403)
+                    return
+                self.server.seen[nonce] = now
+            request = json.loads(data)
+            if not isinstance(request, dict):
+                self.send_error(400)
+                return
+            result = self.server.state.execute(request)
+            body = json.dumps(
+                {"version": LAN_COORDINATOR_VERSION, **result},
+                sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header(
+                "X-Holoclip-Response-Signature",
+                _signed(self.server.secret, nonce, "response", body),
+            )
+            self.end_headers()
+            self.wfile.write(body)
+        except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
+            self.send_error(400)
+        except (OSError, ConnectionError):
+            return
+
+
+def serve_lan_ytdlp_coordinator(
+    *, bind_ip: str = "127.0.0.1", port: int = 8878,
+    secret_file: Path = DEFAULT_SECRET_PATH,
+    state_path: Path = DEFAULT_COORDINATOR_STATE,
+) -> None:
+    host = _private_ipv4(bind_ip)
+    if type(port) is not int or not 1024 <= port <= 65535:
+        raise ValueError("LAN coordinator port must be 1024..65535")
+    secret = _secret(secret_file)
+    with _CoordinatorServer((host, port), secret, _CoordinatorState(state_path)) as server:
+        server.serve_forever(poll_interval=0.3)

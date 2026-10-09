@@ -29,6 +29,11 @@ from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collecto
 from holoclip.source_pattern_local_health import resolve_local_diagnostic_paths
 from holoclip.source_pattern_local_history import read_launcher_history
 from holoclip.source_ytdlp_pacing import DEFAULT_PACING_PATH, inspect_local_ytdlp_pacing
+from holoclip.source_ytdlp_lan_coordinator import (
+    DEFAULT_COORDINATOR_STATE, DEFAULT_SECRET_PATH,
+    LanCoordinatorClient, create_coordinator_secret,
+    serve_lan_ytdlp_coordinator,
+)
 from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
@@ -1114,6 +1119,61 @@ def examples_ytdlp_access_status(
         inspect_local_ytdlp_pacing(pacing_path),
         ensure_ascii=False, indent=2,
     ))
+
+
+@app.command("examples-ytdlp-lan-init")
+def examples_ytdlp_lan_init(
+    secret_file: Path = typer.Option(DEFAULT_SECRET_PATH, "--secret-file"),
+) -> None:
+    """Create an owner-held secret once; never print/overwrite its contents."""
+    create_coordinator_secret(secret_file)
+    typer.echo(json.dumps({
+        "status": "LOCAL_LAN_COORDINATOR_SECRET_CREATED",
+        "secret_printed": False, "ready": False,
+    }))
+
+
+@app.command("examples-ytdlp-lan-serve")
+def examples_ytdlp_lan_serve(
+    bind_ip: str = typer.Option("127.0.0.1", "--bind-ip"),
+    port: int = typer.Option(8878, "--port", min=1024, max=65535),
+    secret_file: Path = typer.Option(DEFAULT_SECRET_PATH, "--secret-file"),
+    state_path: Path = typer.Option(DEFAULT_COORDINATOR_STATE, "--state-path"),
+) -> None:
+    """Run opt-in single-host coordinator on a trusted private LAN IP."""
+    serve_lan_ytdlp_coordinator(
+        bind_ip=bind_ip, port=port,
+        secret_file=secret_file, state_path=state_path,
+    )
+
+
+@app.command("examples-ytdlp-lan-status")
+def examples_ytdlp_lan_status() -> None:
+    """Check configured trusted coordinator, never touch YouTube or a video."""
+    from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
+
+    try:
+        client = LanCoordinatorClient.from_env()
+        if client is None:
+            typer.echo(json.dumps({
+                "status": "NOT_CONFIGURED",
+                "shared_ip_coordination_verified": False, "ready": False,
+            }))
+            raise typer.Exit(6)
+        result = client.status()
+        if result.get("ok") is not True:
+            raise LocalYtDlpDeferred("LOCAL_YTDLP_COORDINATOR_UNAVAILABLE")
+        typer.echo(json.dumps({
+            "status": "AUTHENTICATED_LOCAL_LAN_COORDINATOR",
+            "remote_gate_status": result.get("code"),
+            "shared_ip_coordination_verified": False, "ready": False,
+        }))
+    except LocalYtDlpDeferred as exc:
+        typer.echo(json.dumps({
+            "status": str(exc), "shared_ip_coordination_verified": False,
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
 
 
 @app.command("examples-source-controls-report")
