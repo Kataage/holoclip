@@ -127,8 +127,65 @@ def summarize_smoke(
     return report
 
 
+def _linux_descendant_pids(root_pid: int) -> list[int]:
+    """Snapshot same-user /proc children, deepest first, with no shell commands.
+
+    yt-dlp creates its *own* process group for FFmpeg. Killing only the uv
+    process group does not kill those nested sessions. Snapshot the exact
+    descendants BEFORE stopping the parent so no task runner, neighboring
+    job or unrelated user's process can be selected by broad name matching.
+    """
+    children: dict[int, list[int]] = {}
+    try:
+        paths = list(Path("/proc").iterdir())
+    except OSError:
+        return []
+    for path in paths:
+        if not path.name.isdecimal():
+            continue
+        try:
+            values = {}
+            with (path / "status").open(encoding="utf-8") as handle:
+                for line in handle:
+                    if line.startswith(("PPid:", "Uid:")):
+                        key, value = line.split(":", 1)
+                        values[key] = value.strip().split()[0]
+            if int(values["Uid"]) != os.getuid():
+                continue
+            ppid = int(values["PPid"])
+            pid = int(path.name)
+        except (OSError, ValueError, KeyError, IndexError):
+            continue
+        children.setdefault(ppid, []).append(pid)
+    order = []
+    to_visit = [root_pid]
+    seen = {root_pid}
+    while to_visit:
+        current = to_visit.pop()
+        for child in children.get(current, ()):
+            if child not in seen:
+                seen.add(child)
+                order.append(child)
+                to_visit.append(child)
+    # Child-first so the launchers do not orphan their independently-grouped
+    # yt-dlp / FFmpeg children before those PIDs can be signaled.
+    return list(reversed(order))
+
+
+def _terminate_smoke_tree(root_pid: int) -> None:
+    for pid in _linux_descendant_pids(root_pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    try:
+        os.killpg(root_pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
 def _invoke_bounded_collector(workdir: Path, log_path: Path) -> tuple[int, bool]:
-    """Terminate only the dedicated public-video child process group on timeout."""
+    """Stop nested yt-dlp/FFmpeg descendants and the dedicated uv group."""
     command = [
         "uv", "run", "--extra", "media", "holoclip",
         "examples-collect-source-patterns",
@@ -147,10 +204,7 @@ def _invoke_bounded_collector(workdir: Path, log_path: Path) -> tuple[int, bool]
         try:
             return child.wait(timeout=TIMEOUT_SECONDS), False
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(child.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            _terminate_smoke_tree(child.pid)
             try:
                 child.wait(timeout=10)
             except subprocess.TimeoutExpired:
