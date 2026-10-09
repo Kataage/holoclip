@@ -240,6 +240,46 @@ output Cartesian search, an editor negative, gold source identity, recall
 or permission to change `ready=false`. Missing or unsafe current metadata
 does not count as successful pair verification.
 
+### Safe pause and unattended resume of native source collection
+
+The Windows native collector now checks the local yt-dlp gate *before*
+discovering clips, inspecting original video sections or touching the
+learning corpus. A recorded YouTube 429/bot challenge or another active
+yt-dlp process produces `DEFERRED_LOCAL_YTDLP_ACCESS`; the collected
+sample/stream counts are **null (unmeasured)**, **not zero**. The
+timestamp-bounded local worker report is saved with
+`collection_started=false`, the fixed `local_access_state` code, and
+the earliest recorded `next_attempt_not_before_utc`. This is never
+human-original match evidence or an editor-negative label.
+
+The scheduled task **naturally retries on its next already-configured
+recurrence after the local gate expires**. No additional task, permanent
+background poller, retry storm or manual video URL is needed. By
+default the opt-in native Windows task runs daily; a six-hour cooldown
+ending after today's task **does not launch a same-day retry**. The next
+existing task invocation resumes the bounded collector if local storage
+is healthy, and the yt-dlp gate **still checks the live lease/cooldown
+atomically** before every network process. The status-only CLI never
+launches the collector.
+
+If the pacing SQLite DB is corrupt/unreadable, the worker does not
+delete it or silently disable throttling. It saves
+`BLOCKED_LOCAL_YTDLP_PACING_STATE`, starts no video collection, and
+returns a **nonzero exit** to Windows Task Scheduler. The compact doctor
+displays this as a repairable blocker only if the blocked audit belongs
+to the latest launcher; stale audits cannot hide unrelated task failures.
+Intentional paused invocations do **not** count as zero-new-video runs
+or consecutive source-pairing failures in the 90-run operational history.
+All audit flags retain `ready=false`.
+
+**Multi-PC limitation:** this gate coordinates processes using the
+*same local SQLite file*. Two PCs behind the same home/router IP with
+separate files **do not share a rate budget**. Do not assume automatic
+cross-PC safety or place the SQLite database on an unverified SMB/NAS
+share: dependable distributed ownership/clock coordination needs a
+separately designed and tested mechanism. Schedule only one Holoclip
+public media collector per shared outward IP until that is implemented.
+
 ### Inspect local yt-dlp cooldown without any network request
 
 `uv run holoclip examples-ytdlp-access-status` displays a compact,
