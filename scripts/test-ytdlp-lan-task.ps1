@@ -51,7 +51,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'run-ytdlp-lan-coordinator.ps1') -Destination $runner
     foreach ($path in @($installer, $runner)) {
         $tokens = $null; $errors = $null
-        $null = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+        $null = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
         Assert-Lan ($errors.Count -eq 0) ('PowerShell 5.1 parse error: ' + $path)
     }
     [IO.File]::WriteAllText((Join-Path $testRoot '.venv\Scripts\python.exe'), '', [Text.Encoding]::ASCII)
