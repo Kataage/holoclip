@@ -139,8 +139,8 @@ def audit_cached_source_video_sections(
         chosen = pending[:max_clips]
     else:
         if (not isinstance(clip_keys, list) or len(clip_keys) > max_clips
-                or len(set(clip_keys)) != len(clip_keys)
-                or any(not isinstance(key, str) for key in clip_keys)):
+                or any(not isinstance(key, str) for key in clip_keys)
+                or len(set(clip_keys)) != len(clip_keys)):
             raise ValueError("Invalid bounded current-run cache audit keys")
         by_key = dict(pending)
         if any(key not in by_key for key in clip_keys):
