@@ -203,5 +203,25 @@ def test_symlinked_config_and_missing_secret_refused(tmp_path):
             )
 
 
+def test_deleting_saved_profile_does_not_disable_shared_ip_gate(tmp_path):
+    secret = tmp_path / "secret"
+    create_coordinator_secret(secret)
+    config = Path("data/runtime/yt-dlp-lan-client.json")
+    configure_lan_client(url="http://127.0.0.1:8878", secret_file=secret)
+    marker = config.with_name(config.name + ".required")
+    assert marker.read_text(encoding="ascii") == "holoclip-lan-client-required-v1\n"
+    config.unlink()
+    with pytest.raises(LocalYtDlpDeferred, match="CONFIGURATION_INVALID"):
+        LanCoordinatorClient.from_env()
+    # Reinstate a healthy profile without explicitly overwriting a secret.
+    assert configure_lan_client(
+        url="http://127.0.0.1:8878", secret_file=secret,
+    ) == "CONFIGURED"
+    assert LanCoordinatorClient.from_env() is not None
+    marker.write_text("corrupt", encoding="ascii")
+    with pytest.raises(LocalYtDlpDeferred, match="CONFIGURATION_INVALID"):
+        LanCoordinatorClient.from_env()
+
+
 def test_no_profile_preserves_explicit_legacy_opt_in():
     assert LanCoordinatorClient.from_env() is None
