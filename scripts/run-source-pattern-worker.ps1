@@ -246,5 +246,145 @@ finally {
         Remove-Item -LiteralPath $temp, $backup -ErrorAction SilentlyContinue
     }
 }
+# Retain a bounded local launcher timeline even when uv/Python never started.
+# It is strictly an operational receipt, NOT verified footage or editor gold.
+try {
+    $historyPath = Join-Path (Split-Path -Parent $auditPath) 'source-pattern-launcher-history.json'
+    $historyLockPath = $historyPath + '.lock'
+    $historyDir = Split-Path -Parent $historyPath
+    New-Item -ItemType Directory -Force -Path $historyDir | Out-Null
+    foreach ($protected in @($historyPath, $historyLockPath)) {
+        if (Test-Path -LiteralPath $protected) {
+            $item = Get-Item -LiteralPath $protected -Force
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw 'Unsafe launcher history symlink or reparse point'
+            }
+        }
+    }
+    # A separate OS-held exclusive file prevents two manual launchers from
+    # reading and replacing the same history concurrently.
+    $lock = [System.IO.FileStream]::new(
+        $historyLockPath, [IO.FileMode]::OpenOrCreate,
+        [IO.FileAccess]::ReadWrite, [IO.FileShare]::None
+    )
+    try {
+        $history = @()
+        if (Test-Path -LiteralPath $historyPath -PathType Leaf) {
+            $current = Get-Item -LiteralPath $historyPath
+            if ($current.Length -gt 262144) { throw 'Launcher history exceeds bound' }
+            $existing = Get-Content -LiteralPath $historyPath -Raw -Encoding UTF8 |
+                ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $existing -or
+                    $existing.version -cne 'source-pattern-launcher-history-v1' -or
+                    $existing.events -isnot [array] -or
+                    $existing.events.Count -gt 90) {
+                throw 'Malformed existing launcher history'
+            }
+            foreach ($prior in $existing.events) {
+                if ($null -eq $prior -or
+                        $prior.status -cnotin @('FAILED_PRELAUNCH',
+                            'FAILED_COLLECTOR_PROCESS', 'COMPLETED_COLLECTOR_PROCESS') -or
+                        $prior.ready -ne $false -or
+                        $prior.production_ready -ne $false) {
+                    throw 'Unsafe existing launcher history event'
+                }
+            }
+            $history = @($existing.events)
+        }
+        $entry = @{
+            started_at_utc = $startedAt
+            finished_at_utc = (Get-Date).ToUniversalTime().ToString('o')
+            status = $status
+            exit_code = [int]$audit.exit_code
+            ran_collector = [bool]$ranCollector
+            error_class = $errorClass
+            new_unique_video_samples = $null
+            new_distinct_candidate_streams = $null
+            collector_report_correlated = $false
+            ready = $false
+            production_ready = $false
+        }
+        # Only attach per-run counts if the finished collector's audit is
+        # actually within THIS launch's bounds. Never reuse yesterday's success.
+        if ($ranCollector -and $status -eq 'COMPLETED_COLLECTOR_PROCESS') {
+            $collectorPath = Join-Path $stateRoot 'source-pattern-last-run.json'
+            if ($null -ne $configuration -and
+                    $configuration.ContainsKey('report_path')) {
+                $collectorPath = $configuration['report_path']
+            }
+            if (Test-Path -LiteralPath $collectorPath -PathType Leaf) {
+                try {
+                    $colFile = Get-Item -LiteralPath $collectorPath
+                    if (($colFile.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                            $colFile.Length -gt 4194304) {
+                        throw 'Unsafe collector report for launcher history'
+                    }
+                    $col = Get-Content -LiteralPath $collectorPath -Raw -Encoding UTF8 |
+                        ConvertFrom-Json -ErrorAction Stop
+                    $began = [DateTimeOffset]::Parse($col.started_at_utc)
+                    $ended = [DateTimeOffset]::Parse($col.finished_at_utc)
+                    $start = [DateTimeOffset]::Parse($startedAt)
+                    $finish = [DateTimeOffset]::Parse($entry.finished_at_utc)
+                    $newSamples = $col.result.new_unique_video_samples_this_run
+                    $newStreams = $col.result.new_distinct_candidate_streams_this_run
+                    if ($col.version -ceq 'source-pattern-unattended-run-v1' -and
+                            $col.ready -eq $false -and
+                            $col.production_ready -eq $false -and
+                            $col.result.ready -eq $false -and
+                            $col.result.production_ready -eq $false -and
+                            $began -ge $start -and $ended -ge $began -and
+                            $ended -le $finish) {
+                        if (($newSamples -is [int] -or $newSamples -is [long]) -and
+                                ($newStreams -is [int] -or $newStreams -is [long]) -and
+                                $newSamples -ge 0 -and $newSamples -le 100000 -and
+                                $newStreams -ge 0 -and $newStreams -le 100000) {
+                            $entry.new_unique_video_samples = [int]$newSamples
+                            $entry.new_distinct_candidate_streams = [int]$newStreams
+                            $entry.collector_report_correlated = $true
+                        }
+                    }
+                }
+                catch {
+                    # A stale or corrupted optional collector report can NEVER
+                    # promote the launcher event. It remains an unknown count.
+                    $entry.collector_report_correlated = $false
+                }
+            }
+        }
+        $history = @($history + @([pscustomobject]$entry) | Select-Object -Last 90)
+        $document = @{
+            version = 'source-pattern-launcher-history-v1'
+            events = @($history)
+            ready = $false
+            production_ready = $false
+        }
+        $historyTemp = $historyPath + '.' + $PID + '.tmp'
+        $historyBackup = $historyPath + '.' + $PID + '.bak'
+        try {
+            [IO.File]::WriteAllText(
+                $historyTemp, ($document | ConvertTo-Json -Depth 8),
+                ([System.Text.UTF8Encoding]::new($false))
+            )
+            if ([IO.File]::Exists($historyPath)) {
+                [IO.File]::Replace($historyTemp, $historyPath, $historyBackup)
+            } else {
+                [IO.File]::Move($historyTemp, $historyPath)
+            }
+        }
+        finally {
+            Remove-Item -LiteralPath $historyTemp, $historyBackup -ErrorAction SilentlyContinue
+        }
+    }
+    finally {
+        $lock.Dispose()
+    }
+}
+catch {
+    # Retain the primary launcher audit. A history write failure makes the
+    # Task Scheduler status nonzero, not a silently-successful diagnosis.
+    $code = 1
+    ('Windows launcher history failure: ' + $_.Exception.GetType().Name) |
+        Out-File -LiteralPath $logPath -Append -Encoding UTF8
+}
 # Task Scheduler must see real process/preflight errors, not an optimistic 0.
 exit $code

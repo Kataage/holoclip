@@ -7,6 +7,7 @@ $temporary = Join-Path ([System.IO.Path]::GetTempPath()) ('holoclip-win-runner-t
 $fakeBin = Join-Path $temporary 'fake-bin'
 $fakeScripts = Join-Path $temporary 'scripts'
 $originalPath = $env:PATH
+$script:historyEventsSeen = 0
 
 function Assert-Condition([bool]$condition, [string]$message) {
     if (-not $condition) { throw $message }
@@ -53,6 +54,22 @@ function Run-Launcher([string]$expectedStatus, [int]$expectedCode, [bool]$expect
                         'qualification_allowed', 'ready', 'production_ready')) {
         Assert-Condition ($audit.$flag -eq $false) "Forbidden positive audit flag: $flag"
     }
+    $historyPath = Join-Path $temporary 'data\\examples\\source-pattern-launcher-history.json'
+    Assert-Condition (Test-Path -LiteralPath $historyPath -PathType Leaf) 'Missing local launcher history'
+    $savedHistory = Get-Content -LiteralPath $historyPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $script:historyEventsSeen++
+    Assert-Condition ($savedHistory.version -eq 'source-pattern-launcher-history-v1') 'Wrong launcher history schema'
+    Assert-Condition ($savedHistory.events.Count -eq $script:historyEventsSeen) 'Lost or duplicated launcher history event'
+    Assert-Condition ($savedHistory.ready -eq $false) 'Launcher history promoted readiness'
+    Assert-Condition ($savedHistory.production_ready -eq $false) 'Launcher history promoted production readiness'
+    $lastEvent = $savedHistory.events[-1]
+    Assert-Condition ($lastEvent.status -eq $expectedStatus) 'Launcher history lost exact failure or success'
+    Assert-Condition ($lastEvent.exit_code -eq $expectedCode) 'Launcher history exit differs from primary audit'
+    Assert-Condition ($lastEvent.ran_collector -eq $expectedInvocation) 'Launcher history claimed false provenance'
+    Assert-Condition ($lastEvent.collector_report_correlated -eq $false) 'Mocked uv must never claim video evidence'
+    Assert-Condition ($null -eq $lastEvent.new_unique_video_samples) 'Mocked uv claimed video samples'
+    Assert-Condition ($null -eq $lastEvent.new_distinct_candidate_streams) 'Mocked uv claimed public stream'
+    Assert-Condition (-not (Test-Path -LiteralPath ($historyPath + '.' + $PID + '.tmp'))) 'Launcher history temporary file leaked'
     $started = [DateTimeOffset]::Parse($audit.started_at_utc)
     $finished = [DateTimeOffset]::Parse($audit.finished_at_utc)
     Assert-Condition ($finished -ge $started) 'Invalid audit time ordering'

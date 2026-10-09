@@ -255,6 +255,36 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pat
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pattern-task.ps1 -At "04:30"
 ```
 
+#### Automatic bounded Windows launch history (offline)
+
+The native `run-source-pattern-worker.ps1` now automatically retains the
+most recent **90 scheduled/manual launch outcomes** in
+`data/examples/source-pattern-launcher-history.json`, next to its existing
+`source-pattern-launcher-last-run.json`. When the optional Windows JSON
+settings changes `launcher_audit_path`, the history lives in that same
+configured directory. **No new setup, background service, cloud storage or
+GitHub Actions downloader is needed.**
+
+Even a missing uv executable, an invalid local configuration, or a failed
+collector process results in a history entry, provided the local history
+disk is writable. Each entry records timestamp, status, exit code and safe
+exception class. Per-run counts of new constructed source-pattern samples
+and new candidate stream IDs are saved **only when a bounded, non-gold Python
+collector report completed inside that exact Windows launch**. An old report
+is never copied forward as new success; missing/mismatched reports retain
+null counts. The launcher uses an OS-exclusive lock and atomic file
+replacement to avoid partial writes, and rejects corrupt/unsafe existing
+history instead of silently overwriting it.
+
+The read-only `examples-collector-health` response now includes
+`native_launcher_history`, with the latest and previous runs, **last
+seven** sanitized outcomes, consecutive failure count, status frequencies,
+and changes between **comparable per-run increments**. Null differences
+mean insufficient evidence and must not be treated as zero growth.
+A full 90-run ring explicitly reports the retention cap; older runs
+are not part of subsequent trends. History is local-only and contains
+no clip URL, media file, credentials, raw error message or human gold.
+
 #### One-command offline Windows collection health
 
 To see a **compact** operational diagnosis after a native scheduled run,
