@@ -15,6 +15,9 @@ from holoclip.corpus_growth import CorpusGrowthState
 from holoclip.providers.source.yt_dlp import detect_js_runtime
 from holoclip.source_pattern_worker import VERSION as WORKER_VERSION
 from holoclip.source_visual_pattern_report import report_saved_patterns
+from holoclip.source_video_cache_audit import (
+    audit_cached_source_video_sections, checked_cached_video_attestation,
+)
 
 VERSION = "source-pattern-collector-doctor-v1"
 LAUNCHER_VERSION = "source-pattern-windows-launcher-v1"
@@ -174,6 +177,8 @@ def _read_audit(path: Path, *, launcher: bool) -> dict | None:
             or result["new_distinct_candidate_streams_this_run"] < 0):
         raise ValueError("Malformed saved source-pattern run result")
     _checked_stage_funnel(result)
+    if "source_cache_byte_attestation" in result:
+        checked_cached_video_attestation(result["source_cache_byte_attestation"])
     if raw["status"] == "MEASURED_UNREVIEWED_CONSTRUCTED_PUBLIC_VIDEO_PATTERNS":
         if result["new_unique_video_samples_this_run"] == 0:
             raise ValueError("Historical samples cannot prove fresh measurement")
@@ -204,6 +209,8 @@ def _local_tools(check: bool) -> dict:
 def diagnose_source_pattern_collector(
     *, state_path: Path, report_path: Path, launcher_path: Path,
     check_tools: bool = True,
+    media_output: Path = Path("data/sources/source_visual_scout"),
+    audit_media_cache: bool = True,
 ) -> dict:
     """Summarize the exact persisted state without manufacturing new samples."""
     recorded = _read_audit(report_path, launcher=False)
@@ -213,6 +220,14 @@ def diagnose_source_pattern_collector(
         if state_path.is_file() else None
     )
     summary = report_saved_patterns(state_path)
+    # This revalidates the actual existing section bytes, unlike a historical
+    # collector audit which only records what was checked at execution time.
+    cache_audit = (
+        checked_cached_video_attestation(audit_cached_source_video_sections(
+            state_path=state_path, output_root=media_output,
+        ))
+        if audit_media_cache else None
+    )
     status_counts = Counter(item.status for item in state.items.values()) if state else Counter()
     last_probe_counts = Counter()
     if state:
@@ -278,6 +293,11 @@ def diagnose_source_pattern_collector(
         "last_launcher_error_class": launcher.get("error_class") if launcher else None,
         "last_source_pattern_attempt_outcomes": dict(sorted(outcomes.items())),
         "last_run_stage_funnel": stage_funnel,
+        "last_run_saved_cache_attestation": (
+            result.get("source_cache_byte_attestation")
+            if isinstance(result, dict) else None
+        ),
+        "current_source_cache_byte_attestation": cache_audit,
         "last_run_stage_evidence_gap": _stage_evidence_gap(stage_funnel),
         "new_unique_video_samples_last_run": (
             result.get("new_unique_video_samples_this_run")
