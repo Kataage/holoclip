@@ -309,3 +309,99 @@ def test_deferred_cooldown_audit_rejects_fabricated_measurements(tmp_path, monke
             state_path=tmp_path / "state.json", report_path=saved_path,
             launcher_path=tmp_path / "launcher.json", check_tools=False,
         )
+
+
+def test_corrupt_gate_returns_nonzero_cli_without_network(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from holoclip import cli
+    from holoclip import source_pattern_worker as worker
+    from holoclip.source_ytdlp_pacing import LocalYtDlpPacer
+
+    path = tmp_path / "corrupt.db"
+    path.write_text("unsafe sqlite file", encoding="utf-8")
+    gate = LocalYtDlpPacer(path)
+
+    class Provider:
+        pacer = gate
+
+    async def forbidden(*_args, **_kwargs):
+        pytest.fail("CLI cannot enter real collection with corrupt access state")
+
+    monkeypatch.setattr(worker, "collect_public_source_patterns", forbidden)
+    monkeypatch.setattr(cli, "YtDlpSourceProvider", lambda **_kw: Provider())
+    monkeypatch.setattr(cli, "load_policy_rules", lambda *_args: [])
+
+    response = CliRunner().invoke(cli.app, [
+        "examples-collect-source-patterns",
+        "--store", str(tmp_path / "examples.jsonl"),
+        "--state", str(tmp_path / "state.json"),
+        "--output", str(tmp_path / "video"),
+        "--report-path", str(tmp_path / "last-run.json"),
+    ])
+    assert response.exit_code == 6, response.output
+    result = json.loads(response.stdout)
+    assert result["status"] == "BLOCKED_LOCAL_YTDLP_PACING_STATE"
+    assert result["collection_started"] is False
+    assert result["ready"] is False
+    assert not (tmp_path / "state.json").exists()
+
+
+def test_current_failed_launcher_preserves_same_run_pacing_blocker(
+    tmp_path, monkeypatch,
+):
+    from datetime import datetime, timedelta
+
+    from holoclip import source_pattern_worker as worker
+    from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collector
+    from holoclip.source_ytdlp_pacing import LocalYtDlpPacer
+
+    async def forbidden(*_args, **_kwargs):
+        pytest.fail("broken pacing database must stop before network access")
+
+    monkeypatch.setattr(worker, "collect_public_source_patterns", forbidden)
+    path = tmp_path / "unsafe.db"
+    path.write_bytes(b"not a SQLite gate")
+
+    class Provider:
+        pacer = LocalYtDlpPacer(path)
+
+    _run(tmp_path, provider=Provider())
+    audit = json.loads((tmp_path / "last-run.json").read_text(encoding="utf-8"))
+    start = datetime.fromisoformat(audit["started_at_utc"]) - timedelta(seconds=3)
+    end = datetime.fromisoformat(audit["finished_at_utc"]) + timedelta(seconds=3)
+    (tmp_path / "launcher.json").write_text(json.dumps({
+        "version": "source-pattern-windows-launcher-v1",
+        "status": "FAILED_COLLECTOR_PROCESS", "exit_code": 6,
+        "error_class": None, "ran_collector": True,
+        "started_at_utc": start.isoformat(),
+        "finished_at_utc": end.isoformat(),
+        **{key: NO_GOLD[key] for key in (
+            "source_identity_verified", "reviewed_gold_available",
+            "qualification_allowed", "ready", "production_ready",
+        )},
+    }), encoding="utf-8")
+    diagnosis = diagnose_source_pattern_collector(
+        state_path=tmp_path / "state.json", report_path=tmp_path / "last-run.json",
+        launcher_path=tmp_path / "launcher.json", check_tools=False,
+    )
+    assert diagnosis["status"] == "BLOCKED_LOCAL_YTDLP_PACING_STATE"
+    assert diagnosis["local_collection_health"]["primary_blocker"] == (
+        "LOCAL_YTDLP_PACING_STORAGE_BLOCKED"
+    )
+    # Do not use a past corrupt state audit for a DIFFERENT launcher failure.
+    latest_launcher = json.loads(
+        (tmp_path / "launcher.json").read_text(encoding="utf-8")
+    )
+    latest_launcher["started_at_utc"] = (
+        end + timedelta(seconds=1)
+    ).isoformat()
+    latest_launcher["finished_at_utc"] = (
+        end + timedelta(seconds=2)
+    ).isoformat()
+    (tmp_path / "launcher.json").write_text(json.dumps(latest_launcher), encoding="utf-8")
+    stale = diagnose_source_pattern_collector(
+        state_path=tmp_path / "state.json", report_path=tmp_path / "last-run.json",
+        launcher_path=tmp_path / "launcher.json", check_tools=False,
+    )
+    assert stale["status"] == "BLOCKED_LATEST_WINDOWS_LAUNCH"
