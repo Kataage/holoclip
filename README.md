@@ -133,6 +133,21 @@ Counters `source_visual_newly_pending` and
 visual evidence work from existing pending clips. Existing training/holdout
 assignments are not rewritten or silently migrated.
 
+### Exhausted source scans do not redownload finished video
+
+A persisted shortlist whose **every** original has exhausted its bounded,
+non-repeating source-window cursor (and has no pending local refinement) is
+checked against fresh public-source metadata and current policy **before**
+another finished-video acquisition. If IDs, durations and rights are still
+unchanged, the collector records
+`UNKNOWN_ALL_CANDIDATE_SOURCE_SCANS_EXHAUSTED` and performs no media
+download for that attempt. If a candidate is still unscanned, metadata
+cannot be confirmed, or source properties changed, the ordinary guarded
+measurement path runs instead. The clip remains pending and unverified.
+Source-window exhaustion is **not** exhaustive source/finished cross-product
+coverage, an editor negative, original-stream proof, or reviewer gold.
+A separate multi-window revisit strategy is required for broader recall.
+
 ### Windows unattended source-pattern collection
 
 An opt-in Windows Task Scheduler installation is available for machines running

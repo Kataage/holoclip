@@ -49,6 +49,32 @@ original-stream false-positive rate, training gold or production qualification
 may be inferred. `ready=false` remains mandatory. Real collection must actually
 run against public media before any observed source result is claimed.
 
+## Exhaustion of bounded source-only visual scans
+
+A scheduled source-only visual probe can consume all deterministic bounded
+source-window positions for its saved candidate duration while remaining
+unable to prove whether the finished human clip matches that original.
+Formerly it still reacquired a finished-video section every later cycle
+only to return `UNKNOWN_SOURCE_SCAN_EXHAUSTED` for the candidates.
+
+Before downloading finished media, the collector now detects exhaustion
+**only if every saved shortlist candidate** has a validated exhausted
+cursor and no SHA-bound local refinement remains. It re-probes each
+original's current public status, ID, duration and metadata rights. If any
+candidate is unscanned, metadata changes, or validation fails, no shortcut
+applies and the normal guarded observation path is retained. The
+short-circuit yields `UNKNOWN_ALL_CANDIDATE_SOURCE_SCANS_EXHAUSTED`
+without a positive measurement, editor negative or verified gold.
+The pending clip and its original scan evidence remain untouched.
+
+**This optimization does not implement dense source/output pairing.**
+Having visited every original-source window against only a subset of
+finished output windows is not exhaustive cross-product coverage and
+cannot justify a mismatch decision, source-source exclusion, reviewer
+precision/recall, a learning/holdout assignment or production readiness.
+Future independent finished-window revisits must account for pair coverage
+and stale source content without erasing historical provenance.
+
 ## Unattended Windows collection and provenance checkpoint (2026-10-09)
 
 The opt-in local Windows Task Scheduler scripts install exactly one daily

@@ -279,6 +279,34 @@ def compare_sparse_visual_sequences(
     return result
 
 
+def _all_saved_source_scans_exhausted(scout: dict) -> bool:
+    """A source-only scan can exhaust without proving a human clip is unrelated.
+
+    Do not treat missing, invalid, or partially exhausted cursors as completed.
+    Pending SHA-bound local refinements must run instead of being skipped.
+    """
+    cursors = scout.get("visual_scan_cursors")
+    refinements = scout.get("visual_refinements", {})
+    candidates = scout.get("candidate_sources")
+    if (not isinstance(cursors, dict) or not isinstance(refinements, dict)
+            or refinements or not isinstance(candidates, list) or not candidates):
+        return False
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            return False
+        source_id = candidate.get("source_stream_id")
+        duration = candidate.get("duration_seconds")
+        if (not isinstance(source_id, str) or not source_id
+                or type(duration) not in (int, float)
+                or not math.isfinite(duration)
+                or not 300 <= duration <= 24 * 3600):
+            return False
+        cursor = cursors.get(source_id)
+        if type(cursor) is not int or cursor < 0 or _starts(duration, cursor):
+            return False
+    return True
+
+
 def _video_measure(acquired, root: Path, *, asset_id: str, start: float,
                    end: float, measure, probe):
     media = Path(acquired.media_path)
@@ -448,6 +476,44 @@ def verify_pending_source_visual(
             if not finished_starts:
                 finish("BLOCKED_NO_VALID_FINISHED_WINDOWS")
                 continue
+            # Reaching the end of *every* saved source scan is not a
+            # source-mismatch judgment. Avoid a redundant finished-video
+            # download on future unattended runs, but re-probe all current
+            # public originals: duration, identity and rights may have changed.
+            # Missing/stale metadata falls through to the guarded normal path.
+            if _all_saved_source_scans_exhausted(scout):
+                unchanged = True
+                for candidate in scout["candidate_sources"]:
+                    url = candidate.get("source_url")
+                    if not isinstance(url, str) or not url:
+                        unchanged = False
+                        break
+                    try:
+                        source = provider.probe(url)
+                    except Exception:
+                        unchanged = False
+                        break
+                    if (not isinstance(source, SourceMetadata)
+                            or not _public(source)
+                            or source.url != url
+                            or source.external_id != candidate["source_stream_id"]
+                            or source.external_id == clip.external_id
+                            or source.external_id in training_ids
+                            and source.external_id in state.holdout_stream_ids
+                            or source.duration != candidate["duration_seconds"]
+                            or evaluate_source_metadata(
+                                source, rules=policy_rules,
+                                operation=PolicyOperation.LEARN,
+                            ).decision is not PolicyDecision.ALLOW):
+                        unchanged = False
+                        break
+                if unchanged:
+                    report["exhausted_saved_source_candidates"] = len(
+                        scout["candidate_sources"]
+                    )
+                    report["scan_exhaustion_is_editor_negative"] = False
+                    finish("UNKNOWN_ALL_CANDIDATE_SOURCE_SCANS_EXHAUSTED")
+                    continue
             finished_round = scout.get("visual_finished_round", 0)
             if saved_refinements:
                 clip_start = scout.get(
