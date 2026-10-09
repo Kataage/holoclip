@@ -1459,6 +1459,49 @@ cases; reviewed gold, source identity, event split and route readiness
 remain false. The pytest synthetic MP4s are regression checks, not
 the qualifying real-stream measurement itself.
 
+## Increment 36: actual-video pattern diversity audit (#152)
+
+The previous actual-video JPEG/reversed-time self-controls (#151) could
+not describe matching robustness across different kinds of editing,
+or distinguish hundreds of sampled windows from hundreds of independent
+source streams. The new actual bounded-source `source_visual_pattern_controls.py`
+adds five local, label-constructed patterns to the same SHA256-pinned
+already-downloaded frames: JPEG overlay, brightness shift, 1.08x
+central crop/zoom, reversed timeline, and cyclic-shifted timeline.
+No extra original stream media is fetched and the verifier remains the
+same ORB + independent DCT temporal sequence scorer as production.
+
+Each case records its **expected constructed behavior**, observed
+matcher status and either correct/incorrect or UNEVALUABLE. Only
+explicit correspondence/noncorrespondence outcomes get denominators;
+codec failures, missing frames and unknown budgets cannot inflate a
+negative rejection fraction. Observations with any missing media/hash
+provenance never enter the durable history.
+
+A new `source_visual_pattern_report.py` stores up to 24 SHA-bound
+per-clip pattern records; stale schemas, fake human gold,
+fabricated precision metrics, inconsistent per-pattern judgments
+and duplicate source/media identities are rejected *before* new
+video downloads. `examples-source-controls-report` now also produces
+`constructed_pattern_audit` with each pattern's observed, evaluable,
+correct, incorrect and unevaluable counts, an honest fraction with
+null for zero evaluated samples, distinct original candidate source
+IDs and a deduplicated total across clips that share exactly the
+same original video bytes. Distinct samples on the same stream do
+not count as multiple independent streams. Source diversity is never
+marked sufficient for real-world generalization using only these
+constructed controls.
+
+**No real current public-video samples have been run in GitHub
+CI by this implementation.** Unit/regression tests use synthetic
+encoded/decoded MP4 data. Production observations require real
+public/ended videos to be acquired by the existing unattended worker,
+subject to unchanged policy and access restrictions. These constructed
+edits are not independent human editor labels, cannot establish
+Hololive source identity or real video-match false-positive rate,
+cannot certify precision/recall, and do not authorize learning,
+heldout gold or `ready=true`.
+
 ## Not yet implemented / acceptance work
 
 1. **#107 / #99:** acquire bounded *original-source* ranges for reserved finished
