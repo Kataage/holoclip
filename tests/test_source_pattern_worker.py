@@ -309,6 +309,22 @@ def test_deferred_cooldown_audit_rejects_fabricated_measurements(tmp_path, monke
             state_path=tmp_path / "state.json", report_path=saved_path,
             launcher_path=tmp_path / "launcher.json", check_tools=False,
         )
+    audit["result"]["new_unique_video_samples_this_run"] = None
+    audit["result"]["editor_cut_precision"] = 0.99
+    saved_path.write_text(json.dumps(audit), encoding="utf-8")
+    with pytest.raises(ValueError, match="Deferred"):
+        diagnose_source_pattern_collector(
+            state_path=tmp_path / "state.json", report_path=saved_path,
+            launcher_path=tmp_path / "launcher.json", check_tools=False,
+        )
+    audit["result"]["editor_cut_precision"] = None
+    audit["result"]["fabricated_finished_video_evidence"] = True
+    saved_path.write_text(json.dumps(audit), encoding="utf-8")
+    with pytest.raises(ValueError, match="Deferred"):
+        diagnose_source_pattern_collector(
+            state_path=tmp_path / "state.json", report_path=saved_path,
+            launcher_path=tmp_path / "launcher.json", check_tools=False,
+        )
 
 
 def test_corrupt_gate_returns_nonzero_cli_without_network(tmp_path, monkeypatch):
