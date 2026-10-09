@@ -331,10 +331,12 @@ so the two commands read the same environment/profile settings. A status
 response only proves the addressed broker authenticated, not that all PCs
 are enrolled or YouTube access/clip quality has been established.
 
-Saved-profile mode is opt-in: removing the default file with no required
-config override returns to the original **local-only** behavior. For
-unattended operation, set the explicit config override to ensure a
-missing profile is treated as an error, rather than silently opting out.
+Configuring a PC also writes an adjacent **non-secret required marker**.
+If the saved profile is later deleted or corrupted while that marker remains,
+Holoclip fails closed instead of switching silently to local-only pacing.
+The marker is not a credential. An explicit custom config path likewise
+fails closed when missing. Removing both profile and marker opts out and
+must never be done on PCs intended to share pacing.
 `ready=false` remains mandatory.
 #### Optional PC-A Windows autostart and crash recovery
 
