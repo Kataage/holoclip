@@ -396,7 +396,9 @@ def test_histories_shrinking_during_run_cannot_produce_positive_audit(
            "distinct_candidate_source_streams_measured": 3}
     monkeypatch.setattr(collector, "report_saved_source_controls",
                         lambda _path: {"constructed_pattern_audit": old})
-    monkeypatch.setattr(collector, "report_saved_patterns", lambda _path: new)
+    snapshots = iter([old, new])
+    monkeypatch.setattr(collector, "report_saved_patterns",
+                        lambda _path: next(snapshots))
     monkeypatch.setattr(collector, "verify_pending_source_visual",
                         lambda *_args, **_kwargs: {
                             "attempted": 1, "counts": {},
