@@ -65,13 +65,17 @@ finally {
         production_ready = $false
     }
     $temp = $auditPath + '.' + $PID + '.tmp'
+    $backup = $auditPath + '.' + $PID + '.bak'
     try {
         $json = $audit | ConvertTo-Json -Depth 4
         [System.IO.File]::WriteAllText(
             $temp, $json, ([System.Text.UTF8Encoding]::new($false))
         )
         if ([System.IO.File]::Exists($auditPath)) {
-            [System.IO.File]::Replace($temp, $auditPath, $null)
+            # Windows PowerShell 5.1 uses .NET Framework, where a null
+            # backup path can throw ArgumentException ("not a legal form").
+            # A same-volume named backup preserves atomic replace semantics.
+            [System.IO.File]::Replace($temp, $auditPath, $backup)
         } else {
             [System.IO.File]::Move($temp, $auditPath)
         }
@@ -87,7 +91,7 @@ finally {
         $diagnostic | Out-File -LiteralPath $logPath -Append -Encoding UTF8
     }
     finally {
-        Remove-Item -LiteralPath $temp -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $temp, $backup -ErrorAction SilentlyContinue
     }
 }
 # Task Scheduler must see real process/preflight errors, not an optimistic 0.
