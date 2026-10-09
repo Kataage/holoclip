@@ -123,6 +123,14 @@ future runs, or unregister it:
 Unregister-ScheduledTask -TaskName "Holoclip Source Patterns" -Confirm:$false
 ```
 
+CI now includes a **Windows runner** that checks actual Windows advisory-lock
+behavior and Windows PowerShell 5.1 launcher execution. It invokes only mock
+`uv`/`ffmpeg`/`ffprobe` executables in an isolated temporary directory,
+and tests prelaunch failure, nonzero collector process and zero-exit status,
+including durable launcher audit replacement. GitHub CI neither downloads
+a real Hololive video nor registers a scheduled task, so actual Task
+Scheduler startup and real public-media acquisition still require a local run.
+
 The installer configures a **single** daily local task at 03:00 by default,
 runs only in the current user's interactive session, will not force-stop a
 running instance at a fixed deadline, and skips overlapping starts. It cannot
