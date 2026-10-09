@@ -354,6 +354,24 @@ class _CoordinatorState:
                 if row is None:
                     return {"ok": False, "code": "CORRUPT_COORDINATOR_STORAGE"}
                 next_at, active, cooldown, reason, lease_hash = row
+                # Coordinator identity is persisted in SQLite, independent of
+                # process restarts, secret copies and individual clients.
+                # It is NOT a machine attestation or an editor quality gate.
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS coordinator_identity ("
+                    "id INTEGER PRIMARY KEY CHECK(id=1), instance_id TEXT NOT NULL)"
+                )
+                db.execute(
+                    "INSERT OR IGNORE INTO coordinator_identity VALUES (1, ?)",
+                    (secrets.token_hex(32),),
+                )
+                identity_row = db.execute(
+                    "SELECT instance_id FROM coordinator_identity WHERE id=1"
+                ).fetchone()
+                instance_id = identity_row[0] if identity_row else None
+                if (not isinstance(instance_id, str) or
+                        not re.fullmatch("[a-f0-9]{64}", instance_id)):
+                    return {"ok": False, "code": "CORRUPT_COORDINATOR_STORAGE"}
                 now = time.time()
                 if (any(type(v) not in (float, int) or
                         not 0 <= v <= 253402300799
@@ -369,6 +387,7 @@ class _CoordinatorState:
                         "code": ("COOLDOWN" if cooldown > now else
                                  "ACTIVE" if active > now else
                                  "WAIT_GAP" if next_at > now else "AVAILABLE"),
+                        "coordinator_instance_id": instance_id,
                     }
                 if op == "cooldown":
                     reason = request.get("reason")
@@ -476,6 +495,14 @@ class _CoordinatorHandler(BaseHTTPRequestHandler):
                 self.send_error(400)
                 return
             result = self.server.state.execute(request)
+            # Keyed, non-reversible tag of the *observed TCP peer*.
+            # This never discloses the address or claims hardware identity.
+            if request.get("op") == "status" and result.get("ok") is True:
+                remote_address = str(self.client_address[0])
+                result["observed_peer_tag"] = hmac.new(
+                    self.server.secret, b"holoclip-peer-v1:" +
+                    remote_address.encode("ascii"), hashlib.sha256,
+                ).hexdigest()
             body = json.dumps(
                 {"version": LAN_COORDINATOR_VERSION, **result},
                 sort_keys=True, separators=(",", ":"),

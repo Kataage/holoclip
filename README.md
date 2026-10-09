@@ -430,6 +430,49 @@ PCs have actually enrolled, that the coordinator is reachable from both,
 or that the eventual video/edit quality is production ready. Only
 site-free loopback/CI simulations have been exercised so far;
 `ready=false` remains unchanged.
+#### Signed cross-PC LAN coordinator pairing observations (no media)
+
+The optional pair-export command queries only coordinator's HMAC-authenticated
+status; it never reserves a lease, downloads media, runs yt-dlp, changes the
+firewall or modifies the pacing gate. A random durable coordinator instance
+ID survives restarts in the coordinator SQLite database, and signed status
+also carries an opaque keyed tag of the observed TCP source address.
+
+Run one command on each **already enrolled** Windows PC:
+
+```powershell
+# On PC-A
+uv run holoclip examples-ytdlp-lan-pair-export --role pc-a --output "data/runtime/pair-pc-a.json"
+# On PC-B
+uv run holoclip examples-ytdlp-lan-pair-export --role pc-b --output "data/runtime/pair-pc-b.json"
+```
+
+Transfer the two generated report files (not the secret) to one trusted
+machine by USB or an independently authenticated file transfer, then:
+
+```powershell
+uv run holoclip examples-ytdlp-lan-pair-verify --pc-a "data/runtime/pair-pc-a.json" --pc-b "data/runtime/pair-pc-b.json"
+```
+
+Generate fresh reports for each check: export never overwrites an existing
+report. Reports are purpose-separated HMAC signed under the common LAN
+credential, limited to 15 minutes of age (90-second future clock skew) and
+4096 bytes. Unknown versions, tampering, duplicate filenames/nonces,
+different coordinator SQLite identities and identical observed TCP peer
+tags do not pass. On coordinator failure, new export fails closed and the
+existing provider cannot bypass its coordinator to start yt-dlp.
+
+**Limits:** An authorized holder of the *shared* secret can forge reports,
+and a reported role is not a verifiable machine identity. NAT/proxies may
+make physical devices appear as the same peer. Matching persistent SQLite
+state is not proof of one running server process. A match proves only
+consistency of submitted authenticated observations with one durable state
+and distinct TCP peers, not independent physical-PC attestation or global
+pacing performance. The offline verifier does not contact the coordinator;
+stored reports do not prove it is online now. Always retain
+two_host_verified=false and ready=false. No GitHub-hosted YouTube access
+or real two-PC tests occur.
+
 #### One-command PC-A / PC-B LAN setup preflight (read-only)
 
 Run this after the earlier secret import/client enrollment. Every diagnostic
