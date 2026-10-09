@@ -67,7 +67,10 @@ and rights/range policy are checked before media fetch. Failed candidate
 checks stay unknown, not negative. A saved step advances only after the
 finished-video probe and candidate-attempt phase; restarting does not
 discard original scan cursors, source evidence ledger or SHA-bound
-histories. A malformed/oversized resume position is blocked.
+histories. The durable schedule also pins shortlist IDs and order, the
+finished-window positions, and the candidate batch size; drift or a
+malformed/oversized resume position blocks instead of silently mapping
+the old step to different input video.
 
 Once the limited paired-revisit schedule is consumed, the prior no-media
 shortcut applies after fresh original metadata checks, reporting
