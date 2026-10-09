@@ -240,6 +240,75 @@ output Cartesian search, an editor negative, gold source identity, recall
 or permission to change `ready=false`. Missing or unsafe current metadata
 does not count as successful pair verification.
 
+### Opt-in shared-IP yt-dlp coordination across Windows PCs (free, no Docker)
+
+Two computers behind one router/public IP must **not** assume their
+independent local SQLite gates enforce a combined access rate.
+Holoclip now includes an **optional Python standard-library LAN
+coordinator**. On the PC designated as coordinator (PC-A), a single
+service owns a durable SQLite exclusive lease and a 20-second inter-job
+gap for **all configured clients**, plus the shared six-hour YouTube
+429/bot-challenge cooldown. The coordinator is not a video downloader;
+no URLs, clips, titles, cookies or account data are sent to it.
+
+One-time setup on the trusted private network:
+
+1. On PC-A, from the Holoclip repository, run
+   `uv run holoclip examples-ytdlp-lan-init`. This creates a 256-bit
+   random secret at `data/runtime/yt-dlp-lan-secret.txt`; the secret
+   is **never printed** and existing secrets are never overwritten.
+2. Copy this file **securely** to PC-B (same restrictive access rights).
+   Protect it as a credential; do not commit or upload it.
+3. Start the coordinator on PC-A using its **specific private-LAN IP**:
+   `uv run holoclip examples-ytdlp-lan-serve --bind-ip 192.168.1.20`
+   (replace the address with PC-A's real LAN IPv4). Listening on a
+   public address or `0.0.0.0` is rejected. Only permit the other
+   trusted PC's private address through the Windows Firewall on port
+   8878. Keep this service running during collector jobs; if it stops,
+   all configured clients stop accessing YouTube.
+4. On **BOTH** PCs (including PC-A), set the local Holoclip process
+   environment variables below. Replace the example IP and absolute
+   paths with each PC's real values. The server and clients share the
+   **same secret bytes**, while the file path is local to each PC.
+
+```powershell
+$env:HOLOCLIP_YTDLP_COORDINATOR_URL = "http://192.168.1.20:8878"
+$env:HOLOCLIP_YTDLP_COORDINATOR_SECRET_FILE = "D:\\AI\\holoclip\\data\\runtime\\yt-dlp-lan-secret.txt"
+uv run holoclip examples-ytdlp-lan-status
+```
+
+For unattended Windows Task Scheduler invocations, supply the same
+environment via the user's normal local Holoclip `.env` configuration
+(the native collection CLI loads it before constructing the yt-dlp
+provider); environment variables set in one interactive PowerShell
+window do **not** automatically reach future scheduled sessions.
+Do not put secrets in command-line flags, task arguments, GitHub
+repository files or CI secrets. To stop all network collection safely,
+stop the coordinator or remove its outbound availability; clients
+configured to require it will refuse to run yt-dlp.
+
+All client requests/responses are HMAC-SHA256 authenticated with a
+timestamp and one-use nonce; a request cannot be replayed. Secret
+material is never sent across the network. The connection uses
+**unencrypted HTTP on a trusted private LAN only** (no external/public
+hosting); HMAC protects request integrity/authentication, **not**
+confidentiality or availability. Client and coordinator clocks need
+to be synchronized within 90 seconds. The client explicitly ignores
+HTTP proxies and redirects. Failed/invalid/unreachable coordinator
+access **never falls back to a local-only gate**. A crashed coordinator
+retains unexpired leases via its own SQLite; an abandoned lease
+eventually expires based on the bounded yt-dlp process deadline.
+
+This is an **opt-in** capability: if the coordinator variables are
+absent, the pre-existing local-only pacing remains in effect and
+does **not** guarantee shared-IP coordination. If just one of the
+two variables is configured, collection fails closed instead of
+bypassing the coordinator. Even in coordinated mode, YouTube may
+rate-limit or restrict access for other reasons; neither the
+coordination status command nor a permit proves actual media access
+or `ready=true`. This feature has only been verified with
+loopback/offline tests, **not a real two-Windows-PC LAN deployment**.
+
 ### Safe pause and unattended resume of native source collection
 
 The Windows native collector now checks the local yt-dlp gate *before*
