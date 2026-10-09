@@ -99,10 +99,20 @@ class LocalYtDlpPacer:
                     # processes. Never sleep while holding a SQL write lock.
                     db.execute("BEGIN IMMEDIATE")
                     now = time.time()
-                    next_at, active, cooldown = db.execute(
-                        "SELECT next_at, active_until, cooldown_until "
-                        "FROM access WHERE id=1"
+                    row = db.execute(
+                        "SELECT next_at, active_until, cooldown_until, "
+                        "cooldown_reason FROM access WHERE id=1"
                     ).fetchone()
+                    if row is None:
+                        raise LocalYtDlpDeferred("LOCAL_YTDLP_PACING_UNSAFE_STATE")
+                    next_at, active, cooldown, reason = row
+                    if (reason not in _COOLDOWN_REASONS or any(
+                        type(value) not in (float, int)
+                        or not math.isfinite(value)
+                        or not 0 <= value <= _MAX_UNIX_TIMESTAMP
+                        for value in (next_at, active, cooldown)
+                    )):
+                        raise LocalYtDlpDeferred("LOCAL_YTDLP_PACING_UNSAFE_STATE")
                     if cooldown > now:
                         raise LocalYtDlpDeferred("LOCAL_YTDLP_COOLDOWN_ACTIVE")
                     if active > now:
