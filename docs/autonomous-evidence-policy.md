@@ -63,7 +63,10 @@ The read-only collector doctor separately rechecks present disk contents
 under `current_source_cache_byte_attestation` and shows the last historical
 report value under `last_run_saved_cache_attestation`. The fixed 4-clip /
 48-section limit and a partial-audit status explicitly prohibit interpreting
-a truncated run as a complete audit. Missing, stale or altered files yield
+a truncated run as a complete audit. Unattended audits target recently
+attempted clip identities from the current run (not an old sorted-prefix
+backlog); read-only doctor checks a deterministic bounded prefix and
+reports scope independently. Missing, stale or altered files yield
 unknown or blocked statuses; a recorded control result alone is insufficient.
 
 **A matching on-disk SHA-256 and yt-dlp receipt prove only internal local
