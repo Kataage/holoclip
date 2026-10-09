@@ -119,6 +119,40 @@ def test_stage_funnel_rejects_duplicate_clips_or_forged_media_hashes(tmp_path):
         )
 
 
+@pytest.mark.asyncio
+async def test_access_challenge_stops_visual_media_stage_in_same_local_run(
+    tmp_path, monkeypatch,
+):
+    from holoclip import source_pattern_collection as runner
+
+    make_state(tmp_path / "state.json")
+
+    async def paused_discovery(*_args, **_kwargs):
+        return {
+            "metadata_access_paused": True,
+            "metadata_access_pause_reason": "REPEATED_YOUTUBE_CHALLENGE_OR_RATE_LIMIT",
+            "metadata_failure_category_counts": {
+                "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE": 3,
+            },
+        }
+
+    def forbidden_video(*_args, **_kwargs):
+        pytest.fail("paused public metadata access must not try video download")
+
+    monkeypatch.setattr(runner, "grow_corpus", paused_discovery)
+    monkeypatch.setattr(runner, "verify_pending_source_visual", forbidden_video)
+    result = await collect_public_source_patterns(
+        Provider(), store=tmp_path / "none.jsonl",
+        state_path=tmp_path / "state.json",
+        output=tmp_path / "media", policy_rules=[], cycles=3,
+    )
+    assert result["discovery"]["metadata_access_paused"] is True
+    assert result["cycles_completed"] == 0
+    assert result["new_unique_video_samples_this_run"] == 0
+    assert result["source_identity_verified"] is False
+    assert result["ready"] is False
+
+
 def test_pending_visual_queue_rotates_across_invocations(tmp_path):
     _seed_multiple(tmp_path/"state.json")
     provider = MultipleClips()
