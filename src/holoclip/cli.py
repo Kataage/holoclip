@@ -27,6 +27,7 @@ from holoclip.source_pattern_worker import (
 )
 from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collector
 from holoclip.source_pattern_local_health import resolve_local_diagnostic_paths
+from holoclip.source_pattern_local_history import read_launcher_history
 from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
@@ -1091,7 +1092,14 @@ def examples_collector_health(
         check_tools=check_tools, media_output=paths["output"],
         audit_media_cache=audit_media_cache,
     )
-    compact = {**doctor["local_collection_health"], "local_settings_loaded": loaded}
+    history_path = paths["launcher_audit_path"].with_name(
+        "source-pattern-launcher-history.json"
+    )
+    compact = {
+        **doctor["local_collection_health"],
+        "local_settings_loaded": loaded,
+        "native_launcher_history": read_launcher_history(history_path),
+    }
     typer.echo(json.dumps(compact, ensure_ascii=False, indent=2))
 
 
