@@ -293,7 +293,21 @@ def diagnose_source_pattern_collector(
         and (recorded is None or _timestamp(launcher["finished_at_utc"])
              >= _timestamp(recorded["finished_at_utc"]))
     )
-    if failure_in_latest_launcher:
+    # Only elevate a blocked pacing receipt over the generic failed
+    # launcher when that *specific* collector audit belongs to the same
+    # Windows invocation, not an older stale failure on disk.
+    pacing_state_current = (
+        latest_report == "BLOCKED_LOCAL_YTDLP_PACING_STATE"
+        and launcher is not None and recorded is not None
+        and _timestamp(launcher["started_at_utc"])
+            <= _timestamp(recorded["started_at_utc"])
+        and _timestamp(recorded["finished_at_utc"])
+            <= _timestamp(launcher["finished_at_utc"])
+    )
+    if failure_in_latest_launcher and pacing_state_current:
+        status = "BLOCKED_LOCAL_YTDLP_PACING_STATE"
+        next_action = "REPAIR_LOCAL_YTDLP_PACING_STATE_BEFORE_NEXT_ATTEMPT"
+    elif failure_in_latest_launcher:
         status = "BLOCKED_LATEST_WINDOWS_LAUNCH"
         next_action = "INSPECT_LAUNCHER_LOG_AND_LOCAL_TOOLCHAIN"
     elif tools["status"] == "MISSING_LOCAL_DEPENDENCIES":
