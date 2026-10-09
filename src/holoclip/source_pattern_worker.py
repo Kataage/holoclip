@@ -1,11 +1,12 @@
 """Local safe runner for scheduled, bounded, unreviewed source video collection.
 
 A platform-held advisory lock serializes the *collector* on a shared corpus
-state path. This is not a lock for independent external writes to that state.
+state path. The public growth/visual CLI commands share this lock; direct Python callers\nof their lower-level functions still must opt into the same lock.
 """
 from __future__ import annotations
 
 import contextlib
+import errno
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,8 +51,11 @@ def _state_lock(state_path: Path):
                 import fcntl
                 fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
             acquired = True
-        except (OSError, BlockingIOError):
-            pass
+        except OSError as exc:
+            # Do not misreport an unsupported lock/filesystem failure as an
+            # ordinary overlapping job. Only a lock-contention errno is busy.
+            if exc.errno not in (errno.EACCES, errno.EAGAIN):
+                raise
         yield acquired
     finally:
         if acquired:
