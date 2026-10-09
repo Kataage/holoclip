@@ -52,6 +52,28 @@ labels. GitHub runners can be blocked by YouTube. This gate never sets
 Windows long-term scheduled collection is separately opt-in and continues
 to own resumable production data. Every ordinary PR CI remains offline.
 
+## First hosted public-video attempt and metadata failure classification
+
+The first hosted real-media attempt, run
+[37946788956](https://github.com/Kataage/holoclip/actions/runs/37946788956),
+completed the external search for five candidate human clips, but all
+five ended in `retryable` during full clip metadata resolution. The
+source-visual queue was empty and **no public source section or constructed
+pattern was acquired**. This is measured diagnostic evidence of the
+hosted-runner acquisition path only, not source-match accuracy, and it
+does not establish the cause of the failed probes.
+
+To make the next attempt actionable, the runner now derives strictly
+sanitized exception-class counts and broad failure categories from the
+persisted `retryable` reasons. It never forwards raw yt-dlp stderr, URLs,
+titles, or arbitrary exception text to the GitHub artifact/step summary.
+Expected classifications include bot/interactive challenges, HTTP forbidden,
+rate limiting, restricted login, unavailable videos, extraction changes,
+timeouts, runtime issues and an explicit unclassified fallback. These
+categories are **diagnostics**, not credentials, policy exemptions,
+permitted bypass routes or verified video evidence. Source identity,
+measured editorial accuracy and `ready=false` gates are unchanged.
+
 ## Source-pattern collection (2026-10-09 increment)
 
 `examples-collect-source-patterns` is a bounded, restartable batch runner for
