@@ -64,6 +64,10 @@ def test_missing_state_and_audits_are_unknown_not_ready(tmp_path):
     assert report["cumulative_unreviewed_source_video_samples"] == 0
     assert report["new_unique_video_samples_last_run"] is None
     assert report["tools"]["status"] == "NOT_CHECKED"
+    assert report["current_source_cache_byte_attestation"]["status"] == (
+        "UNKNOWN_NO_SOURCE_CACHE_EVIDENCE"
+    )
+    assert report["last_run_saved_cache_attestation"] is None
     assert report["ready"] is False
 
 
