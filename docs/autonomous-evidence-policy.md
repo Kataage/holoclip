@@ -17,6 +17,26 @@ The target is evidence-backed **corpus-level editorial pattern learning**, not
 necessarily LLM weight fine-tuning. Model fine-tuning can be evaluated later but
 does not replace original-stream/video verification, dataset splits or calibrated QA.
 
+## Source-pattern collection (2026-10-09 increment)
+
+`examples-collect-source-patterns` is a bounded, restartable batch runner for
+the already implemented five constructed video patterns. It runs metadata-only
+public clip discovery (optional), then the existing policy-checked yt-dlp
+source/video cross-check across persisted round-robin pending clip keys. Each
+cycle reports attempted clip keys, latest acquisition/decoder/policy outcomes
+and the **change in globally deduplicated** measured source samples. Results
+are saved by the established SHA-bound control histories in corpus state.
+
+Round-robin scheduling prevents one pending clip from occupying every cycle,
+but it **does not** guarantee source diversity: several clips can still point
+to one original. The report must distinguish attempts, independently counted
+source-video samples and distinct candidate source IDs, and treat all absent
+measurement denominators as null. Source IDs discovered by metadata are
+unverified candidates; no source identity, human cut precision/recall,
+original-stream false-positive rate, training gold or production qualification
+may be inferred. `ready=false` remains mandatory. Real collection must actually
+run against public media before any observed source result is claimed.
+
 ## Acquisition and safe data allocation
 
 1. Discover public ended clips by metadata; check source/channel/range policy and
