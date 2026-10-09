@@ -255,6 +255,47 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pat
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pattern-task.ps1 -At "04:30"
 ```
 
+#### Optional Windows local settings (no code edits)
+
+The native runner now reads
+`data/examples/source-pattern-local-settings.json` **only if it exists**.
+No file is required: with no settings file, all previous CLI defaults
+remain unchanged. To customize local folders or bounded collection work,
+copy the safe, versioned
+[`config/source-pattern.local.example.json`](config/source-pattern.local.example.json)
+template to the above path and edit it locally:
+
+```powershell
+Copy-Item .\config\source-pattern.local.example.json .\data\examples\source-pattern-local-settings.json
+# The next scheduled run automatically uses the new settings.
+# No task reinstallation or manually supplied clip URLs required.
+```
+
+The JSON accepts `store`, `state`, `output`, `policy_file`,
+`report_path`, `launcher_audit_path` (absolute or repository-relative
+paths), `cycles` (1–20), `max_clips` (1–2),
+`max_candidates` (1–2), `scan_limit` (1–100),
+`target_distinct_streams` (1–50) and boolean `discover`.
+Paths containing spaces are passed as separate native arguments, not
+interpolated into a command string. Configurations larger than 32 KiB,
+invalid types, out-of-range budgets, unsupported keys, symlinks and invalid
+JSON fail at the **Windows launcher preflight**, before yt-dlp is invoked.
+The existing launcher audit records `FAILED_PRELAUNCH` rather than
+claiming evidence or readiness. Changing `state` or other paths starts
+using the newly configured corpus location; it does **not** migrate prior
+stored evidence or merge disjoint corpora automatically. Keep `state`,
+`store`, `output` and reports on appropriate persistent disks.
+
+A custom config filename can also be pinned during one-time installation:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-source-pattern-task.ps1 -ConfigPath "D:\Holoclip Data\local-source-settings.json"
+```
+
+For the default settings path, the scheduled task requires **no**
+reinstallation when the JSON is edited. GitHub CI only tests mocked
+Windows launchers and never downloads YouTube media.
+
 During one-time installation, the script checks `uv`, FFmpeg, FFprobe,
 and **Deno >=2.3 or Node >=22**, rejecting missing/unsupported JavaScript
 runtimes *before* registering any repeating task. It pins absolute executable
