@@ -124,7 +124,7 @@ uv run --extra media holoclip examples-collector-doctor --no-check-tools
 uv run --extra media holoclip examples-collector-doctor --no-check-tools --media-output "D:\\video-cache"
 ```
 
-The bounded audit checks up to four pending clips and 48 unique sections;
+The unattended worker audits up to four **recently attempted** clips rather than a stale first-in-queue prefix; the independent doctor uses a deterministic sorted prefix. Each audit checks at most 48 unique sections;
 if the queue exceeds the budget, `UNKNOWN_PARTIAL_BOUNDED_CACHE_AUDIT`
 explicitly prevents claiming full coverage. `--no-audit-media-cache` skips
 disk rehashing when only metadata status is needed. Neither a matching
