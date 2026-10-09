@@ -28,6 +28,7 @@ from holoclip.source_pattern_worker import (
 from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collector
 from holoclip.source_pattern_local_health import resolve_local_diagnostic_paths
 from holoclip.source_pattern_local_history import read_launcher_history
+from holoclip.source_ytdlp_pacing import inspect_local_ytdlp_pacing
 from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
