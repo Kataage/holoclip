@@ -174,6 +174,8 @@ async def grow_corpus(
     )
     attempted = 0
     resolved = 0
+    source_visual_newly_pending = 0
+    explicit_visual_newly_pending = 0
     pending = [x for x in state.items.values() if x.status in {"discovered", "retryable", "queued"}]
     # Resolve a bounded metadata page before selecting what to acquire.
     for item in sorted(pending, key=lambda x: (editor_counts[x.clip_channel], x.clip_url))[
@@ -194,23 +196,36 @@ async def grow_corpus(
                 continue
             candidates = provider.source_candidates(clip)
             chosen = choose_source_candidate(candidates)
-            if chosen is None:
+            # The unattended pattern collector calls grow_corpus with
+            # discover_only=True. Previously *unambiguous description links*
+            # bypassed the visual-sampling queue and became training/holdout
+            # assignments, so the most informative public originals never
+            # received any actual bounded video measurements. A description
+            # link is a discovery hint, not independently verified gold.
+            if chosen is None or discover_only:
+                proposed = candidates if chosen is None else [chosen]
                 item.source_scout = scout_unresolved_public_source(
-                    provider, clip, explicit_candidates=candidates,
+                    provider, clip, explicit_candidates=proposed,
                     policy_rules=policy_rules,
                 )
                 if item.source_scout["candidate_sources"]:
-                    # Reserved for a future autonomous visual-verification
-                    # worker. Never queue for learning or holdout directly.
                     item.status, item.reason = (
                         "source_visual_pending",
-                        "unverified original candidate images require cross-check",
+                        "explicit source link awaits unreviewed visual measurement"
+                        if chosen is not None else
+                        "ambiguous original candidates await visual measurement",
                     )
+                    source_visual_newly_pending += 1
+                    if chosen is not None:
+                        explicit_visual_newly_pending += 1
                 else:
                     item.status, item.reason = (
                         "review", "no independently verified source discovered",
                     )
                 continue
+            # Normal corpus ingestion still resolves chosen public links and
+            # applies the existing training/holdout split. Only metadata-only
+            # collection routes them into *unreviewed* video sampling.
             item.source_scout = None
             source = provider.probe(chosen.url)
             item.source_url, item.source_stream_id = chosen.url, source.external_id
@@ -329,6 +344,8 @@ async def grow_corpus(
         "search_page_wraps": search_page_wraps,
         "empty_search_pages": empty_search_pages,
         "resolved": resolved,
+        "source_visual_newly_pending": source_visual_newly_pending,
+        "explicit_source_visual_newly_pending": explicit_visual_newly_pending,
         "attempted": attempted,
         "trusted_examples": len(trusted),
         "trusted_streams": len({x.stream_id for x in trusted if x.stream_id}),

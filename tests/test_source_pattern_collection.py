@@ -410,3 +410,42 @@ def test_histories_shrinking_during_run_cannot_produce_positive_audit(
             output=tmp_path / "media", policy_rules=[], discover=False,
             cycles=1,
         ))
+
+
+def test_autonomous_collector_feeds_explicit_links_to_visual_sampling_queue(
+    tmp_path, monkeypatch,
+):
+    """The collector must not starve the strongest description-derived links."""
+    from holoclip import source_pattern_collection as collector
+    from test_corpus_growth import PublicProvider
+
+    seen = []
+
+    def fake_visual(_provider, **kwargs):
+        path = kwargs["state_path"]
+        saved = CorpusGrowthState.model_validate_json(path.read_text(encoding="utf-8"))
+        assert len(saved.items) == 1
+        item = next(iter(saved.items.values()))
+        assert item.status == "source_visual_pending"
+        assert item.source_url is None
+        assert item.source_stream_id is None
+        assert item.source_scout["candidate_sources"][0]["source_url"] == (
+            "https://youtu.be/source"
+        )
+        seen.append(1)
+        # Nothing was downloaded by CI. Never manufacture measurements.
+        return {"attempted": 0, "counts": {}, "attempted_clip_keys": []}
+
+    monkeypatch.setattr(collector, "verify_pending_source_visual", fake_visual)
+    result = asyncio.run(collect_public_source_patterns(
+        PublicProvider(), store=tmp_path / "clips.jsonl",
+        state_path=tmp_path / "corpus.json", output=tmp_path / "media",
+        policy_rules=[], discover=True, cycles=2, scan_limit=5,
+    ))
+    assert seen == [1]
+    assert result["discovery"]["source_visual_newly_pending"] == 1
+    assert result["discovery"]["explicit_source_visual_newly_pending"] == 1
+    assert result["new_unique_video_samples_this_run"] == 0
+    assert result["source_identity_verified"] is False
+    assert result["reviewed_gold_available"] is False
+    assert result["ready"] is False
