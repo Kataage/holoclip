@@ -66,6 +66,23 @@ availability and billing are subject to the repository's GitHub plan. Ongoing
 production collection remains the **opt-in native Windows scheduler**, not
 this disposable runner.
 
+### Public-video smoke: classify metadata failures without exposing URLs
+
+The first actual hosted attempt ([run #37946788956](https://github.com/Kataage/holoclip/actions/runs/37946788956))
+searched five public clip entries but all five full metadata probes remained
+`retryable`: **zero** videos reached source/finished comparison or pattern
+measurement. Its evidence remains `UNKNOWN`, not proof of source mismatch.
+
+The runner now records only bounded `public_clip_metadata_probe_failures`
+counts, including safe exception class identifiers and categorical diagnostics
+for YouTube interactive/bot challenges, HTTP 403/429, login restrictions,
+network timeouts, extractor changes, unavailable videos and unclassified
+errors. **No raw yt-dlp error message, URL, clip title or credentials are
+exported** in the category summary. This helps distinguish hostile hosted
+network conditions from broken local tooling before assigning real-video
+work elsewhere. Categorization is a hint, not evidence that an error is
+resolved, or a license to bypass access controls. `ready=false` remains.
+
 ## Collect real public-source constructed pattern measurements
 
 The source-pattern collector combines **metadata-only public clip discovery**
