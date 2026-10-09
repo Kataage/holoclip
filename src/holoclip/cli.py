@@ -32,7 +32,7 @@ from holoclip.source_ytdlp_lan_onboarding import diagnose_lan_client, import_lan
 from holoclip.source_ytdlp_pacing import DEFAULT_PACING_PATH, inspect_local_ytdlp_pacing
 from holoclip.source_ytdlp_lan_coordinator import (
     DEFAULT_COORDINATOR_STATE, DEFAULT_SECRET_PATH, DEFAULT_CLIENT_CONFIG,
-    LanCoordinatorClient, configure_lan_client, create_coordinator_secret,
+    configure_lan_client, create_coordinator_secret,
     serve_lan_ytdlp_coordinator,
 )
 from holoclip.holdout_reservations import export_holdout_inventory
