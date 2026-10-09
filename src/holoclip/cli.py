@@ -29,6 +29,7 @@ from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collecto
 from holoclip.source_pattern_local_health import resolve_local_diagnostic_paths
 from holoclip.source_pattern_local_history import read_launcher_history
 from holoclip.source_ytdlp_lan_onboarding import diagnose_lan_client, import_lan_secret
+from holoclip.source_ytdlp_lan_setup_doctor import inspect_lan_setup
 from holoclip.source_ytdlp_lan_ssh_transfer import pull_lan_secret_sftp, _secure_windows_path
 from holoclip.source_ytdlp_pacing import DEFAULT_PACING_PATH, inspect_local_ytdlp_pacing
 from holoclip.source_ytdlp_lan_coordinator import (
@@ -1206,6 +1207,41 @@ def examples_ytdlp_lan_secret_acl(
     typer.echo(json.dumps({
         "status": "ACL_SECURE", "acl_verified": True, "ready": False,
     }))
+
+
+@app.command("examples-ytdlp-lan-setup-doctor")
+def examples_ytdlp_lan_setup_doctor(
+    role: str = typer.Option(..., "--role",
+        help="Specify which machine is being inspected: pc-a or pc-b."),
+    secret_file: Path | None = typer.Option(None, "--secret-file",
+        help="Optional local credential path (defaults to saved client path on PC-B)."),
+    peer_ip: str | None = typer.Option(None, "--peer-ip",
+        help="PC-B private IPv4 used to check PC-A firewall scope."),
+    known_hosts: Path | None = typer.Option(None, "--known-hosts",
+        help="Independently verified local SSH known_hosts file; never fetched."),
+    ssh_host: str | None = typer.Option(None, "--ssh-host",
+        help="PC-A private IPv4 to look up in known_hosts; no SSH connection."),
+    ssh_port: int = typer.Option(22, "--ssh-port", min=1, max=65535),
+    port: int = typer.Option(8878, "--port", min=1024, max=65535),
+    task_name: str = typer.Option("Holoclip yt-dlp LAN Coordinator", "--task-name"),
+) -> None:
+    """Read-only PC-A/B deployment preflight; no media or task modifications."""
+    _load_env_file()
+    try:
+        report = inspect_lan_setup(
+            role=role, secret_file=secret_file, peer_ip=peer_ip,
+            known_hosts=known_hosts, ssh_host=ssh_host,
+            ssh_port=ssh_port, port=port, task_name=task_name,
+        )
+    except (ValueError, OSError, UnicodeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_SETUP_DOCTOR_ARGUMENT_REJECTED",
+            "reason": type(exc).__name__, "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+    if report["status"] != "LOCAL_SETUP_OBSERVATIONS_COMPLETE":
+        raise typer.Exit(6)
 
 
 @app.command("examples-ytdlp-lan-doctor")
