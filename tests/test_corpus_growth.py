@@ -409,7 +409,12 @@ async def test_metadata_failed_probes_rotate_instead_of_starving_fresh_clips(
 
 @pytest.mark.asyncio
 async def test_queued_learning_items_do_not_consume_metadata_probe_slots(tmp_path):
-    provider = PublicProvider()
+    class NoNewSearch(PublicProvider):
+        def search_public_clips(self, query, *, limit, offset):
+            self.searches.append((query, offset))
+            return []
+
+    provider = NoNewSearch()
 
     async def forbidden(**_kwargs):
         pytest.fail("metadata-only must not ingest")
@@ -443,7 +448,12 @@ async def test_queued_learning_items_do_not_consume_metadata_probe_slots(tmp_pat
 async def test_metadata_only_does_not_steal_ingestion_retry_with_assigned_stream(
     tmp_path,
 ):
-    provider = PublicProvider()
+    class NoNewSearch(PublicProvider):
+        def search_public_clips(self, query, *, limit, offset):
+            self.searches.append((query, offset))
+            return []
+
+    provider = NoNewSearch()
 
     async def forbidden(**_kwargs):
         pytest.fail("metadata-only cannot run ingester")
