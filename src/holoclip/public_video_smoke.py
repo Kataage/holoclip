@@ -11,9 +11,7 @@ import signal
 import subprocess
 from pathlib import Path
 
-from holoclip.source_metadata_failure_summary import (
-    _public_probe_failure_category, _saved_metadata_probe_failures,
-)
+from holoclip.source_metadata_failure_summary import _saved_metadata_probe_failures
 
 from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collector
 
