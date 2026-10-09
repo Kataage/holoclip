@@ -21,8 +21,18 @@ function Run-Launcher([string]$expectedStatus, [int]$expectedCode, [bool]$expect
     Remove-Item -LiteralPath $marker -ErrorAction SilentlyContinue
     & $psExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $fakeScripts 'run-source-pattern-worker.ps1') -Cycles 1 -MaxClips 1
     $actualCode = [int]$LASTEXITCODE
-    Assert-Condition ($actualCode -eq $expectedCode) "Wrong Windows launcher exit code: $actualCode, expected $expectedCode"
     $auditFile = Join-Path $temporary 'data\examples\source-pattern-launcher-last-run.json'
+    if ($actualCode -ne $expectedCode) {
+        if (Test-Path -LiteralPath $auditFile) {
+            Write-Host ('Actual launcher audit: ' + (Get-Content -LiteralPath $auditFile -Raw -Encoding UTF8))
+        }
+        Get-ChildItem -LiteralPath (Join-Path $temporary 'data\logs') -Filter 'source-pattern-*.log' -File -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                Write-Host ('Launcher log ' + $_.Name)
+                Get-Content -LiteralPath $_.FullName -Tail 20 | ForEach-Object { Write-Host $_ }
+            }
+    }
+    Assert-Condition ($actualCode -eq $expectedCode) "Wrong Windows launcher exit code: $actualCode, expected $expectedCode"
     Assert-Condition (Test-Path -LiteralPath $auditFile -PathType Leaf) 'Launcher audit was not created'
     $audit = Get-Content -LiteralPath $auditFile -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-Condition ($audit.version -eq 'source-pattern-windows-launcher-v1') 'Wrong audit schema'
