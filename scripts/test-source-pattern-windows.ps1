@@ -122,8 +122,56 @@ try {
     Assert-Condition ($sixth.error_class -eq $null) 'All pinned media executables must start'
     $seventh = Run-Launcher 'FAILED_PRELAUNCH' 1 $false $pinnedUv $pinnedFFmpeg $pinnedFFprobe (Join-Path $pinnedDir 'missing-node.cmd')
     Assert-Condition ($seventh.error_class -ne $null) 'Missing pinned JS must fail closed'
+    # Optional local settings are automatically discovered under data/examples.
+    # Capture the native argument vector through a fake uv.cmd (no media).
+    Create-Mock 'uv' "echo invoked >> `"%HOLOCLIP_FAKE_UV_MARKER%`"`r`necho %* > `"%HOLOCLIP_FAKE_UV_MARKER%.args`"`r`nexit /b 0"
+    Copy-Item -LiteralPath (Join-Path $fakeBin 'uv.cmd') -Destination $pinnedUv -Force
+    Remove-Item -LiteralPath (Join-Path $fakeBin 'uv.cmd') -Force
+    $configFile = Join-Path $temporary 'data\examples\source-pattern-local-settings.json'
+    $settings = @{
+        version = 'source-pattern-local-settings-v1'
+        cycles = 1
+        max_clips = 1
+        max_candidates = 1
+        scan_limit = 4
+        target_distinct_streams = 1
+        discover = $false
+        store = 'data\custom clips\examples.jsonl'
+        state = 'data\custom clips\corpus.json'
+        output = 'data\video cache'
+        report_path = 'data\custom clips\collector.json'
+        policy_file = 'data\policy\local_rules.jsonl'
+    }
+    $settings | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $configFile -Encoding UTF8
+    $eighth = Run-Launcher 'COMPLETED_COLLECTOR_PROCESS' 0 $true $pinnedUv $pinnedFFmpeg $pinnedFFprobe $pinnedNode
+    Assert-Condition ($eighth.error_class -eq $null) 'Valid local settings must run'
+    $argsText = Get-Content -LiteralPath (Join-Path $temporary 'was-invoked.txt.args') -Raw -Encoding UTF8
+    foreach ($flagValue in @('--cycles 1', '--max-clips 1', '--max-candidates 1',
+                            '--scan-limit 4', '--target-distinct-streams 1',
+                            '--no-discover')) {
+        Assert-Condition ($argsText.Contains($flagValue)) "Missing configured CLI option: $flagValue"
+    }
+    Assert-Condition ($argsText.Contains('custom clips')) 'Configured path with spaces was lost'
+    Assert-Condition ($argsText.Contains('--policy-file')) 'Configured policy path was not passed'
+
+    # Unsafe/malformed configurations MUST fail before invoking the fake uv.
+    $settings.max_candidates = 99
+    $settings | ConvertTo-Json | Set-Content -LiteralPath $configFile -Encoding UTF8
+    $ninth = Run-Launcher 'FAILED_PRELAUNCH' 1 $false $pinnedUv $pinnedFFmpeg $pinnedFFprobe $pinnedNode
+    Assert-Condition ($ninth.error_class -ne $null) 'Unbounded source candidates were accepted'
+    $settings.max_candidates = 1
+    $settings.discover = 'false'
+    $settings | ConvertTo-Json | Set-Content -LiteralPath $configFile -Encoding UTF8
+    $tenth = Run-Launcher 'FAILED_PRELAUNCH' 1 $false $pinnedUv $pinnedFFmpeg $pinnedFFprobe $pinnedNode
+    Assert-Condition ($tenth.error_class -ne $null) 'String JSON boolean was accepted'
+    $settings.discover = $true
+    $settings.unknown_key = 4
+    $settings | ConvertTo-Json | Set-Content -LiteralPath $configFile -Encoding UTF8
+    $eleventh = Run-Launcher 'FAILED_PRELAUNCH' 1 $false $pinnedUv $pinnedFFmpeg $pinnedFFprobe $pinnedNode
+    Assert-Condition ($eleventh.error_class -ne $null) 'Unknown config field was accepted'
+
     # Runner only: no user task should be registered.
-    Write-Host 'WindowsPowerShell 5.1 launcher: 7 sandboxed scenarios passed (no video download)'
+    Write-Host 'WindowsPowerShell 5.1 launcher: 11 sandboxed scenarios passed (no video download)'
 }
 finally {
     $env:PATH = $originalPath

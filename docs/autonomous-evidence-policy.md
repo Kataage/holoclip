@@ -17,6 +17,30 @@ The target is evidence-backed **corpus-level editorial pattern learning**, not
 necessarily LLM weight fine-tuning. Model fine-tuning can be evaluated later but
 does not replace original-stream/video verification, dataset splits or calibrated QA.
 
+## Versioned Windows-local collection configuration
+
+A native Windows Task Scheduler launch can optionally load the
+**local-only** `data/examples/source-pattern-local-settings.json` or a
+custom path explicitly pinned by the task installer. No config file is
+needed for normal defaults. The example under
+`config/source-pattern.local.example.json` contains only local paths,
+bounded work limits and a version identifier; it must not contain
+credentials, manually labeled source identities or media binaries.
+
+Accepted settings are bounded integers for cycles, clips, candidates,
+search limit and new distinct candidate sources, a boolean for
+metadata discovery, and configurable state/store/media/policy/report
+paths. Windows PowerShell 5.1 validates schema/version/types, path
+format and symlink safety before invoking any external media process;
+paths are passed as separate native arguments, never shell-evaluated.
+A bad config is a `FAILED_PRELAUNCH` launcher failure, not evidence of
+source/clip mismatch. No corpus migration occurs automatically if the
+configured state path changes. Updating the default JSON file does
+not require re-registering the task; explicit external config paths
+may be pinned at installation. CI validates with mocked executables
+and ScheduledTasks commands and never accesses real YouTube videos.
+All evidence provenance remains unreviewed, `ready=false`.
+
 ## Retired GitHub-hosted real-media collection; local access evidence only
 
 The experimental GitHub-hosted live YouTube workflow was removed after
