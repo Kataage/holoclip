@@ -583,7 +583,7 @@ class YtDlpSourceProvider:
                             "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE",
                             "HTTP_RATE_LIMIT",
                         }:
-                            self.pacer.impose_cooldown()
+                            self.pacer.impose_cooldown(reason=kind)
                         raise
             except LocalYtDlpDeferred as exc:
                 # This is a locally held reservation/cooldown, not a reason to

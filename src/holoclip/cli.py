@@ -28,6 +28,7 @@ from holoclip.source_pattern_worker import (
 from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collector
 from holoclip.source_pattern_local_health import resolve_local_diagnostic_paths
 from holoclip.source_pattern_local_history import read_launcher_history
+from holoclip.source_ytdlp_pacing import DEFAULT_PACING_PATH, inspect_local_ytdlp_pacing
 from holoclip.holdout_reservations import export_holdout_inventory
 from holoclip.holdout_preparation import prepare_reserved_holdouts
 from holoclip.holdout_audio_pipeline import align_reserved_holdouts
@@ -1099,8 +1100,20 @@ def examples_collector_health(
         **doctor["local_collection_health"],
         "local_settings_loaded": loaded,
         "native_launcher_history": read_launcher_history(history_path),
+        "yt_dlp_access": inspect_local_ytdlp_pacing(),
     }
     typer.echo(json.dumps(compact, ensure_ascii=False, indent=2))
+
+
+@app.command("examples-ytdlp-access-status")
+def examples_ytdlp_access_status(
+    pacing_path: Path = typer.Option(DEFAULT_PACING_PATH, "--pacing-path"),
+) -> None:
+    """Read local yt-dlp access gate; no network and no storage writes."""
+    typer.echo(json.dumps(
+        inspect_local_ytdlp_pacing(pacing_path),
+        ensure_ascii=False, indent=2,
+    ))
 
 
 @app.command("examples-source-controls-report")
