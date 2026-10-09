@@ -218,7 +218,10 @@ def test_reader_distinguishes_in_flight_and_normal_gap_without_mutation(
     )
 
 
-def test_reader_supports_preexisting_v1_cooldowns_and_writer_migrates_once(tmp_path):
+def test_reader_supports_preexisting_v1_cooldowns_and_writer_migrates_once(tmp_path, monkeypatch):
+    import holoclip.source_ytdlp_pacing as pacing
+
+    monkeypatch.setattr(pacing.time, "time", lambda: 10000.0)
     path = tmp_path / "pacing legacy.sqlite3"
     with sqlite3.connect(path) as db:
         db.execute(
