@@ -228,9 +228,9 @@ async def grow_corpus(
             pending_cursor + metadata_resolution_attempted
         )
         persist()
+        challenge_in_this_attempt = False
         try:
             clip = provider.probe(item.clip_url)
-            metadata_access_challenge_streak = 0
             if not _public(clip):
                 item.status, item.reason = "review", "clip public/ended status unverified"
                 continue
@@ -327,9 +327,15 @@ async def grow_corpus(
                 metadata_access_challenge_streak + 1
                 if category in metadata_access_stop_categories else 0
             )
+            challenge_in_this_attempt = category in metadata_access_stop_categories
             if metadata_access_challenge_streak >= 3:
                 metadata_access_paused = True
         finally:
+            # A valid clip probe can still fail source discovery later. Only
+            # reset the host challenge streak when the *whole attempt* has
+            # completed without another challenge, including early continues.
+            if not challenge_in_this_attempt:
+                metadata_access_challenge_streak = 0
             persist()
         if metadata_access_paused:
             break
