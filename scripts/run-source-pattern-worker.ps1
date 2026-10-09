@@ -68,7 +68,7 @@ finally {
     try {
         $json = $audit | ConvertTo-Json -Depth 4
         [System.IO.File]::WriteAllText(
-            $temp, $json, (New-Object System.Text.UTF8Encoding($false))
+            $temp, $json, ([System.Text.UTF8Encoding]::new($false))
         )
         if ([System.IO.File]::Exists($auditPath)) {
             [System.IO.File]::Replace($temp, $auditPath, $null)
