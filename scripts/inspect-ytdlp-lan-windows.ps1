@@ -20,12 +20,17 @@ function Get-ObservedTask {
 function Get-ObservedListener {
     try {
         $listeners = @(Get-NetTCPConnection -LocalPort $CoordinatorPort -State Listen -ErrorAction Stop)
+        $onPrivate = $false
         foreach ($item in $listeners) {
+            if ($item.LocalAddress -in @('0.0.0.0', '::')) {
+                return 'WILDCARD_LISTENER_OBSERVED'
+            }
             if ($item.LocalAddress -and $item.LocalAddress -ne '127.0.0.1' -and
-                $item.LocalAddress -ne '::1' -and $item.LocalAddress -ne '::') {
-                return 'LAN_LISTENER_OBSERVED'
+                $item.LocalAddress -ne '::1') {
+                $onPrivate = $true
             }
         }
+        if ($onPrivate) { return 'LAN_LISTENER_OBSERVED' }
         return 'NO_LAN_LISTENER'
     } catch {
         return 'NOT_OBSERVED'
