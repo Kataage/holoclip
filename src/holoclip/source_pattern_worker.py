@@ -14,6 +14,9 @@ from pathlib import Path
 from holoclip.editorial_profile import _atomic_json
 from holoclip.source_pattern_collection import collect_public_source_patterns
 from holoclip.source_video_cache_audit import audit_cached_source_video_sections
+from holoclip.source_ytdlp_pacing import (
+    LocalYtDlpPacer, inspect_local_ytdlp_pacing,
+)
 
 VERSION = "source-pattern-unattended-run-v1"
 _NO_GOLD = {
@@ -104,6 +107,45 @@ async def run_locked_source_pattern_collection(
             }
         started_at = datetime.now(timezone.utc).isoformat()
         try:
+            # A scheduled recurrence resumes naturally after this local gate
+            # expires. During cooldown/busy periods do not even enter corpus
+            # discovery/visual inspection: intentionally deferred runs are NOT
+            # evidence of 0 new samples, a source mismatch or editor negatives.
+            pacer = getattr(provider, "pacer", None)
+            if isinstance(pacer, LocalYtDlpPacer):
+                access = inspect_local_ytdlp_pacing(pacer.path)
+                pacing_status = access["pacing_status"]
+                if pacing_status in {
+                    "COOLDOWN_AFTER_YOUTUBE_ACCESS_RESTRICTION",
+                    "ACTIVE_OTHER_LOCAL_YTDLP_PROCESS",
+                    "BLOCKED_UNREADABLE_LOCAL_PACING_STATE",
+                }:
+                    blocked = pacing_status == "BLOCKED_UNREADABLE_LOCAL_PACING_STATE"
+                    reason = (
+                        "BLOCKED_LOCAL_YTDLP_PACING_STATE" if blocked
+                        else "DEFERRED_LOCAL_YTDLP_ACCESS"
+                    )
+                    result = {
+                        "status": reason,
+                        "new_unique_video_samples_this_run": None,
+                        "new_distinct_candidate_streams_this_run": None,
+                        "local_access_state": pacing_status,
+                        "local_cooldown_reason": access["cooldown_reason"],
+                        "next_attempt_not_before_utc": (
+                            access["next_attempt_not_before_utc"]
+                        ),
+                        "collection_started": False,
+                        **_NO_GOLD,
+                    }
+                    _atomic_json(report_path, {
+                        "version": VERSION,
+                        "status": reason,
+                        "started_at_utc": started_at,
+                        "finished_at_utc": datetime.now(timezone.utc).isoformat(),
+                        "result": result,
+                        **_NO_GOLD,
+                    })
+                    return {**result, "report_path": str(report_path)}
             result = await collect_public_source_patterns(
                 provider, store=store, state_path=state_path, output=output,
                 policy_rules=policy_rules, cycles=cycles, max_clips=max_clips,
