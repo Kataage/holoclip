@@ -133,6 +133,91 @@ async def test_metadata_only_mode_never_downloads_and_keeps_queue(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_local_ytdlp_cooldown_aborts_discovery_without_probing_queued_media(tmp_path):
+    from holoclip.corpus_growth import CorpusGrowthItem
+
+    state_path = tmp_path / "state.json"
+    state = CorpusGrowthState()
+    for i in range(5):
+        state.items[f"queued-{i}"] = CorpusGrowthItem(
+            clip_url=f"https://youtu.be/{i:011d}", query="hololive",
+        )
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+
+    class Deferred(PublicProvider):
+        def __init__(self):
+            super().__init__()
+            self.search_calls = 0
+
+        def search_public_clips(self, *_args, **_kwargs):
+            self.search_calls += 1
+            raise RuntimeError("LOCAL_YTDLP_COOLDOWN_ACTIVE")
+
+        def probe(self, _url):
+            pytest.fail("active local cooldown must never probe queued clips")
+
+    provider = Deferred()
+
+    async def forbidden(**_kwargs):
+        pytest.fail("active cooldown must never download learning media")
+
+    report = await grow_corpus(
+        provider, store=tmp_path / "clips.jsonl", state_path=state_path,
+        ingest=forbidden, policy_rules=[], scan_limit=5, discover_only=True,
+    )
+    assert provider.search_calls == 1
+    assert report["metadata_access_paused"] is True
+    assert report["metadata_access_pause_reason"] == "LOCAL_YTDLP_PACING_DEFERRED"
+    assert report["metadata_resolution_attempted"] == 0
+    assert report["attempted"] == 0
+    assert CorpusGrowthState.model_validate_json(
+        state_path.read_text(encoding="utf-8")
+    ).cursors.get("corpus_metadata_pending_round_robin", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_local_pacing_busy_stops_first_queued_metadata_probe(tmp_path):
+    from holoclip.corpus_growth import CorpusGrowthItem
+
+    state_path = tmp_path / "state.json"
+    state = CorpusGrowthState()
+    for i in range(5):
+        state.items[f"queued-{i}"] = CorpusGrowthItem(
+            clip_url=f"https://youtu.be/{i:011d}", query="hololive",
+        )
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+
+    class DeferredProbe(PublicProvider):
+        def __init__(self):
+            super().__init__()
+            self.probe_calls = 0
+
+        def search_public_clips(self, *_args, **_kwargs):
+            return []
+
+        def probe(self, _url):
+            self.probe_calls += 1
+            raise RuntimeError("LOCAL_YTDLP_OTHER_PROCESS_ACTIVE")
+
+    provider = DeferredProbe()
+
+    async def forbidden(**_kwargs):
+        pytest.fail("pacing must never start media acquisition")
+
+    report = await grow_corpus(
+        provider, store=tmp_path / "clips.jsonl", state_path=state_path,
+        ingest=forbidden, policy_rules=[], discover_only=True, scan_limit=5,
+    )
+    assert provider.probe_calls == 1
+    assert report["metadata_resolution_attempted"] == 1
+    assert report["metadata_access_paused"] is True
+    assert report["metadata_access_pause_reason"] == "LOCAL_YTDLP_PACING_DEFERRED"
+    assert report["metadata_failure_category_counts"] == {
+        "LOCAL_YTDLP_PACING_DEFERRED": 1,
+    }
+
+
+@pytest.mark.asyncio
 async def test_local_metadata_bot_challenge_stops_network_probes_but_keeps_queue(tmp_path):
     from holoclip.corpus_growth import CorpusGrowthItem
 
