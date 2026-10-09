@@ -43,7 +43,9 @@ URLs/labels. It uses Linux, uv-managed yt-dlp, Node >=22 and FFmpeg, with:
 - exactly 1 collection cycle, 1 finished clip and 1 original candidate,
   up to 5 public search metadata entries;
 - a 12-minute deadline on the isolated collector process tree and an
-  18-minute hosted job ceiling;
+  18-minute hosted job ceiling; on Linux, descendants in separate yt-dlp /
+  FFmpeg process groups are enumerated and signaled before the outer uv
+  group is terminated;
 - a private, disposable media working directory; **only JSON diagnostics**
   (collector status, offline doctor, proof-of-local-byte receipt checks and
   machine-readable smoke summary) are uploaded as a 7-day GitHub artifact;
