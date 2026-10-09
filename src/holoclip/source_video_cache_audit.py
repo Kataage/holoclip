@@ -214,7 +214,7 @@ def audit_cached_source_video_sections(
         result["inspected_clips"] += 1
     result["not_checked_section_records"] = omitted
     result["cache_section_status_counts"] = dict(sorted(statuses.items()))
-    full = len(pending) <= max_clips and omitted == 0
+    full = len(pending) == len(chosen) and omitted == 0
     result["complete_pending_queue_audited"] = full
     verified = statuses["VERIFIED_LOCAL_SOURCE_SECTION_BYTES_AND_RECEIPT_NOT_GOLD"]
     if not seen:
