@@ -4,11 +4,11 @@ import copy
 
 import pytest
 
-from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
+from holoclip.corpus_growth import CorpusGrowthState
 from holoclip.source_candidate_visual import verify_pending_source_visual
 from holoclip.source_pattern_collection import collect_public_source_patterns
 from test_source_candidate_visual import (
-    A, CLIP, Provider, fake_measure, fake_probe, make_state,
+    Provider, fake_measure, fake_probe, make_state,
 )
 
 NEXT = "https://www.youtube.com/watch?v=DDDDDDDDDDD"
