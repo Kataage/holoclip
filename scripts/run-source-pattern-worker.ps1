@@ -36,6 +36,13 @@ try {
     foreach ($binary in @('ffmpeg', 'ffprobe')) {
         $null = Get-Command $binary -CommandType Application -ErrorAction Stop
     }
+    if ($UvExecutable) {
+        # The managed yt-dlp runtime invokes uvx (or uv tool run) in a child
+        # Python process. Pinning uv for the first command alone is not enough:
+        # scheduled sessions may not have uv/uvx's directory on their PATH.
+        $uvDirectory = Split-Path -Parent $uvPath
+        $env:PATH = $uvDirectory + [System.IO.Path]::PathSeparator + $env:PATH
+    }
     $ranCollector = $true
     $status = 'FAILED_COLLECTOR_PROCESS'
     # Powershell 5.1 can treat native stderr as terminating errors with
