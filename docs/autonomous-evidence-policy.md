@@ -81,6 +81,21 @@ CI and synthetic MP4 fixtures does **not**
 count as measured Hololive public-stream data. Source-pattern accuracy
 without reviewed gold remains unmeasured, and `ready=false` is mandatory.
 
+## Metadata-only original-link coverage for unattended sampling
+
+Metadata-only autonomous discovery now forwards even a uniquely chosen
+description-cited original stream to the `source_visual_pending` shortlist,
+after independently checking candidate public status and source metadata
+policy. Previously such links became learning/holdout assignments, so
+the bounded real-video control collector skipped them entirely. This
+route deliberately leaves `source_url`/`source_stream_id` unset on
+the clip and never allocates a training/holdout split from the description
+hint. The candidate remains `UNVERIFIED_PUBLIC_METADATA_ONLY`. Full
+`grow_corpus` ingestion retains prior resolution and leakage rules.
+Persisted pre-existing learning assignments are not rewritten. The
+newly-pending counters measure queue progress only, not real video
+acquisition, original identity, accuracy, or quality readiness.
+
 ## Bounded native yt-dlp subprocess deadlines
 
 Local subprocess execution is time-bounded for runtime version/update,

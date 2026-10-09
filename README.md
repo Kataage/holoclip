@@ -100,6 +100,24 @@ Descendants that intentionally detach into a separate session or escape
 the Windows parent tree remain outside the guarantee; no user or
 unrelated process groups are targeted.
 
+### Public source links reach the unreviewed measurement queue
+
+The unattended `examples-collect-source-patterns` command uses
+`discover_only=True`. Newly discovered public human clips with **one
+clearly cited original-stream link** now enter the existing
+`source_visual_pending` queue, just like ambiguous description links:
+the original link is persisted as an **unverified metadata-only candidate**
+until bounded real video has actually been acquired. Previously, this
+common single-link case was sent directly to the separate corpus
+training/holdout queue and **never reached the source-pattern collector**.
+This change is scoped to metadata-only discovery; normal human example
+ingestion still uses its existing split and policy checks. No link is
+declared a verified original and no reviewer labels are invented.
+Counters `source_visual_newly_pending` and
+`explicit_source_visual_newly_pending` distinguish newly queued
+visual evidence work from existing pending clips. Existing training/holdout
+assignments are not rewritten or silently migrated.
+
 ### Windows unattended source-pattern collection
 
 An opt-in Windows Task Scheduler installation is available for machines running

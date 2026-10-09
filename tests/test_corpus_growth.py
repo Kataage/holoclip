@@ -117,8 +117,19 @@ async def test_metadata_only_mode_never_downloads_and_keeps_queue(tmp_path):
         scan_limit=5,
     )
     assert report["attempted"] == 0
-    assert report["resolved"] == 1
-    assert report["queue_counts"] == {"queued": 1}
+    assert report["resolved"] == 0
+    assert report["source_visual_newly_pending"] == 1
+    assert report["explicit_source_visual_newly_pending"] == 1
+    assert report["queue_counts"] == {"source_visual_pending": 1}
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path / "state").read_text(encoding="utf-8")
+    )
+    item = next(iter(state.items.values()))
+    assert item.source_url is None and item.source_stream_id is None
+    assert item.source_scout["source_identity_verified"] is False
+    assert item.source_scout["used_in_learning_or_holdout"] is False
+    assert len(item.source_scout["candidate_sources"]) == 1
+    assert item.source_scout["candidate_sources"][0]["source_url"] == "https://youtu.be/source"
 
 
 def test_growth_keeps_running_after_count_floors_if_model_is_unready(tmp_path, monkeypatch):
@@ -287,3 +298,62 @@ async def test_source_discovery_wraps_after_last_bounded_page(tmp_path):
         path.read_text(encoding="utf-8"),
     )
     assert all(persisted.cursors[q] == 0 for q, _ in provider.searches)
+
+
+@pytest.mark.asyncio
+async def test_explicit_metadata_source_never_claims_gold_or_requeues_on_restart(tmp_path):
+    """Self-sufficient unattended discovery can sample human-cited originals."""
+    provider = PublicProvider()
+
+    async def forbidden(**_kwargs):
+        pytest.fail("metadata-only must never download media or ingest")
+
+    args = dict(
+        store=tmp_path / "examples.jsonl", state_path=tmp_path / "corpus.json",
+        ingest=forbidden, policy_rules=[], discover_only=True, scan_limit=5,
+    )
+    first = await grow_corpus(provider, **args)
+    second = await grow_corpus(provider, **args)
+    assert first["source_visual_newly_pending"] == 1
+    assert first["explicit_source_visual_newly_pending"] == 1
+    assert second["source_visual_newly_pending"] == 0
+    assert second["explicit_source_visual_newly_pending"] == 0
+    assert second["queue_counts"] == {"source_visual_pending": 1}
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path / "corpus.json").read_text(encoding="utf-8")
+    )
+    item = next(iter(state.items.values()))
+    assert item.status == "source_visual_pending"
+    assert item.source_url is None
+    assert item.source_stream_id is None
+    assert item.source_scout["status"] == "UNVERIFIED_PUBLIC_SOURCE_SHORTLIST"
+    assert item.source_scout["candidate_sources"][0]["source_identity_verified"] is False
+    assert not state.holdout_stream_ids
+
+
+@pytest.mark.asyncio
+async def test_metadata_only_explicit_candidate_failing_public_source_policy_is_review(
+    tmp_path,
+):
+    class PrivateSource(PublicProvider):
+        def probe(self, url):
+            meta = super().probe(url)
+            if "source" in url:
+                return meta.model_copy(update={"availability": "subscriber_only"})
+            return meta
+
+    async def forbidden(**_kwargs):
+        pytest.fail("metadata-only must not acquire a private source")
+
+    report = await grow_corpus(
+        PrivateSource(), store=tmp_path / "store", state_path=tmp_path / "state",
+        ingest=forbidden, policy_rules=[], discover_only=True, scan_limit=5,
+    )
+    assert report["source_visual_newly_pending"] == 0
+    assert report["queue_counts"] == {"review": 1}
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path / "state").read_text(encoding="utf-8")
+    )
+    item = next(iter(state.items.values()))
+    assert item.source_url is None and item.source_stream_id is None
+    assert item.source_scout["candidate_sources"] == []
