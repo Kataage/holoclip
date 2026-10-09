@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 DEFAULT_GAP_SECONDS = 20.0
@@ -62,7 +62,7 @@ class LocalYtDlpPacer:
             raise ValueError("Invalid yt-dlp pacing process timeout")
         token = None
         try:
-            with self._connect() as db:
+            with closing(self._connect()) as db, db:
                 # BEGIN IMMEDIATE guarantees a one-at-a-time cross-process
                 # reservation; sleeping occurs only *outside* SQL transactions.
                 db.execute("BEGIN IMMEDIATE")
@@ -97,7 +97,7 @@ class LocalYtDlpPacer:
             try:
                 yield
             finally:
-                with self._connect() as db:
+                with closing(self._connect()) as db, db:
                     db.execute("BEGIN IMMEDIATE")
                     now = time.time()
                     current = db.execute(
@@ -116,7 +116,7 @@ class LocalYtDlpPacer:
 
     def impose_cooldown(self) -> None:
         try:
-            with self._connect() as db:
+            with closing(self._connect()) as db, db:
                 db.execute("BEGIN IMMEDIATE")
                 now = time.time()
                 db.execute(
