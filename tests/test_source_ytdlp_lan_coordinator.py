@@ -2,13 +2,10 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
-import subprocess
 import threading
 import time
 from contextlib import contextmanager
-from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
