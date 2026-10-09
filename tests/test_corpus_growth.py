@@ -205,6 +205,45 @@ async def test_local_metadata_bot_challenge_stops_network_probes_but_keeps_queue
 
 
 @pytest.mark.asyncio
+async def test_metadata_breaker_also_stops_queued_learning_media_acquisition(tmp_path):
+    from holoclip.corpus_growth import CorpusGrowthItem
+
+    path = tmp_path / "corpus.json"
+    state = CorpusGrowthState()
+    state.items["queued"] = CorpusGrowthItem(
+        clip_url="https://youtu.be/queued",
+        source_url="https://youtu.be/original",
+        source_stream_id="original",
+        query="hololive", status="queued",
+    )
+    for index in range(4):
+        state.items[f"fresh-{index}"] = CorpusGrowthItem(
+            clip_url=f"https://youtu.be/{index:011d}", query="hololive",
+        )
+    path.write_text(state.model_dump_json(), encoding="utf-8")
+
+    class Challenged(PublicProvider):
+        def search_public_clips(self, *_args, **_kwargs):
+            return []
+
+        def probe(self, _url):
+            raise RuntimeError("HTTP Error 429: Too Many Requests")
+
+    async def ingest(**_kwargs):
+        pytest.fail("queued media download must stop on host-wide challenge")
+
+    result = await grow_corpus(
+        Challenged(), store=tmp_path / "clips.jsonl", state_path=path,
+        ingest=ingest, policy_rules=[], scan_limit=5,
+        max_new_examples=2, discover_only=False,
+    )
+    assert result["metadata_access_paused"] is True
+    assert result["attempted"] == 0
+    assert result["queue_counts"]["queued"] == 1
+    assert result["metadata_failure_category_counts"] == {"HTTP_RATE_LIMIT": 3}
+
+
+@pytest.mark.asyncio
 async def test_metadata_challenges_are_not_confused_with_unrelated_probe_failures(tmp_path):
     from holoclip.corpus_growth import CorpusGrowthItem
 
