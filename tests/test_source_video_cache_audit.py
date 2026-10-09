@@ -187,7 +187,7 @@ def test_exact_current_run_clip_selection_avoids_sorted_backlog_starvation(tmp_p
         )
 
 def test_audit_budget_cannot_be_changed_unbounded(tmp_path):
-    with pytest.raises(ValueError, match="budget"):
+    with pytest.raises(ValueError, match="clip limit"):
         audit_cached_source_video_sections(
             state_path=tmp_path/"none", output_root=tmp_path, max_clips=999,
         )
