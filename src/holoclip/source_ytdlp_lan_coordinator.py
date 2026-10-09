@@ -30,6 +30,7 @@ DEFAULT_COORDINATOR_STATE = Path("data/runtime/yt-dlp-lan-coordinator.sqlite3")
 DEFAULT_SECRET_PATH = Path("data/runtime/yt-dlp-lan-secret.txt")
 DEFAULT_CLIENT_CONFIG = Path("data/runtime/yt-dlp-lan-client.json")
 CLIENT_CONFIG_VERSION = "holoclip-lan-client-v1"
+_CLIENT_REQUIRED_MARKER = "holoclip-lan-client-required-v1\n"
 _ENV_CONFIG = "HOLOCLIP_YTDLP_COORDINATOR_CONFIG"
 _MAX_CLIENT_CONFIG_BYTES = 4096
 _ALLOWED_REASONS = {"HTTP_RATE_LIMIT", "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE"}
@@ -103,6 +104,17 @@ def _reject_linked_path(path: Path) -> None:
             raise ValueError("Unsafe LAN client configuration path")
 
 
+def _client_required_marker(path: Path) -> Path:
+    return path.with_name(path.name + ".required")
+
+
+def _validate_required_marker(path: Path) -> None:
+    marker = _client_required_marker(path)
+    _reject_linked_path(marker)
+    if marker.exists() and marker.read_text(encoding="ascii") != _CLIENT_REQUIRED_MARKER:
+        raise ValueError("Corrupt LAN client required marker")
+
+
 def _client_config_path() -> tuple[Path, bool]:
     configured = os.environ.get(_ENV_CONFIG, "").strip()
     if configured:
@@ -115,6 +127,7 @@ def _client_config_path() -> tuple[Path, bool]:
 
 def _read_client_config(path: Path) -> tuple[str, Path]:
     _reject_linked_path(path)
+    _validate_required_marker(path)
     if not path.is_file() or not 1 <= path.stat().st_size <= _MAX_CLIENT_CONFIG_BYTES:
         raise ValueError("Missing or oversized LAN client configuration")
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -159,6 +172,14 @@ def configure_lan_client(
         raise ValueError("LAN client configuration is too large")
     target.parent.mkdir(parents=True, exist_ok=True)
     _reject_linked_path(target)
+    _validate_required_marker(target)
+    marker = _client_required_marker(target)
+    if not marker.exists():
+        # Persist the opt-in latch *before* the profile. A later deleted
+        # profile can never silently resume local-only yt-dlp pacing.
+        with os.fdopen(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w",
+                       encoding="ascii") as handle:
+            handle.write(_CLIENT_REQUIRED_MARKER)
     if target.exists():
         existing = target.read_bytes()
         if existing == raw:
@@ -210,7 +231,9 @@ class LanCoordinatorClient:
                     raise ValueError("Partial LAN coordinator environment")
                 return cls(url, secret_file=Path(secret_path))
             config_path, explicitly_required = _client_config_path()
-            if explicitly_required or config_path.exists() or config_path.is_symlink():
+            marker = _client_required_marker(config_path)
+            if (explicitly_required or config_path.exists() or config_path.is_symlink()
+                    or marker.exists() or marker.is_symlink()):
                 saved_url, saved_secret = _read_client_config(config_path)
                 return cls(saved_url, secret_file=saved_secret)
             return None
