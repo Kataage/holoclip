@@ -127,6 +127,9 @@ async def grow_corpus(
     scanned = 0
     search_page_wraps = 0
     empty_search_pages = 0
+    # An explicit local host-wide pacing reservation/cooldown must not be
+    # misread as a missing clip or trigger more search/probe requests.
+    local_ytdlp_access_deferred = False
     for query in sorted(queries, key=lambda q: (state.cursors.get(q, 0), q)):
         if scanned >= scan_limit:
             break
@@ -144,6 +147,15 @@ async def grow_corpus(
         try:
             rows = provider.search_public_clips(query, limit=limit, offset=offset)
         except Exception as exc:
+            category = _public_probe_failure_category(str(exc))
+            if category == "LOCAL_YTDLP_PACING_DEFERRED":
+                local_ytdlp_access_deferred = True
+                # No URLs or third-party error text in special pause result.
+                state.search_errors = (
+                    state.search_errors + ["LOCAL_YTDLP_PACING_DEFERRED"]
+                )[-20:]
+                persist()
+                break
             state.search_errors = (state.search_errors + [f"{query}: {type(exc).__name__}: {exc}"])[
                 -20:
             ]
@@ -212,13 +224,13 @@ async def grow_corpus(
     metadata_retryable_attempted = 0
     metadata_failure_category_counts: Counter[str] = Counter()
     metadata_access_challenge_streak = 0
-    metadata_access_paused = False
+    metadata_access_paused = local_ytdlp_access_deferred
     # Repeated bot challenges/429 are an environment failure, not a reason
     # to hammer additional clips from the same host during this invocation.
     metadata_access_stop_categories = {
         "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE", "HTTP_RATE_LIMIT",
     }
-    for _key, item in rotated[:scan_limit]:
+    for _key, item in ([] if metadata_access_paused else rotated[:scan_limit]):
         metadata_resolution_attempted += 1
         if item.status == "retryable":
             metadata_retryable_attempted += 1
@@ -328,7 +340,8 @@ async def grow_corpus(
                 if category in metadata_access_stop_categories else 0
             )
             challenge_in_this_attempt = category in metadata_access_stop_categories
-            if metadata_access_challenge_streak >= 3:
+            if (metadata_access_challenge_streak >= 3
+                    or category == "LOCAL_YTDLP_PACING_DEFERRED"):
                 metadata_access_paused = True
         finally:
             # A valid clip probe can still fail source discovery later. Only
@@ -416,7 +429,10 @@ async def grow_corpus(
         ),
         "metadata_access_paused": metadata_access_paused,
         "metadata_access_pause_reason": (
-            "REPEATED_YOUTUBE_CHALLENGE_OR_RATE_LIMIT"
+            ("LOCAL_YTDLP_PACING_DEFERRED"
+             if local_ytdlp_access_deferred or
+                metadata_failure_category_counts["LOCAL_YTDLP_PACING_DEFERRED"] else
+             "REPEATED_YOUTUBE_CHALLENGE_OR_RATE_LIMIT")
             if metadata_access_paused else None
         ),
         "metadata_resolution_pending": sum(

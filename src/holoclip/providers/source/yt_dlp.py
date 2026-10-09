@@ -13,6 +13,8 @@ from urllib.parse import parse_qs, urlparse
 
 from pydantic import BaseModel
 
+from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred, LocalYtDlpPacer
+from holoclip.source_metadata_failure_summary import _public_probe_failure_category
 from holoclip.providers.source.base import (
     AcquiredSource,
     AcquiredVideoRange,
@@ -496,7 +498,18 @@ class YtDlpSourceProvider:
         channel: str = "nightly",
         js_runtime: str | None = None,
         manage_updates: bool = True,
+        pacing_path: Path | None = None,
     ) -> None:
+        # Managed public yt-dlp calls share an on-disk OS-process gate across
+        # separate Windows scheduled and manual CLI invocations. Explicit
+        # direct-executable library callers opt in via pacing_path.
+        gate_path = (
+            pacing_path if pacing_path is not None else (
+                Path("data/runtime/yt-dlp-access.sqlite3")
+                if executable is None else None
+            )
+        )
+        self.pacer = LocalYtDlpPacer(gate_path) if gate_path is not None else None
         self.runtime = ManagedYtDlpRuntime(
             channel=channel,
             executable=executable,
@@ -537,27 +550,68 @@ class YtDlpSourceProvider:
         timeout_seconds: int = METADATA_TIMEOUT_SECONDS,
         retry_with_fresh_runtime: bool = True,
     ) -> subprocess.CompletedProcess[str]:
+        # Conservative yt-dlp-native pacing applies *inside* each subprocess,
+        # including all metadata extraction and section download requests.
+        # The shared OS-process pacer additionally protects separate searches,
+        # probes and downloads from back-to-back launches.
+        safe_args = [
+            "--sleep-requests", "2",
+            "--sleep-interval", "10", "--max-sleep-interval", "20",
+            "--concurrent-fragments", "1",
+            "--retries", "2", "--fragment-retries", "2",
+            "--extractor-retries", "1",
+            "--retry-sleep", "extractor:exp=2:15",
+            *args,
+        ]
+
+        def once(*, current_label: str):
+            try:
+                cmd = self.runtime.command(safe_args)
+                if self.pacer is None:
+                    return _run_process(
+                        cmd, label=current_label, timeout_seconds=timeout_seconds,
+                    )
+                with self.pacer.reserve(timeout_seconds=timeout_seconds):
+                    try:
+                        return _run_process(
+                            cmd, label=current_label,
+                            timeout_seconds=timeout_seconds,
+                        )
+                    except YtDlpError as exc:
+                        kind = _public_probe_failure_category(str(exc))
+                        if kind in {
+                            "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE",
+                            "HTTP_RATE_LIMIT",
+                        }:
+                            self.pacer.impose_cooldown()
+                        raise
+            except LocalYtDlpDeferred as exc:
+                # This is a locally held reservation/cooldown, not a reason to
+                # refresh yt-dlp or retry other metadata in a tight loop.
+                raise YtDlpError(str(exc)) from exc
+
         try:
-            return _run_process(
-                self.runtime.command(args),
-                label=label,
-                timeout_seconds=timeout_seconds,
-            )
+            return once(current_label=label)
         except YtDlpTimeout:
-            # A hung native process is not an extractor-version problem.
-            # Don't refresh/retry the same media while its children may remain.
+            # A hung process is not an extractor-version problem; stop.
             raise
         except YtDlpError as first_error:
-            if not retry_with_fresh_runtime or not self.runtime.manage_updates:
+            category = _public_probe_failure_category(str(first_error))
+            if (category in {
+                    "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE",
+                    "HTTP_RATE_LIMIT",
+                    "VIDEO_REQUIRES_LOGIN_OR_RESTRICTED",
+                    "HTTP_FORBIDDEN",
+                    "VIDEO_UNAVAILABLE",
+                    "LOCAL_YTDLP_PACING_DEFERRED",
+                } or not retry_with_fresh_runtime
+                    or not self.runtime.manage_updates):
                 raise
             self.runtime.refresh()
             try:
-                return _run_process(
-                    self.runtime.command(args),
-                    label=f"{label} after runtime refresh",
-                    timeout_seconds=timeout_seconds,
-                )
+                return once(current_label=f"{label} after runtime refresh")
             except YtDlpError as second_error:
+                # Never retry a challenged site in the same command.
                 raise YtDlpError(
                     f"{second_error}; initial attempt also failed: {first_error}"
                 ) from second_error

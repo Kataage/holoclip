@@ -240,6 +240,41 @@ output Cartesian search, an editor negative, gold source identity, recall
 or permission to change `ready=false`. Missing or unsafe current metadata
 does not count as successful pair verification.
 
+### Conservative native YouTube request pacing
+
+YouTube rate limiting is **not** a fixed universally safe requests-per-hour
+threshold. Holoclip now applies conservative request pacing to public
+yt-dlp calls on the native collector PC: `--sleep-requests 2` inside
+each extraction, a randomized **10–20 second wait before downloading**,
+`--concurrent-fragments 1`, and small finite request/fragment retry budgets.
+This uses yt-dlp's documented sleep switches, not CAPTCHA, proxy, account
+or identity bypass.
+
+Managed yt-dlp providers also share a **durable OS-process gate** at
+`data/runtime/yt-dlp-access.sqlite3`. It enforces at least **20 seconds
+between successive separate yt-dlp invocations**, blocks simultaneous
+Holoclip yt-dlp processes across different terminals/tasks, and pauses
+future local requests for **at least six hours** when yt-dlp reports an
+HTTP 429, bot/interactivity challenge, or the common YouTube
+`This content isn't available, try again later` rate-limit message.
+A blocked request is reported as a local deferral rather than retried,
+and yt-dlp runtime refresh is never used to immediately retry a
+challenged site. A broken pacing database fails closed rather than
+allowing unlimited traffic. Process crash reservations have a finite
+timeout tied to the configured downloader deadline.
+
+**These are conservative operational defaults, not a guarantee against
+temporary restrictions or a YouTube account ban.** The system uses
+public videos only; credentials/cookies are not automatically imported.
+If YouTube imposes an interactive restriction, Holoclip stops rather
+than trying to defeat it. This also applies to metadata discovery,
+not just finished video downloads, and does not require the user to
+provide clip URLs or operate an external paid service. Manual CLI
+commands that use the standard managed provider share the same local
+gate. Unmanaged explicit-executable library integrations must opt into
+the gate with `pacing_path`; callers not using the provider cannot
+be coordinated. GitHub Actions remains fully offline for media.
+
 ### Windows unattended source-pattern collection
 
 An opt-in Windows Task Scheduler installation is available for machines running
