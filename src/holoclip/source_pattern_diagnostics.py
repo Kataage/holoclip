@@ -14,6 +14,7 @@ from pathlib import Path
 from holoclip.corpus_growth import CorpusGrowthState
 from holoclip.providers.source.yt_dlp import detect_js_runtime
 from holoclip.source_pattern_worker import VERSION as WORKER_VERSION
+from holoclip.source_pattern_local_health import summarize_local_collection_health
 from holoclip.source_visual_pattern_report import report_saved_patterns
 from holoclip.source_metadata_failure_summary import _saved_metadata_probe_failures
 from holoclip.source_video_cache_audit import (
@@ -288,7 +289,7 @@ def diagnose_source_pattern_collector(
         for key, count in cycle.get("source_pattern_attempt_outcomes", {}).items():
             if isinstance(key, str) and type(count) is int and count >= 0:
                 outcomes[key] += count
-    return {
+    result_summary = {
         "version": VERSION,
         "status": status,
         "next_action_code": next_action,
@@ -338,3 +339,5 @@ def diagnose_source_pattern_collector(
         ),
         **NO_GOLD,
     }
+    result_summary["local_collection_health"] = summarize_local_collection_health(result_summary)
+    return result_summary
