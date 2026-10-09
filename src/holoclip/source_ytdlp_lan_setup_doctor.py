@@ -74,10 +74,14 @@ def _secret_path(selected: Path | None, role: str) -> Path:
     return secret
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
 def _observe_windows(
     *, role: str, port: int, task_name: str, peer_ip: str | None,
 ) -> dict[str, str] | None:
-    if os.name != "nt":
+    if not _is_windows():
         return None
     ps = shutil.which("powershell.exe")
     if ps is None or not _WINDOWS_SCRIPT.is_file():
@@ -171,7 +175,7 @@ def inspect_lan_setup(
         _reject_linked_path(path)
         _secret(path)
         checks["local_credential"] = _item("LAN_CREDENTIAL_VALID")
-        if os.name == "nt":
+        if _is_windows():
             try:
                 acl = _secure_windows_path(path, apply=False)
             except (ValueError, OSError):
