@@ -29,6 +29,7 @@ from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collecto
 from holoclip.source_pattern_local_health import resolve_local_diagnostic_paths
 from holoclip.source_pattern_local_history import read_launcher_history
 from holoclip.source_ytdlp_lan_onboarding import diagnose_lan_client, import_lan_secret
+from holoclip.source_ytdlp_lan_ssh_transfer import pull_lan_secret_sftp, _secure_windows_path
 from holoclip.source_ytdlp_pacing import DEFAULT_PACING_PATH, inspect_local_ytdlp_pacing
 from holoclip.source_ytdlp_lan_coordinator import (
     DEFAULT_COORDINATOR_STATE, DEFAULT_SECRET_PATH, DEFAULT_CLIENT_CONFIG,
@@ -1154,6 +1155,56 @@ def examples_ytdlp_lan_import_secret(
         "status": result, "secret_printed": False,
         "network_access": False, "windows_acl_verified": False,
         "ready": False,
+    }))
+
+
+@app.command("examples-ytdlp-lan-pull-secret")
+def examples_ytdlp_lan_pull_secret(
+    host: str = typer.Option(..., "--host", help="PC-A trusted private IPv4."),
+    user: str = typer.Option(..., "--user", help="SSH username on PC-A."),
+    remote_path: str = typer.Option(..., "--remote-path",
+        help="Absolute PC-A SFTP path, e.g. D:/AI/holoclip/data/runtime/yt-dlp-lan-secret.txt."),
+    known_hosts: Path = typer.Option(..., "--known-hosts",
+        help="Preverified known_hosts file. Unknown host keys are never accepted."),
+    secret_file: Path = typer.Option(DEFAULT_SECRET_PATH, "--secret-file"),
+    port: int = typer.Option(22, "--ssh-port", min=1, max=65535),
+) -> None:
+    """Pull private credential via verified-key SFTP; no YouTube access."""
+    try:
+        report = pull_lan_secret_sftp(
+            host=host, user=user, remote_path=remote_path,
+            known_hosts=known_hosts, secret_file=secret_file, port=port,
+        )
+    except (OSError, ValueError, UnicodeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_SECRET_SFTP_REJECTED",
+            "reason": str(exc) if str(exc).startswith("LAN_") else type(exc).__name__,
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report))
+
+
+@app.command("examples-ytdlp-lan-secret-acl")
+def examples_ytdlp_lan_secret_acl(
+    secret_file: Path = typer.Option(DEFAULT_SECRET_PATH, "--secret-file"),
+    apply: bool = typer.Option(False, "--apply",
+        help="Explicitly restrict the current user's Windows NTFS DACL."),
+) -> None:
+    """Audit or restrict local LAN credential ACL without printing it."""
+    try:
+        verified = _secure_windows_path(secret_file.absolute(), apply=apply)
+    except (OSError, ValueError) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_WINDOWS_ACL_NOT_SECURE",
+            "reason": type(exc).__name__, "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    if not verified:
+        typer.echo(json.dumps({"status": "WINDOWS_REQUIRED", "ready": False}))
+        raise typer.Exit(6)
+    typer.echo(json.dumps({
+        "status": "ACL_SECURE", "acl_verified": True, "ready": False,
     }))
 
 
