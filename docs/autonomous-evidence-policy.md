@@ -87,10 +87,15 @@ Local subprocess execution is time-bounded for runtime version/update,
 metadata extraction, bounded section download and full media download.
 Timeouts are explicit `YtDlpTimeout` unknowns and do not trigger
 the existing one-time runtime refresh/retry path. A timeout is not an
-observed negative or proof of real original alignment. Python kills
-and reaps the immediate timed-out subprocess, but Windows or POSIX may
-leave separately spawned media descendants; no guarantee of complete
-process-tree termination is claimed. This reduces infinite unattended
+observed negative or proof of real original alignment. Native command
+execution now uses a dedicated POSIX session/group or Windows
+CREATE_NEW_PROCESS_GROUP. At the deadline the group is killed by
+`killpg(SIGKILL)` (POSIX) or `taskkill /PID /T /F` (Windows) followed
+by bounded reaping and inherited-pipe cleanup. If termination cannot
+be confirmed, `TREE_CLEANUP_UNCONFIRMED` is recorded. These controls
+are tested with synthetic grandchildren on Ubuntu and Windows; processes
+that deliberately detach or leave the Windows parent tree are not
+claimed as covered. This reduces unattended
 job hangs while preserving unverified and `ready=false` gates.
 
 When `uv` is pinned in the Windows task action, the launcher adds its

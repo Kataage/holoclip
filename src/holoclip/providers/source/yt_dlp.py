@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import hashlib
 import math
+import os
 import re
 import shutil
+import signal
 import subprocess
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -59,6 +61,68 @@ class YtDlpRuntimeInfo(BaseModel):
     managed_by: str
 
 
+def _terminate_native_tree(process: subprocess.Popen[str]) -> bool:
+    """Terminate descendants of one private native process tree, never our own.
+
+    POSIX children share a brand-new session. Windows taskkill /T /F targets
+    only descendants of this exact Popen PID. It can miss processes that
+    deliberately detached or were reparented; failures must stay explicit.
+    """
+    tree_requested = False
+    if os.name == "nt":
+        # Always invoke the real OS binary rather than a PATH-shadowed shell
+        # command. No shell interpolation, user URL or untrusted flags.
+        windows = os.environ.get("SystemRoot") or os.environ.get("WINDIR", r"C:\Windows")
+        taskkill = Path(windows) / "System32" / "taskkill.exe"
+        try:
+            result = subprocess.run(
+                [str(taskkill), "/PID", str(process.pid), "/T", "/F"],
+                check=False, capture_output=True, timeout=8,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            tree_requested = result.returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            tree_requested = False
+    else:
+        try:
+            # start_new_session=True is mandatory in _run_process below.
+            os.killpg(process.pid, signal.SIGKILL)
+            tree_requested = True
+        except ProcessLookupError:
+            # The entire private process group may already be gone.
+            tree_requested = process.poll() is not None
+        except OSError:
+            tree_requested = False
+    # Fail-safe even if tree enumeration/termination itself was unavailable.
+    try:
+        if process.poll() is None:
+            process.kill()
+    except (OSError, ProcessLookupError):
+        tree_requested = False
+    return tree_requested
+
+
+def _reap_native_child(process: subprocess.Popen[str]) -> bool:
+    """Bound pipe draining after timeout; a detached child must not re-hang us."""
+    try:
+        process.communicate(timeout=5)
+        return process.poll() is not None
+    except subprocess.TimeoutExpired:
+        # On systems where descendants kept stdout/stderr open, terminate
+        # our direct child and close inherited pipes without blocking forever.
+        try:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=3)
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        finally:
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
+        return False
+
+
 def _run_process(
     command: list[str],
     *,
@@ -67,30 +131,42 @@ def _run_process(
 ) -> subprocess.CompletedProcess[str]:
     if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 3600:
         raise ValueError("Invalid yt-dlp subprocess deadline")
+    # subprocess.run(timeout=...) kills only the direct process. Start a
+    # dedicated OS tree to keep yt-dlp's FFmpeg/downloader descendants in-scope.
+    options = (
+        {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        if os.name == "nt" else {"start_new_session": True}
+    )
+    process = subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace", **options,
+    )
     try:
-        return subprocess.run(
-            command,
-            check=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout_seconds,
-        )
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
-        # Never include the command, URL or transcript in a persisted status.
-        # subprocess.run kills and waits for the direct process on timeout.
+        tree_requested = _terminate_native_tree(process)
+        reaped = _reap_native_child(process)
+        cleanup = (
+            "TREE_TERMINATION_REQUESTED"
+            if tree_requested and reaped else "TREE_CLEANUP_UNCONFIRMED"
+        )
+        # No command/URL/content in exception text. A failed cleanup stays
+        # explicitly unknown; downstream must not treat it as a measurement.
         raise YtDlpTimeout(
-            f"{label} exceeded {timeout_seconds}s process deadline"
+            f"{label} exceeded {timeout_seconds}s process deadline; "
+            f"cleanup={cleanup}"
         ) from exc
-    except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or exc.stdout or "").strip()
+    if process.returncode:
+        detail = (stderr or stdout or "").strip()
         if len(detail) > 1200:
             detail = detail[-1200:]
         raise YtDlpError(
-            f"{label} failed with exit code {exc.returncode}"
+            f"{label} failed with exit code {process.returncode}"
             + (f": {detail}" if detail else "")
-        ) from exc
+        )
+    return subprocess.CompletedProcess(
+        command, process.returncode, stdout=stdout, stderr=stderr,
+    )
 
 
 def _version_tuple(raw: str) -> tuple[int, ...]:

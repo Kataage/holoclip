@@ -267,25 +267,63 @@ def test_download_failure_refreshes_runtime_and_retries_once(
     assert refreshes["count"] == 1
 
 
-def test_native_process_deadline_is_enforced_without_url_in_error(monkeypatch):
-    captured = []
+def test_native_process_deadline_is_enforced_without_url_in_error():
+    import sys
 
-    def blocked(command, **kwargs):
-        captured.append(kwargs)
-        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
-
-    monkeypatch.setattr(yt_dlp.subprocess, "run", blocked)
+    # No network or external yt-dlp binary; real Python subprocess times out.
     with pytest.raises(yt_dlp.YtDlpTimeout) as exc:
         yt_dlp._run_process(
-            ["yt-dlp", "https://example.invalid/private-id"],
+            [sys.executable, "-c", "import time; time.sleep(30)",
+             "https://example.invalid/private-id"],
             label="bounded original video",
-            timeout_seconds=7,
+            timeout_seconds=1,
         )
     assert "bounded original video" in str(exc.value)
-    assert "7s" in str(exc.value)
+    assert "1s" in str(exc.value)
     assert "https://" not in str(exc.value)
-    assert captured[0]["timeout"] == 7
-    assert captured[0]["capture_output"] is True
+    assert "cleanup=TREE_TERMINATION_REQUESTED" in str(exc.value)
+
+
+def test_timeout_terminates_descendant_process_before_it_can_write(tmp_path):
+    import sys
+    import time
+
+    marker = tmp_path / "orphan_wrote_after_timeout.txt"
+    # Direct child launches a long-running grandchild with the same inherited
+    # standard streams, precisely the case subprocess.run(timeout) misses.
+    grandchild = (
+        "import pathlib,sys,time;time.sleep(2.2);"
+        "pathlib.Path(sys.argv[1]).write_text('orphan',encoding='utf-8');"
+        "time.sleep(20)"
+    )
+    parent = (
+        "import subprocess,sys,time;"
+        f"subprocess.Popen([sys.executable,'-c',{grandchild!r},sys.argv[1]]);"
+        "print('grandchild spawned',flush=True);"
+        "time.sleep(20)"
+    )
+    with pytest.raises(yt_dlp.YtDlpTimeout) as exc:
+        yt_dlp._run_process(
+            [sys.executable, "-c", parent, str(marker)],
+            label="bounded source child-tree", timeout_seconds=1,
+        )
+    assert "cleanup=TREE_TERMINATION_REQUESTED" in str(exc.value)
+    # Wait beyond the grandchild write point. This is a real OS-process test
+    # on both Ubuntu and Windows; it never downloads external media.
+    time.sleep(2.0)
+    assert not marker.exists(), "descendant survived the yt-dlp timeout"
+
+
+def test_native_process_nonzero_exit_preserves_bounded_diagnostic():
+    import sys
+
+    with pytest.raises(yt_dlp.YtDlpError) as exc:
+        yt_dlp._run_process([
+            sys.executable, "-c",
+            "import sys;sys.stderr.write('synthetic failure');sys.exit(7)",
+        ], label="yt-dlp metadata probe", timeout_seconds=3)
+    assert "exit code 7" in str(exc.value)
+    assert "synthetic failure" in str(exc.value)
 
 
 def test_runtime_timeout_does_not_retry_or_refresh(monkeypatch):
@@ -345,6 +383,6 @@ def test_native_deadline_budget_validation_fails_without_spawning(monkeypatch, l
     def forbidden(*args, **kwargs):
         raise AssertionError("bad timeout may not launch a process")
 
-    monkeypatch.setattr(yt_dlp.subprocess, "run", forbidden)
+    monkeypatch.setattr(yt_dlp.subprocess, "Popen", forbidden)
     with pytest.raises(ValueError, match="deadline"):
         yt_dlp._run_process(["uvx"], timeout_seconds=limit)
