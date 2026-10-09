@@ -17,6 +17,34 @@ The target is evidence-backed **corpus-level editorial pattern learning**, not
 necessarily LLM weight fine-tuning. Model fine-tuning can be evaluated later but
 does not replace original-stream/video verification, dataset splits or calibrated QA.
 
+## Hostwide conservative yt-dlp pacing / rate-limit safety
+
+The native Holoclip managed yt-dlp provider must not issue rapid
+consecutive public YouTube search, metadata or media requests. Every
+yt-dlp subprocess is given documented in-extractor pacing:
+`--sleep-requests 2`, `--sleep-interval 10`,
+`--max-sleep-interval 20`, one fragment at a time, and finite retries.
+Separate managed provider invocations in the same local working tree
+use a shared durable SQLite reservation with a minimum **20 seconds
+between invocations**, exclusive in-flight lease and bounded crash
+expiration. Local locking/storage errors fail closed, never permit
+unrestricted fallback traffic.
+
+Any detected 429 or YouTube anti-bot/interactive block causes an
+immediate, durable **six-hour minimum** local cooldown. The access
+error must not cause an immediate yt-dlp self-refresh-and-retry loop.
+Pending discovery cursors are preserved and the same invocation
+stops rather than hammering other candidates. The local deferral
+is an operational access failure, **not** evidence of no source match,
+editor weakness or lack of public clips. All tests are fully offline;
+hosted GitHub Actions never attempts public YouTube downloads.
+
+These values are conservative defaults, **not an empirically verified
+ban-free safe line**. Limits can vary by IP, account status, behavior and
+YouTube policy. No automatic cookies/account access, captcha bypass,
+identity rotation or proxy circumvention is provided. Manual apps not
+using the standard managed yt-dlp provider are outside its lock.
+
 ## Bounded consecutive-run stall signals (unreviewed only)
 
 The local Windows source-pattern health summary computes *diagnostic*
