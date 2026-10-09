@@ -20,19 +20,63 @@ if ([string]::IsNullOrWhiteSpace($TaskName)) {
     throw 'Scheduled task name must not be blank'
 }
 $uv = Get-Command 'uv' -CommandType Application -ErrorAction Stop
-foreach ($binary in @('ffmpeg', 'ffprobe')) {
-    $null = Get-Command $binary -CommandType Application -ErrorAction Stop
+$ffmpeg = Get-Command 'ffmpeg' -CommandType Application -ErrorAction Stop
+$ffprobe = Get-Command 'ffprobe' -CommandType Application -ErrorAction Stop
+
+# The extractor requires Deno >= 2.3 or Node >= 22. Prefer supported Deno
+# but allow modern Node when Deno is absent or too old. No downloads/installs.
+$jsPath = $null
+foreach ($candidate in @(
+    @{ Name = 'deno'; Minimum = [version]'2.3.0' },
+    @{ Name = 'node'; Minimum = [version]'22.0.0' }
+)) {
+    $binary = Get-Command $candidate.Name -CommandType Application -ErrorAction SilentlyContinue
+    if ($null -eq $binary) { continue }
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $versionOutput = & $binary.Source --version 2>$null
+        $versionExitCode = $LASTEXITCODE
+    }
+    catch {
+        continue
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    if ($versionExitCode -ne 0) { continue }
+    $firstLine = [string]($versionOutput | Select-Object -First 1)
+    $match = [regex]::Match($firstLine, '(?<!\d)(\d+)\.(\d+)\.(\d+)')
+    if (-not $match.Success) { continue }
+    $candidateVersion = [version]::new(
+        [int]$match.Groups[1].Value,
+        [int]$match.Groups[2].Value,
+        [int]$match.Groups[3].Value
+    )
+    if ($candidateVersion -ge $candidate.Minimum) {
+        $jsPath = $binary.Source
+        break
+    }
+}
+if (-not $jsPath) {
+    throw 'Deno >= 2.3 or Node >= 22 must be installed before registering the task'
 }
 $uvPath = $uv.Source
-if (-not [System.IO.Path]::IsPathRooted($uvPath) -or
-        -not (Test-Path -LiteralPath $uvPath -PathType Leaf) -or
-        $uvPath.Contains('"')) {
-    throw 'Invalid executable path for scheduled uv'
+$ffmpegPath = $ffmpeg.Source
+$ffprobePath = $ffprobe.Source
+foreach ($path in @($uvPath, $ffmpegPath, $ffprobePath, $jsPath)) {
+    if (-not [System.IO.Path]::IsPathRooted($path) -or
+            -not (Test-Path -LiteralPath $path -PathType Leaf) -or
+            $path.Contains('"')) {
+        throw 'Invalid executable path for scheduled media tool'
+    }
 }
 # Resolve once; Windows Task Scheduler only stores an action and does NOT
 # inherit the launching PowerShell's functions or command aliases.
 $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$taskArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -UvExecutable "{1}"' -f $runner, $uvPath
+$taskArgs = ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" ' +
+    '-UvExecutable "{1}" -FFmpegExecutable "{2}" -FFprobeExecutable "{3}" ' +
+    '-JsRuntimeExecutable "{4}"') -f $runner, $uvPath, $ffmpegPath, $ffprobePath, $jsPath
 $action = New-ScheduledTaskAction -Execute $psExe -Argument $taskArgs -WorkingDirectory $repoRoot
 $startAt = [datetime]::ParseExact($At, 'HH:mm', [Globalization.CultureInfo]::InvariantCulture)
 $trigger = New-ScheduledTaskTrigger -Daily -At $startAt

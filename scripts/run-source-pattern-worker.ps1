@@ -4,7 +4,10 @@ param(
     [int]$Cycles = 3,
     [ValidateRange(1, 2)]
     [int]$MaxClips = 2,
-    [string]$UvExecutable = ''
+    [string]$UvExecutable = '',
+    [string]$FFmpegExecutable = '',
+    [string]$FFprobeExecutable = '',
+    [string]$JsRuntimeExecutable = ''
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
@@ -33,15 +36,33 @@ try {
         $uv = Get-Command 'uv' -CommandType Application -ErrorAction Stop
         $uvPath = $uv.Source
     }
+    # Validate the entire installed media toolchain before starting Python.
+    # The old launcher found only uv from a pinned path. ffmpeg/ffprobe and
+    # the JS runtime could still disappear in a noninteractive scheduled PATH.
+    $toolDirectories = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($pinned in @($UvExecutable, $FFmpegExecutable, $FFprobeExecutable,
+                           $JsRuntimeExecutable)) {
+        if (-not $pinned) { continue }
+        if (-not [System.IO.Path]::IsPathRooted($pinned) -or
+                -not (Test-Path -LiteralPath $pinned -PathType Leaf)) {
+            throw 'Invalid pinned media executable'
+        }
+        $toolDirectories.Add((Split-Path -Parent (Resolve-Path -LiteralPath $pinned).Path))
+    }
+    # Preserve uv's directory first for managed uvx/uv subprocess discovery.
+    foreach ($directory in $toolDirectories) {
+        $env:PATH = $directory + [System.IO.Path]::PathSeparator + $env:PATH
+    }
     foreach ($binary in @('ffmpeg', 'ffprobe')) {
         $null = Get-Command $binary -CommandType Application -ErrorAction Stop
     }
-    if ($UvExecutable) {
-        # The managed yt-dlp runtime invokes uvx (or uv tool run) in a child
-        # Python process. Pinning uv for the first command alone is not enough:
-        # scheduled sessions may not have uv/uvx's directory on their PATH.
-        $uvDirectory = Split-Path -Parent $uvPath
-        $env:PATH = $uvDirectory + [System.IO.Path]::PathSeparator + $env:PATH
+    # A pinned Deno/Node is also discoverable by Python's yt-dlp runtime
+    # even when Task Scheduler inherited no interactive-user PATH.
+    if ($JsRuntimeExecutable) {
+        $jsName = [System.IO.Path]::GetFileNameWithoutExtension($JsRuntimeExecutable)
+        if ($jsName -notin @('deno', 'node')) {
+            throw 'Invalid pinned JavaScript runtime name'
+        }
     }
     $ranCollector = $true
     $status = 'FAILED_COLLECTOR_PROCESS'

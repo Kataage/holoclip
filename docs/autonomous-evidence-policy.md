@@ -105,17 +105,20 @@ different default PATH.
 
 ## Windows-specific release regression checks
 
-The opt-in installer checks `uv`, FFmpeg and FFprobe before registration
-and pins the resolved absolute uv application path into its Windows task
-action, avoiding a different scheduled-session PATH for uv. Missing tools
-fail before task registration. This does not guarantee any public
-video is reachable from the installed user's session.
+The opt-in installer checks `uv`, FFmpeg and FFprobe, plus
+a supported Deno >=2.3 or Node >=22 runtime, **before registration**.
+It records all resolved absolute application paths in the Windows task
+action, and the launcher prepends their parent directories to the Python
+child's PATH so different scheduled-session PATHs cannot silently hide
+those executables. Missing, obsolete or moved pinned runtimes fail closed.
+This is not evidence that any public video is reachable from the installed
+user's session.
 
 The `windows-source-pattern` GitHub Actions job exercises Windows Python
 advisory locking and launcher audit scenarios under Windows PowerShell 5.1.
 It copies only the launcher into a temporary project and shadows uv/FFmpeg
 with local stubs to verify missing-tool, nonzero-child-exit, successful
-child-exit, and pinned-uv-path behavior. The installer also runs with
+child-exit, and pinned-uv/FFmpeg/FFprobe/JS-path behavior. The installer also runs with
 mocked ScheduledTasks cmdlets to validate its registration arguments and
 preflight checks without actually registering or starting tasks. It must **never** run the task installer, real yt-dlp or
 a real public video in CI. A successful exit from a fake uv is only a
