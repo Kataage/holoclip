@@ -128,3 +128,131 @@ def test_missing_queue_exits_after_single_zero_attempt(tmp_path):
     assert result["cycles_completed"] == 1
     assert result["cycle_diagnostics"][0]["attempted_clips"] == 0
     assert result["status"].startswith("UNKNOWN_")
+
+
+def test_each_distinct_original_candidate_receives_bounded_pattern_controls(
+    tmp_path, monkeypatch,
+):
+    """A second original must not be masked by the first candidate's control."""
+    from holoclip import source_candidate_visual as scout
+    from holoclip import source_pattern_collection as collector
+    from holoclip.source_visual_pattern_controls import _report, PATTERNS, APPROVED
+    from holoclip.source_visual_pattern_report import report_saved_patterns
+    from holoclip.video_measurement import checksum_file
+
+    make_state(tmp_path / "state.json", candidates=[
+        "https://www.youtube.com/watch?v=BBBBBBBBBBB",
+        "https://www.youtube.com/watch?v=CCCCCCCCCCC",
+    ])
+    provider = Provider()
+    monkeypatch.setattr(scout, "YtDlpSourceProvider", Provider)
+
+    def fake_measured(media, root, *, asset_id, start, end, transcript, dense_times):
+        data = fake_measure(
+            media, root, asset_id=asset_id, start=start, end=end,
+            transcript=transcript, dense_times=dense_times,
+        )
+        data.media_sha256 = checksum_file(media)
+        return data
+
+    tested = []
+
+    def synthetic_pattern(window, *, root):
+        tested.append(window.media_sha256)
+        record = _report("MEASURED_UNREVIEWED_CONSTRUCTED_VIDEO_PATTERN_SUITE")
+        record["source_video_sha256"] = window.media_sha256
+        record["measured_frame_sha256s"] = ["a"*64, "b"*64, "c"*64]
+        record["measured_frame_count"] = 3
+        record["patterns"] = {
+            name: {
+                "expected": expected,
+                "observed_status": (APPROVED if expected == "constructed_positive"
+                                    else "UNKNOWN_NO_VISUAL_SEQUENCE"),
+                "behaved_as_constructed": True,
+            }
+            for name, expected in PATTERNS.items()
+        }
+        return record
+
+    monkeypatch.setattr(scout, "measure_source_video_controls",
+                        lambda *args, **kwargs: {"status": "UNKNOWN_NO_CONTROL"})
+    monkeypatch.setattr(scout, "measure_video_pattern_controls", synthetic_pattern)
+    original = scout.verify_pending_source_visual
+
+    def fake_verify(provider, **kwargs):
+        return original(
+            provider, measure=fake_measured, probe=fake_probe, **kwargs,
+        )
+
+    monkeypatch.setattr(collector, "verify_pending_source_visual", fake_verify)
+    result = asyncio.run(collect_public_source_patterns(
+        provider, store=tmp_path / "none.jsonl",
+        state_path=tmp_path / "state.json", output=tmp_path / "media",
+        policy_rules=[], cycles=1, discover=False,
+        max_clips=1, max_candidates=2, target_distinct_streams=2,
+    ))
+    assert len(tested) == 2
+    assert result["new_unique_video_samples_this_run"] == 2
+    assert result["distinct_candidate_streams_measured"] == 2
+    assert result["target_reached"] is True
+    assert result["cycle_diagnostics"][0]["source_pattern_attempt_outcomes"] == {
+        "pattern:MEASURED_UNREVIEWED_CONSTRUCTED_VIDEO_PATTERN_SUITE": 2
+    }
+    stored = report_saved_patterns(tmp_path / "state.json")
+    assert stored["real_measured_source_video_samples"] == 2
+    assert len(stored["per_source_pattern_results"]) == 2
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path / "state.json").read_text(encoding="utf-8")
+    )
+    observations = state.items["candidate"].source_scout["visual_probe"][
+        "candidate_observations"
+    ]
+    assert len(observations) == 2
+    assert all(row["constructed_pattern_observation"]["result"][
+        "source_identity_verified"] is False for row in observations)
+    assert result["ready"] is False
+
+
+def test_first_pattern_execution_failure_does_not_starve_second_candidate(
+    tmp_path, monkeypatch,
+):
+    from holoclip import source_candidate_visual as scout
+    from holoclip.source_visual_pattern_controls import _report
+    from holoclip.video_measurement import checksum_file
+
+    make_state(tmp_path / "state.json", candidates=[
+        "https://www.youtube.com/watch?v=BBBBBBBBBBB",
+        "https://www.youtube.com/watch?v=CCCCCCCCCCC",
+    ])
+    monkeypatch.setattr(scout, "YtDlpSourceProvider", Provider)
+    monkeypatch.setattr(scout, "measure_source_video_controls",
+                        lambda *args, **kwargs: {"status": "UNKNOWN_NO_CONTROL"})
+    attempted = []
+
+    def flaky(window, *, root):
+        attempted.append(root)
+        if len(attempted) == 1:
+            raise RuntimeError("first artificial control failed")
+        record = _report("UNKNOWN_MEASURED_VIDEO_HASH_OR_BUDGET")
+        return record
+
+    monkeypatch.setattr(scout, "measure_video_pattern_controls", flaky)
+    report = scout.verify_pending_source_visual(
+        Provider(), store=tmp_path / "none.jsonl",
+        state_path=tmp_path / "state.json", output=tmp_path / "media",
+        policy_rules=[], max_candidates=2,
+        measure=fake_measure, probe=fake_probe,
+    )
+    assert report["attempted"] == 1
+    assert len(attempted) == 2
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path / "state.json").read_text(encoding="utf-8")
+    )
+    observations = state.items["candidate"].source_scout["visual_probe"][
+        "candidate_observations"
+    ]
+    assert observations[0]["constructed_pattern_error_class"] == "RuntimeError"
+    assert observations[1]["constructed_pattern_observation"]["result"][
+        "status"] == "UNKNOWN_MEASURED_VIDEO_HASH_OR_BUDGET"
+    assert state.items["candidate"].source_stream_id is None
+    assert report["source_identity_verified"] is False

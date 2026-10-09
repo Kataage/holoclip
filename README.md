@@ -34,7 +34,7 @@ with preserved artifacts. See [production provider setup](docs/production-provid
 
 The source-pattern collector combines **metadata-only public clip discovery**
 with rotating, bounded yt-dlp video checks. It reuses the acquired sections,
-persists the existing SHA-bound five-pattern histories, and returns a
+persists the existing SHA-bound five-pattern histories for each sampled\nsource candidate (up to two per clip per cycle), and returns a
 source-diverse report with explicit unknowns. No cloud model, GPU, URLs, gold
 labels or paid service are required:
 
@@ -73,7 +73,7 @@ and public YouTube videos accessible. Requires Windows Task Scheduler, `uv`,
 FFmpeg/FFprobe, Deno >=2.3 or Node >=22; yt-dlp itself is managed by uv.
 The installer does not start a live collection by itself.
 
-The collector now holds an OS-released cross-process advisory lock on its state
+A concurrent collector invocation exits with a nonzero code (rather than\nreporting a skipped scheduled run as success).\n\nThe collector now holds an OS-released cross-process advisory lock on its state
 file directory: two scheduled/manual collector instances cannot update the same
 state concurrently; a crashed process releases its lock. Persisted state can
 still be modified by unrelated direct commands, so do not run separate corpus

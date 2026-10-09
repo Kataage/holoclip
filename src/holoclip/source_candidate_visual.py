@@ -498,7 +498,6 @@ def verify_pending_source_visual(
             ]
             report["candidate_round_before"] = round_number
             report["unprobed_shortlist_candidates"] = len(available) - len(selection)
-            control_run = False
             for index in selection:
                 candidate = available[index]
                 observed = {
@@ -587,46 +586,64 @@ def verify_pending_source_visual(
                             "requested_range": [start, end], "media_sha256": digest,
                             "source_native_pts_verified": False,
                         })
-                    # Real-source self-controls have known constructed labels,
-                    # but never real editor/original-stream truth labels. They
-                    # run once per cycle on existing measured frames, without
-                    # fetching any extra video or contaminating the ledger.
-                    if not control_run and type(provider) is YtDlpSourceProvider:
-                        control_run = True
-                        control = measure_source_video_controls(
-                            windows[0], root=output / "controls",
-                        )
-                        observed["real_video_constructed_controls"] = control
-                        control_history, saved_control = add_control_result(
-                            control_history, clip_id=clip_id,
-                            candidate_ids=candidate_ids,
-                            source_id=source.external_id,
-                            control=control,
-                        )
-                        scout["real_video_control_history"] = control_history
-                        report["constructed_control_observation"] = {
-                            "source_stream_id": source.external_id,
-                            "origin_kind": "YT_DLP_BOUNDED_PUBLIC_VIDEO_UNREVIEWED",
-                            "saved_new_measured_control": saved_control,
-                            "result": control,
-                        }
+                    # Each shortlisted original has its own bounded measured section.
+                    # Evaluate both (at most MAX_CANDIDATES) without extra downloads.
+                    # A failed pattern suite on one source must not prevent other
+                    # candidates from being measured. These are constructed labels,
+                    # NEVER source identity or real human editor gold.
+                    if type(provider) is YtDlpSourceProvider:
+                        try:
+                            control = measure_source_video_controls(
+                                windows[0], root=output / "controls",
+                            )
+                            observed["real_video_constructed_controls"] = control
+                            control_history, saved_control = add_control_result(
+                                control_history, clip_id=clip_id,
+                                candidate_ids=candidate_ids,
+                                source_id=source.external_id,
+                                control=control,
+                            )
+                            scout["real_video_control_history"] = control_history
+                            control_observation = {
+                                "source_stream_id": source.external_id,
+                                "origin_kind": "YT_DLP_BOUNDED_PUBLIC_VIDEO_UNREVIEWED",
+                                "saved_new_measured_control": saved_control,
+                                "result": control,
+                            }
+                            observed["constructed_control_observation"] = control_observation
+                            report.setdefault("constructed_control_observations", []).append(
+                                control_observation
+                            )
+                            report.setdefault("constructed_control_observation",
+                                              control_observation)
+                        except Exception as exc:
+                            observed["constructed_control_error_class"] = type(exc).__name__
+                        try:
+                            pattern_result = measure_video_pattern_controls(
+                                windows[0], root=output / "pattern-controls",
+                            )
+                            pattern_history, new_pattern = add_pattern_result(
+                                pattern_history, clip_id=clip_id,
+                                candidate_ids=candidate_ids,
+                                source_id=source.external_id, result=pattern_result,
+                            )
+                            scout["real_video_pattern_history"] = pattern_history
+                            pattern_observation = {
+                                "source_stream_id": source.external_id,
+                                "new_measured_pattern_sample": new_pattern,
+                                "result": pattern_result,
+                            }
+                            observed["constructed_pattern_observation"] = pattern_observation
+                            report.setdefault("constructed_pattern_observations", []).append(
+                                pattern_observation
+                            )
+                            report.setdefault("constructed_pattern_observation",
+                                              pattern_observation)
+                        except Exception as exc:
+                            observed["constructed_pattern_error_class"] = type(exc).__name__
                         report["constructed_control_summary"] = (
                             summarize_control_history(control_history)
                         )
-                        pattern_result = measure_video_pattern_controls(
-                            windows[0], root=output / "pattern-controls",
-                        )
-                        pattern_history, new_pattern = add_pattern_result(
-                            pattern_history, clip_id=clip_id,
-                            candidate_ids=candidate_ids,
-                            source_id=source.external_id, result=pattern_result,
-                        )
-                        scout["real_video_pattern_history"] = pattern_history
-                        report["constructed_pattern_observation"] = {
-                            "source_stream_id": source.external_id,
-                            "new_measured_pattern_sample": new_pattern,
-                            "result": pattern_result,
-                        }
                         report["constructed_pattern_summary"] = (
                             summarize_pattern_results(pattern_history)
                         )
