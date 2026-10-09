@@ -227,7 +227,8 @@ is saved per pending clip, with strict anti-gold/schema checks before the
 next media request. The existing
 `uv run holoclip examples-source-controls-report` now also reports
 per-pattern observed/evaluable/unevaluable counts, measured constructed
-pass fractions, and **distinct original stream count**. Identical
+pass fractions, and **distinct original stream count**, with per-source pattern breakdowns showing
+how many bounded samples from each original were actually evaluable. Identical
 source-video bytes reached through different human clips count only
 once across the report. Zero real samples mean null pattern pass rates,
 not 100% success. Multiple windows from the *same* stream do not
