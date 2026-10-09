@@ -30,58 +30,36 @@ Production AI access uses capability-based, quality-qualified routing with a per
 quota ledger and bounded stage timeouts. Missing qualified/free routes stop processing
 with preserved artifacts. See [production provider setup](docs/production-provider-runtime.md).
 
-## One-shot public-video measurement on an isolated GitHub runner
+## Public-video validation is local-only
 
-The separate [bounded public-video smoke workflow](.github/workflows/public-video-smoke.yml)
-runs **once automatically when its workflow/runner code first reaches main**,
-and supports an explicit manual re-run if needed. It is not part of the
-normal offline pull-request CI, and it has **no recurring schedule** or
-unbounded paid cloud/GPU dependency. It attempts self-discovery of public
-Hololive human clips and source candidates without requesting operator
-URLs/labels. It uses Linux, uv-managed yt-dlp, Node >=22 and FFmpeg, with:
+The experimental GitHub-hosted real-video workflow has been **deleted**.
+The two initial hosted attempts, [run #37946788956](https://github.com/Kataage/holoclip/actions/runs/37946788956)
+and [run #37948045092](https://github.com/Kataage/holoclip/actions/runs/37948045092),
+searched public metadata but **all five full clip probes in each run failed**;
+the second run classified all five as
+`YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE`. Neither acquired a finished/source
+video section or demonstrated real editor alignment. Retrying real yt-dlp
+downloads on GitHub Actions is therefore not a useful continuous quality
+signal. **GitHub CI runs offline tests and mocks only**; no public YouTube
+download is attempted by any configured workflow, including pushes to main.
 
-- exactly 1 collection cycle, 1 finished clip and 1 original candidate,
-  up to 5 public search metadata entries;
-- a 12-minute deadline on the isolated collector process tree and an
-  18-minute hosted job ceiling; on Linux, descendants in separate yt-dlp /
-  FFmpeg process groups are enumerated and signaled before the outer uv
-  group is terminated;
-- a private, disposable media working directory; **only JSON diagnostics**
-  (collector status, offline doctor, proof-of-local-byte receipt checks and
-  machine-readable smoke summary) are uploaded as a 7-day GitHub artifact;
-  no downloaded media/video, credentials or human examples are uploaded.
+Real media acquisition belongs to the existing, opt-in **native Windows**
+collector/Task Scheduler path. The Windows job can run without uploading
+video, providing URLs, Docker, a paid AI service or hand-annotated gold.
 
-A **green smoke run** requires new, unreviewed constructed-pattern samples,
-a newly observed candidate stream and an intact rehashed bounded media
-section. A missing/blocked YouTube download is an explicit red
-`UNKNOWN_*`/failure rather than synthetic proof. Even green **does not**
-prove a real source-to-finished match, official source identity, editor
-accuracy or production readiness; `ready=false` is mandatory. GitHub-hosted
-network traffic may be denied by YouTube, which itself is a useful diagnosed
-environment limitation and **not** an invalid negative source match.
-
-Hosted Actions usage is constrained to this one-shot push/re-run trigger to
-avoid automatic recurring consumption of private-repository Actions minutes;
-availability and billing are subject to the repository's GitHub plan. Ongoing
-production collection remains the **opt-in native Windows scheduler**, not
-this disposable runner.
-
-### Public-video smoke: classify metadata failures without exposing URLs
-
-The first actual hosted attempt ([run #37946788956](https://github.com/Kataage/holoclip/actions/runs/37946788956))
-searched five public clip entries but all five full metadata probes remained
-`retryable`: **zero** videos reached source/finished comparison or pattern
-measurement. Its evidence remains `UNKNOWN`, not proof of source mismatch.
-
-The runner now records only bounded `public_clip_metadata_probe_failures`
-counts, including safe exception class identifiers and categorical diagnostics
-for YouTube interactive/bot challenges, HTTP 403/429, login restrictions,
-network timeouts, extractor changes, unavailable videos and unclassified
-errors. **No raw yt-dlp error message, URL, clip title or credentials are
-exported** in the category summary. This helps distinguish hostile hosted
-network conditions from broken local tooling before assigning real-video
-work elsewhere. Categorization is a hint, not evidence that an error is
-resolved, or a license to bypass access controls. `ready=false` remains.
+Local metadata resolution now halts after **three consecutive**
+YouTube bot/interactivity challenges or HTTP 429 errors during one
+invocation. It preserves every pending candidate and the round-robin
+cursor, then allows the next scheduled execution to retry normally; it
+does not circumvent YouTube restrictions, invent positive video data
+or automatically request credentials. Other errors do not trigger the
+hostwide pause. The collector reports
+`metadata_access_paused`, `metadata_access_pause_reason` and sanitized
+`metadata_failure_category_counts`. Offline
+`examples-collector-doctor --no-check-tools` displays these along
+with `local_retryable_metadata_failure_summary` without emitting stored
+YouTube URLs or raw stderr in the diagnostic output.
+A pause is never an editor mismatch; `ready=false` stays mandatory.
 
 ## Collect real public-source constructed pattern measurements
 
