@@ -68,15 +68,17 @@ function Run-Launcher([string]$expectedStatus, [int]$expectedCode, [bool]$expect
     Assert-Condition ($lastEvent.exit_code -eq $expectedCode) 'Launcher history exit differs from primary audit'
     Assert-Condition ($lastEvent.ran_collector -eq $expectedInvocation) 'Launcher history claimed false provenance'
     Assert-Condition ($lastEvent.collector_report_correlated -eq $ExpectedStage) 'Wrong fresh collector provenance'
-    Assert-Condition ($null -eq $lastEvent.new_unique_video_samples) 'Mocked uv claimed video samples'
-    Assert-Condition ($null -eq $lastEvent.new_distinct_candidate_streams) 'Mocked uv claimed public stream'
     Assert-Condition ($lastEvent.stage_metrics_correlated -eq $ExpectedStage) 'Wrong same-run native visual stage provenance'
     if ($ExpectedStage) {
+        Assert-Condition ($lastEvent.new_unique_video_samples -eq 1) 'Wrong synthetic same-run pattern count'
+        Assert-Condition ($lastEvent.new_distinct_candidate_streams -eq 1) 'Wrong synthetic same-run stream count'
         Assert-Condition ($lastEvent.collector_report_correlated -eq $true) 'Native visual stage not linked to fresh collector'
         Assert-Condition ($lastEvent.last_run_visual_pair_attempts -eq 1) 'Incorrect correlated pair attempt'
         Assert-Condition ($lastEvent.last_run_source_window_records -eq 2) 'Incorrect original section count'
         Assert-Condition ($lastEvent.last_run_sampled_visual_correspondences -eq 0) 'Fabricated visual corroboration'
     } else {
+        Assert-Condition ($null -eq $lastEvent.new_unique_video_samples) 'Mocked uv claimed video samples'
+        Assert-Condition ($null -eq $lastEvent.new_distinct_candidate_streams) 'Mocked uv claimed public stream'
         foreach ($name in @('last_run_visual_pair_attempts',
                              'last_run_source_window_records',
                              'last_run_sampled_visual_correspondences')) {
