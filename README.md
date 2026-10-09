@@ -139,10 +139,12 @@ After every saved original-source scan reaches its deterministic budget,
 the collector attempts a **finite** second pass against other finished-clip
 windows. For each eligible finished window and source-candidate batch it
 checks only the first two groups of three original windows (at most six
-source intervals per candidate/finished combination). A separate durable
-`visual_cross_revisit_step` resumes across runs without resetting old
-source-scan cursors, replacing saved source hashes or falsely extending
-original-search coverage. All media acquisition, identity, and current
+source intervals per candidate/finished combination). Separate durable
+`visual_cross_revisit_step` and layout metadata resume across runs without
+resetting old source-scan cursors, replacing saved source hashes or falsely
+extending original-search coverage. A changed shortlist, finished-window
+layout or per-run candidate batch size is explicitly blocked instead of
+reinterpreting the old cursor. All media acquisition, identity, and current
 rights checks remain in force.
 
 Once the finite paired-revisit budget is consumed, the collector rechecks
