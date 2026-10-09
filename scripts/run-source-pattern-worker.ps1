@@ -334,11 +334,26 @@ try {
                     $finish = [DateTimeOffset]::Parse($entry.finished_at_utc)
                     $newSamples = $col.result.new_unique_video_samples_this_run
                     $newStreams = $col.result.new_distinct_candidate_streams_this_run
+                    $collectorStatusValid = (
+                        ($col.status -ceq 'MEASURED_UNREVIEWED_CONSTRUCTED_PUBLIC_VIDEO_PATTERNS' -and
+                         $newSamples -gt 0) -or
+                        ($col.status -clike 'UNKNOWN_*' -and $newSamples -eq 0)
+                    )
+                    $collectorFlagsValid = $true
+                    foreach ($flag in @('source_identity_verified',
+                                        'reviewed_gold_available',
+                                        'qualification_allowed',
+                                        'ready', 'production_ready')) {
+                        if ($col.$flag -ne $false -or
+                                $col.result.$flag -ne $false) {
+                            $collectorFlagsValid = $false
+                            break
+                        }
+                    }
                     if ($col.version -ceq 'source-pattern-unattended-run-v1' -and
-                            $col.ready -eq $false -and
-                            $col.production_ready -eq $false -and
-                            $col.result.ready -eq $false -and
-                            $col.result.production_ready -eq $false -and
+                            $col.result.status -ceq $col.status -and
+                            $collectorStatusValid -and
+                            $collectorFlagsValid -and
                             $began -ge $start -and $ended -ge $began -and
                             $ended -le $finish) {
                         if (($newSamples -is [int] -or $newSamples -is [long]) -and
