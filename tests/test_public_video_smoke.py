@@ -3,6 +3,7 @@ import subprocess
 from pathlib import Path
 
 from holoclip import public_video_smoke as smoke
+from holoclip.source_metadata_failure_summary import _public_probe_failure_category
 
 FLAGS = {
     "source_identity_verified": False,
@@ -242,7 +243,7 @@ def test_live_probe_categories_are_no_url_or_raw_stderr(tmp_path):
 
 
 def test_probe_classifier_keeps_unknown_failures_unknown():
-    assert smoke._public_probe_failure_category(
+    assert _public_probe_failure_category(
         "unexpected transport problem: https://example.invalid/secret"
     ) == "UNCLASSIFIED_METADATA_PROBE_FAILURE"
 
