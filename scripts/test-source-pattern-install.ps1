@@ -111,7 +111,28 @@ try {
     Assert-Task ($script:captured[1].TaskName -eq 'Holoclip Source Patterns') 'Default name changed'
     Assert-Task ($script:captured[1].Trigger.At.Hour -eq 3) 'Default schedule changed'
     Assert-Task ($script:captured[1].Action.Argument.Contains(('-JsRuntimeExecutable "{0}"' -f (Join-Path $bin 'deno.cmd')))) 'Supported Deno not preferred'
-    Write-Host 'Windows PowerShell installer: missing-tool + custom/default schedule mocked tests passed; zero tasks registered'
+    # Explicitly pinned settings paths must survive quoting and never cause
+    # unvalidated task registration or network media acquisition.
+    $missingSettings = Join-Path $testRoot 'missing local settings.json'
+    try {
+        . $installer -ConfigPath $missingSettings
+        throw 'Expected an explicit missing config path to fail'
+    }
+    catch {
+        Assert-Task ($_.Exception.Message -match 'Invalid custom source-pattern config') 'Wrong config path validation error'
+        Assert-Task ($script:captured.Count -eq 2) 'Invalid config registered a task'
+    }
+    $localSettings = Join-Path $testRoot 'local settings with spaces.json'
+    [System.IO.File]::WriteAllText(
+        $localSettings, '{"version":"source-pattern-local-settings-v1"}',
+        ([System.Text.Encoding]::UTF8)
+    )
+    . $installer -ConfigPath $localSettings
+    Assert-Task ($script:captured.Count -eq 3) 'Expected config-pinned task registration'
+    Assert-Task ($script:captured[2].Action.Argument.Contains(
+        ('-ConfigPath "{0}"' -f $localSettings)
+    )) 'Custom config file path lost in task action'
+    Write-Host 'Windows PowerShell installer: missing-tool, schedule and config path tests passed; zero tasks registered'
 }
 finally {
     $env:PATH = $originalPath
