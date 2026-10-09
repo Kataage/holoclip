@@ -271,17 +271,76 @@ def test_source_scan_exhaustion_is_unknown_not_negative_gold(tmp_path):
     provider = Provider()
     report = verify(provider, tmp_path)
     assert report["counts"] == {
+        "UNKNOWN_ALL_CANDIDATE_SOURCE_SCANS_EXHAUSTED": 1
+    }
+    assert provider.calls == []  # No unnecessary finished/original media download
+    updated = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    probe = updated.items["candidate"].source_scout["visual_probe"]
+    assert probe["exhausted_saved_source_candidates"] == 1
+    assert probe["scan_exhaustion_is_editor_negative"] is False
+    assert probe["source_identity_verified"] is False
+    assert updated.items["candidate"].status == "source_visual_pending"
+    assert updated.items["candidate"].source_stream_id is None
+    second = verify(provider, tmp_path)
+    assert second["counts"] == report["counts"]
+    assert provider.calls == []
+    assert second["qualification_allowed"] is False
+
+
+def test_one_exhausted_candidate_cannot_skip_a_second_unscanned_source(tmp_path):
+    make_state(tmp_path/"state.json", candidates=[A, B])
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    state.items["candidate"].source_scout["visual_scan_cursors"] = {
+        A.split("=")[-1]: 10000,
+    }
+    (tmp_path/"state.json").write_text(state.model_dump_json(), encoding="utf-8")
+    provider = Provider()
+    result = verify(provider, tmp_path)
+    assert result["attempted"] == 1
+    assert provider.calls[0][0] == CLIP
+    assert [url for url, _start, _end in provider.calls if url == B] == [B] * 3
+    assert all(url != A for url, _start, _end in provider.calls)
+    assert result["source_identity_verified"] is False
+
+
+def test_source_duration_drift_disables_exhaustion_shortcut(tmp_path):
+    make_state(tmp_path/"state.json")
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    state.items["candidate"].source_scout["visual_scan_cursors"] = {
+        A.split("=")[-1]: 10000,
+    }
+    (tmp_path/"state.json").write_text(state.model_dump_json(), encoding="utf-8")
+
+    class ChangedSource(Provider):
+        def probe(self, url):
+            result = super().probe(url)
+            if url == A:
+                result.duration = 4000.
+            return result
+
+    provider = ChangedSource()
+    result = verify(provider, tmp_path)
+    # The old saved scan cannot be called complete after source metadata drift.
+    assert provider.calls == [(CLIP, 14., 26.)]
+    assert result["counts"] == {
         "UNKNOWN_NO_VISUAL_MATCH_IN_BOUNDED_SAMPLES": 1
     }
-    assert provider.calls == [(CLIP, 14., 26.)]
     updated = CorpusGrowthState.model_validate_json(
         (tmp_path/"state.json").read_text(encoding="utf-8")
     )
     observation = updated.items["candidate"].source_scout[
         "visual_probe"
     ]["candidate_observations"][0]
-    assert observation["status"] == "UNKNOWN_SOURCE_SCAN_EXHAUSTED"
-    assert observation["source_identity_verified"] is False
+    assert observation["status"] == "BLOCKED_SOURCE_IDENTITY_OR_POLICY"
+    assert updated.items["candidate"].source_stream_id is None
+    assert result["qualification_allowed"] is False
+
 
 def test_failed_source_policy_blocks_download_and_cannot_turn_no_match_into_gold(tmp_path):
     make_state(tmp_path/"state.json", candidates=[A, B])
