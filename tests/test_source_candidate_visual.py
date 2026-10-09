@@ -8,8 +8,8 @@ import pytest
 from holoclip.corpus_growth import CorpusGrowthItem, CorpusGrowthState
 from holoclip.providers.source.base import SourceMetadata
 from holoclip.source_candidate_visual import (
-    VERSION, _NO_GOLD, compare_sparse_visual_sequences,
-    verify_pending_source_visual,
+    VERSION, CROSS_REVISIT_SOURCE_GROUPS, _NO_GOLD, _finished_starts, _starts,
+    compare_sparse_visual_sequences, verify_pending_source_visual,
 )
 
 
@@ -265,6 +265,10 @@ def test_source_scan_exhaustion_is_unknown_not_negative_gold(tmp_path):
     state.items["candidate"].source_scout["visual_scan_cursors"] = {
         A.split("=")[-1]: 10000,
     }
+    # All finite output/source rechecks were already attempted as well.
+    state.items["candidate"].source_scout["visual_cross_revisit_step"] = (
+        len(_finished_starts(40.)) * CROSS_REVISIT_SOURCE_GROUPS
+    )
     (tmp_path/"state.json").write_text(
         state.model_dump_json(), encoding="utf-8"
     )
@@ -287,6 +291,106 @@ def test_source_scan_exhaustion_is_unknown_not_negative_gold(tmp_path):
     assert second["counts"] == report["counts"]
     assert provider.calls == []
     assert second["qualification_allowed"] is False
+
+
+def test_exhausted_original_scan_revisits_distinct_finished_source_pairs(tmp_path):
+    make_state(tmp_path/"state.json")
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    state.items["candidate"].source_scout["visual_scan_cursors"] = {
+        A.split("=")[-1]: 10000,
+    }
+    (tmp_path/"state.json").write_text(state.model_dump_json(), encoding="utf-8")
+    expected_finished = _finished_starts(40.)
+    assert len(expected_finished) >= 2
+    expected_source_groups = [_starts(3600., n) for n in range(2)]
+    seen = []
+    for step in range(len(expected_finished) * CROSS_REVISIT_SOURCE_GROUPS):
+        # A new provider instance simulates process restart without cursor loss.
+        provider = Provider()
+        report = verify(provider, tmp_path)
+        assert report["attempted"] == 1
+        assert report["source_identity_verified"] is False
+        state = CorpusGrowthState.model_validate_json(
+            (tmp_path/"state.json").read_text(encoding="utf-8")
+        )
+        scout = state.items["candidate"].source_scout
+        probe = scout["visual_probe"]
+        assert probe["cross_revisit_step_before"] == step
+        assert probe["cross_revisit_step_after"] == step + 1
+        assert probe["cross_revisit_is_exhaustive_pair_coverage"] is False
+        assert scout["visual_scan_cursors"][A.split("=")[-1]] == 10000
+        expected = [
+            (CLIP, expected_finished[step//2],
+             expected_finished[step//2] + 12.)
+        ] + [(A, start, start+12.)
+             for start in expected_source_groups[step%2]]
+        assert provider.calls == expected
+        assert probe["candidate_observations"][0]["probe_mode"] == (
+            "bounded_cross_revisit"
+        )
+        seen.append(probe["finished_sample_range"][0])
+    assert len(set(seen)) == len(expected_finished)
+
+    provider = Provider()
+    final = verify(provider, tmp_path)
+    assert final["counts"] == {
+        "UNKNOWN_ALL_CANDIDATE_SOURCE_SCANS_EXHAUSTED": 1
+    }
+    assert provider.calls == []
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    assert state.items["candidate"].source_scout[
+        "visual_probe"
+    ]["cross_revisit_budget_complete"] is True
+    assert state.items["candidate"].status == "source_visual_pending"
+    assert state.items["candidate"].source_url is None
+
+
+def test_cross_revisits_cover_all_candidates_with_smaller_budget(tmp_path):
+    make_state(tmp_path/"state.json", candidates=[A, B])
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    state.items["candidate"].source_scout["visual_scan_cursors"] = {
+        A.split("=")[-1]: 10000, B.split("=")[-1]: 10000,
+    }
+    (tmp_path/"state.json").write_text(state.model_dump_json(), encoding="utf-8")
+    # One candidate per run: the other original must get its own bounded pair.
+    seen = []
+    for _ in range(4):
+        provider = Provider()
+        report = verify(provider, tmp_path, max_candidates=1)
+        assert report["attempted"] == 1
+        assert len(provider.calls) == 4
+        seen.append(provider.calls[1][0])
+    assert seen == [A, A, B, B]
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    assert state.items["candidate"].source_scout[
+        "visual_cross_revisit_step"
+    ] == 4
+
+
+@pytest.mark.parametrize("cursor", [-1, True, 999999])
+def test_invalid_cross_revisit_checkpoint_never_downloads(tmp_path, cursor):
+    make_state(tmp_path/"state.json")
+    state = CorpusGrowthState.model_validate_json(
+        (tmp_path/"state.json").read_text(encoding="utf-8")
+    )
+    scout = state.items["candidate"].source_scout
+    scout["visual_scan_cursors"] = {A.split("=")[-1]: 10000}
+    scout["visual_cross_revisit_step"] = cursor
+    (tmp_path/"state.json").write_text(state.model_dump_json(), encoding="utf-8")
+    provider = Provider()
+    report = verify(provider, tmp_path)
+    assert report["attempted"] == 1
+    assert report["qualification_allowed"] is False
+    assert provider.calls == []
+    assert list(report["counts"])[0].startswith("BLOCKED_")
 
 
 def test_one_exhausted_candidate_cannot_skip_a_second_unscanned_source(tmp_path):
