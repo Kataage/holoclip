@@ -36,7 +36,7 @@ try {
     $acl = Get-Acl -LiteralPath $full
     $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
     # Never take ownership or change an unrelated owner's ACL.
-    if ($owner -ne $current.Value) {
+    if ($owner -notin $allowed) {
         Fail-Acl 'ACL_UNEXPECTED_OWNER'
     }
     if ($Apply) {
