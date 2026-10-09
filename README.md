@@ -30,6 +30,40 @@ Production AI access uses capability-based, quality-qualified routing with a per
 quota ledger and bounded stage timeouts. Missing qualified/free routes stop processing
 with preserved artifacts. See [production provider setup](docs/production-provider-runtime.md).
 
+## One-shot public-video measurement on an isolated GitHub runner
+
+The separate [bounded public-video smoke workflow](.github/workflows/public-video-smoke.yml)
+runs **once automatically when its workflow/runner code first reaches main**,
+and supports an explicit manual re-run if needed. It is not part of the
+normal offline pull-request CI, and it has **no recurring schedule** or
+unbounded paid cloud/GPU dependency. It attempts self-discovery of public
+Hololive human clips and source candidates without requesting operator
+URLs/labels. It uses Linux, uv-managed yt-dlp, Node >=22 and FFmpeg, with:
+
+- exactly 1 collection cycle, 1 finished clip and 1 original candidate,
+  up to 5 public search metadata entries;
+- a 12-minute deadline on the isolated collector process tree and an
+  18-minute hosted job ceiling;
+- a private, disposable media working directory; **only JSON diagnostics**
+  (collector status, offline doctor, proof-of-local-byte receipt checks and
+  machine-readable smoke summary) are uploaded as a 7-day GitHub artifact;
+  no downloaded media/video, credentials or human examples are uploaded.
+
+A **green smoke run** requires new, unreviewed constructed-pattern samples,
+a newly observed candidate stream and an intact rehashed bounded media
+section. A missing/blocked YouTube download is an explicit red
+`UNKNOWN_*`/failure rather than synthetic proof. Even green **does not**
+prove a real source-to-finished match, official source identity, editor
+accuracy or production readiness; `ready=false` is mandatory. GitHub-hosted
+network traffic may be denied by YouTube, which itself is a useful diagnosed
+environment limitation and **not** an invalid negative source match.
+
+Hosted Actions usage is constrained to this one-shot push/re-run trigger to
+avoid automatic recurring consumption of private-repository Actions minutes;
+availability and billing are subject to the repository's GitHub plan. Ongoing
+production collection remains the **opt-in native Windows scheduler**, not
+this disposable runner.
+
 ## Collect real public-source constructed pattern measurements
 
 The source-pattern collector combines **metadata-only public clip discovery**
