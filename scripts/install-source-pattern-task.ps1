@@ -13,10 +13,26 @@ $runner = Join-Path $PSScriptRoot 'run-source-pattern-worker.ps1'
 if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
     throw 'Source-pattern task runner is missing'
 }
-# Resolve before registration: the task keeps working even when launched outside
-# the repo. uv is required only when the scheduled action actually starts.
+# Refuse to register a task that cannot currently find essential local tools.
+# Resolve uv to an absolute executable because scheduled user sessions may
+# have a different PATH than the interactive installing PowerShell.
+if ([string]::IsNullOrWhiteSpace($TaskName)) {
+    throw 'Scheduled task name must not be blank'
+}
+$uv = Get-Command 'uv' -CommandType Application -ErrorAction Stop
+foreach ($binary in @('ffmpeg', 'ffprobe')) {
+    $null = Get-Command $binary -CommandType Application -ErrorAction Stop
+}
+$uvPath = $uv.Source
+if (-not [System.IO.Path]::IsPathRooted($uvPath) -or
+        -not (Test-Path -LiteralPath $uvPath -PathType Leaf) -or
+        $uvPath.Contains('"')) {
+    throw 'Invalid executable path for scheduled uv'
+}
+# Resolve once; Windows Task Scheduler only stores an action and does NOT
+# inherit the launching PowerShell's functions or command aliases.
 $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$taskArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"' -f $runner
+$taskArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -UvExecutable "{1}"' -f $runner, $uvPath
 $action = New-ScheduledTaskAction -Execute $psExe -Argument $taskArgs -WorkingDirectory $repoRoot
 $startAt = [datetime]::ParseExact($At, 'HH:mm', [Globalization.CultureInfo]::InvariantCulture)
 $trigger = New-ScheduledTaskTrigger -Daily -At $startAt

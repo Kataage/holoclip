@@ -3,7 +3,8 @@ param(
     [ValidateRange(1, 20)]
     [int]$Cycles = 3,
     [ValidateRange(1, 2)]
-    [int]$MaxClips = 2
+    [int]$MaxClips = 2,
+    [string]$UvExecutable = ''
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
@@ -22,9 +23,18 @@ $code = 1
 try {
     # Identify predictable failures BEFORE running yt-dlp or the collector.
     # This launcher audit is separate from the Python collector's measured audit.
-    $uv = Get-Command 'uv' -ErrorAction Stop
+    if ($UvExecutable) {
+        if (-not [System.IO.Path]::IsPathRooted($UvExecutable) -or
+                -not (Test-Path -LiteralPath $UvExecutable -PathType Leaf)) {
+            throw 'Invalid pinned uv executable'
+        }
+        $uvPath = (Resolve-Path -LiteralPath $UvExecutable).Path
+    } else {
+        $uv = Get-Command 'uv' -CommandType Application -ErrorAction Stop
+        $uvPath = $uv.Source
+    }
     foreach ($binary in @('ffmpeg', 'ffprobe')) {
-        $null = Get-Command $binary -ErrorAction Stop
+        $null = Get-Command $binary -CommandType Application -ErrorAction Stop
     }
     $ranCollector = $true
     $status = 'FAILED_COLLECTOR_PROCESS'
@@ -33,7 +43,7 @@ try {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & $uv.Source run --extra media holoclip examples-collect-source-patterns --cycles $Cycles --max-clips $MaxClips *>> $logPath
+        & $uvPath run --extra media holoclip examples-collect-source-patterns --cycles $Cycles --max-clips $MaxClips *>> $logPath
         if ($null -ne $LASTEXITCODE) { $code = [int]$LASTEXITCODE }
     }
     finally {

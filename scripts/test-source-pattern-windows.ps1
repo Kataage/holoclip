@@ -16,10 +16,15 @@ function Create-Mock([string]$name, [string]$body) {
     [System.IO.File]::WriteAllText($path, ("@echo off`r`n" + $body + "`r`n"),
         ([System.Text.Encoding]::ASCII))
 }
-function Run-Launcher([string]$expectedStatus, [int]$expectedCode, [bool]$expectedInvocation) {
+function Run-Launcher([string]$expectedStatus, [int]$expectedCode, [bool]$expectedInvocation,
+                      [string]$UvOverride = '') {
     $marker = Join-Path $temporary 'was-invoked.txt'
     Remove-Item -LiteralPath $marker -ErrorAction SilentlyContinue
-    & $psExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $fakeScripts 'run-source-pattern-worker.ps1') -Cycles 1 -MaxClips 1
+    $args = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+        '-File', (Join-Path $fakeScripts 'run-source-pattern-worker.ps1'),
+        '-Cycles', '1', '-MaxClips', '1')
+    if ($UvOverride) { $args += @('-UvExecutable', $UvOverride) }
+    & $psExe @args
     $actualCode = [int]$LASTEXITCODE
     $auditFile = Join-Path $temporary 'data\examples\source-pattern-launcher-last-run.json'
     if ($actualCode -ne $expectedCode) {
@@ -80,8 +85,19 @@ try {
     Create-Mock 'uv' "echo invoked >> `"%HOLOCLIP_FAKE_UV_MARKER%`"`r`necho fake nonfatal stderr 1>&2`r`nexit /b 0"
     $third = Run-Launcher 'COMPLETED_COLLECTOR_PROCESS' 0 $true
     Assert-Condition ($third.error_class -eq $null) 'Success must not contain an exception'
+    # A task-installed absolute uv path must work even when uv is NOT in PATH
+    # and its parent directory contains spaces.
+    $pinnedDir = Join-Path $temporary 'Pinned Executables With Spaces'
+    New-Item -ItemType Directory -Force -Path $pinnedDir | Out-Null
+    $pinnedUv = Join-Path $pinnedDir 'uv.cmd'
+    Copy-Item -LiteralPath (Join-Path $fakeBin 'uv.cmd') -Destination $pinnedUv
+    Remove-Item -LiteralPath (Join-Path $fakeBin 'uv.cmd') -Force
+    $fourth = Run-Launcher 'COMPLETED_COLLECTOR_PROCESS' 0 $true $pinnedUv
+    Assert-Condition ($fourth.error_class -eq $null) 'Pinned uv path must start'
+    $fifth = Run-Launcher 'FAILED_PRELAUNCH' 1 $false (Join-Path $pinnedDir 'missing-uv.exe')
+    Assert-Condition ($fifth.error_class -ne $null) 'Missing pinned uv must fail closed'
     # Runner only: no user task should be registered.
-    Write-Host 'WindowsPowerShell 5.1 launcher: 3 sandboxed scenarios passed (no video download)'
+    Write-Host 'WindowsPowerShell 5.1 launcher: 5 sandboxed scenarios passed (no video download)'
 }
 finally {
     $env:PATH = $originalPath
