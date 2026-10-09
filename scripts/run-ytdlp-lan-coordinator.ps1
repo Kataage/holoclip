@@ -25,7 +25,7 @@ $key = [Text.Encoding]::UTF8.GetBytes(($repoRoot + '|' + $BindIp + '|' + $Port))
 $hash = [Security.Cryptography.SHA256]::Create()
 try { $id = ([BitConverter]::ToString($hash.ComputeHash($key))).Replace('-', '').Substring(0, 24) }
 finally { $hash.Dispose() }
-$mutex = New-Object System.Threading.Mutex($false, ('Local\HoloclipYtdlpLan-' + $id))
+$mutex = [System.Threading.Mutex]::new($false, ('Local\HoloclipYtdlpLan-' + $id))
 $owned = $false
 try {
     try { $owned = $mutex.WaitOne(0) }
