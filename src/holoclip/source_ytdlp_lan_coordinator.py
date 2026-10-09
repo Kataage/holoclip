@@ -28,6 +28,11 @@ from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
 LAN_COORDINATOR_VERSION = "holoclip-lan-ytdlp-v1"
 DEFAULT_COORDINATOR_STATE = Path("data/runtime/yt-dlp-lan-coordinator.sqlite3")
 DEFAULT_SECRET_PATH = Path("data/runtime/yt-dlp-lan-secret.txt")
+DEFAULT_CLIENT_CONFIG = Path("data/runtime/yt-dlp-lan-client.json")
+CLIENT_CONFIG_VERSION = "holoclip-lan-client-v1"
+_CLIENT_REQUIRED_MARKER = "holoclip-lan-client-required-v1\n"
+_ENV_CONFIG = "HOLOCLIP_YTDLP_COORDINATOR_CONFIG"
+_MAX_CLIENT_CONFIG_BYTES = 4096
 _ALLOWED_REASONS = {"HTTP_RATE_LIMIT", "YOUTUBE_BOT_OR_INTERACTIVE_CHALLENGE"}
 _ENV_URL = "HOLOCLIP_YTDLP_COORDINATOR_URL"
 _ENV_SECRET = "HOLOCLIP_YTDLP_COORDINATOR_SECRET_FILE"
@@ -91,6 +96,113 @@ def create_coordinator_secret(path: Path) -> None:
         raise
 
 
+def _reject_linked_path(path: Path) -> None:
+    # Check all existing parents, not just the immediate parent. Do not
+    # accidentally follow a redirected credential/config directory.
+    for component in (path, *path.parents):
+        if component.is_symlink():
+            raise ValueError("Unsafe LAN client configuration path")
+
+
+def _client_required_marker(path: Path) -> Path:
+    return path.with_name(path.name + ".required")
+
+
+def _validate_required_marker(path: Path) -> None:
+    marker = _client_required_marker(path)
+    _reject_linked_path(marker)
+    if marker.exists() and marker.read_text(encoding="ascii") != _CLIENT_REQUIRED_MARKER:
+        raise ValueError("Corrupt LAN client required marker")
+
+
+def _client_config_path() -> tuple[Path, bool]:
+    configured = os.environ.get(_ENV_CONFIG, "").strip()
+    if configured:
+        path = Path(configured)
+        if not path.is_absolute():
+            raise ValueError("LAN client configuration override must be absolute")
+        return path, True
+    return DEFAULT_CLIENT_CONFIG, False
+
+
+def _read_client_config(path: Path) -> tuple[str, Path]:
+    _reject_linked_path(path)
+    _validate_required_marker(path)
+    if not path.is_file() or not 1 <= path.stat().st_size <= _MAX_CLIENT_CONFIG_BYTES:
+        raise ValueError("Missing or oversized LAN client configuration")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if (not isinstance(data, dict) or
+            set(data) != {"version", "coordinator_url", "secret_file"} or
+            data.get("version") != CLIENT_CONFIG_VERSION):
+        raise ValueError("Unsupported LAN client configuration format")
+    url = data["coordinator_url"]
+    secret = data["secret_file"]
+    if (not isinstance(url, str) or not isinstance(secret, str) or
+            not secret or not Path(secret).is_absolute()):
+        raise ValueError("Invalid LAN client configuration values")
+    _url(url)
+    _secret(Path(secret))
+    return url, Path(secret)
+
+
+def configure_lan_client(
+    *, url: str, secret_file: Path, config_path: Path = DEFAULT_CLIENT_CONFIG,
+    replace: bool = False,
+) -> str:
+    """Store a local non-secret client profile; never copy credential bytes."""
+    import tempfile
+
+    endpoint = _url(url)
+    # Store a canonical URL; the request path is added by the client.
+    canonical_url = endpoint.removesuffix("/request")
+    secret_path = secret_file.absolute()
+    target = config_path.absolute()
+    _reject_linked_path(secret_path)
+    _reject_linked_path(target)
+    if target == secret_path:
+        raise ValueError("Client configuration cannot replace its credential")
+    _secret(secret_path)
+    payload = {
+        "version": CLIENT_CONFIG_VERSION,
+        "coordinator_url": canonical_url,
+        "secret_file": str(secret_path),
+    }
+    raw = (json.dumps(payload, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    if len(raw) > _MAX_CLIENT_CONFIG_BYTES:
+        raise ValueError("LAN client configuration is too large")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _reject_linked_path(target)
+    _validate_required_marker(target)
+    marker = _client_required_marker(target)
+    if not marker.exists():
+        # Persist the opt-in latch *before* the profile. A later deleted
+        # profile can never silently resume local-only yt-dlp pacing.
+        with os.fdopen(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w",
+                       encoding="ascii") as handle:
+            handle.write(_CLIENT_REQUIRED_MARKER)
+    if target.exists():
+        existing = target.read_bytes()
+        if existing == raw:
+            return "ALREADY_CONFIGURED"
+        if not replace:
+            raise ValueError("LAN client configuration exists; explicit replace required")
+    if not replace:
+        # O_EXCL guarantees another writer cannot silently replace a profile.
+        with os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as handle:
+            handle.write(raw)
+    else:
+        # Atomic replacement avoids ever serving a partially rewritten profile.
+        descriptor, temporary = tempfile.mkstemp(prefix=".lan-client-", dir=target.parent)
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(raw)
+            _reject_linked_path(target)
+            os.replace(temporary, target)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+    return "CONFIGURED"
+
+
 def _signed(secret: bytes, nonce: str, timestamp: str, body: bytes) -> str:
     message = nonce.encode("ascii") + b":" + timestamp.encode("ascii") + b":" + body
     return hmac.new(secret, message, hashlib.sha256).hexdigest()
@@ -111,15 +223,21 @@ class LanCoordinatorClient:
     def from_env(cls) -> LanCoordinatorClient | None:
         url = os.environ.get(_ENV_URL, "").strip()
         secret_path = os.environ.get(_ENV_SECRET, "").strip()
-        if not url and not secret_path:
-            return None
-        # Partial or insecure configuration NEVER silently uses a local-only
-        # gate on a purportedly multi-PC setup.
         try:
-            if not url or not secret_path:
-                raise ValueError("Missing LAN coordinator environment setting")
-            return cls(url, secret_file=Path(secret_path))
-        except (ValueError, OSError, UnicodeError) as exc:
+            if url or secret_path:
+                # Any partial legacy environment override fails closed.
+                # It can never silently bypass an installed LAN profile.
+                if not url or not secret_path:
+                    raise ValueError("Partial LAN coordinator environment")
+                return cls(url, secret_file=Path(secret_path))
+            config_path, explicitly_required = _client_config_path()
+            marker = _client_required_marker(config_path)
+            if (explicitly_required or config_path.exists() or config_path.is_symlink()
+                    or marker.exists() or marker.is_symlink()):
+                saved_url, saved_secret = _read_client_config(config_path)
+                return cls(saved_url, secret_file=saved_secret)
+            return None
+        except (ValueError, OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise LocalYtDlpDeferred(
                 "LOCAL_YTDLP_COORDINATOR_CONFIGURATION_INVALID"
             ) from exc

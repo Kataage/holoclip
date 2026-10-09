@@ -30,8 +30,8 @@ from holoclip.source_pattern_local_health import resolve_local_diagnostic_paths
 from holoclip.source_pattern_local_history import read_launcher_history
 from holoclip.source_ytdlp_pacing import DEFAULT_PACING_PATH, inspect_local_ytdlp_pacing
 from holoclip.source_ytdlp_lan_coordinator import (
-    DEFAULT_COORDINATOR_STATE, DEFAULT_SECRET_PATH,
-    LanCoordinatorClient, create_coordinator_secret,
+    DEFAULT_COORDINATOR_STATE, DEFAULT_SECRET_PATH, DEFAULT_CLIENT_CONFIG,
+    LanCoordinatorClient, configure_lan_client, create_coordinator_secret,
     serve_lan_ytdlp_coordinator,
 )
 from holoclip.holdout_reservations import export_holdout_inventory
@@ -1133,6 +1133,36 @@ def examples_ytdlp_lan_init(
     }))
 
 
+@app.command("examples-ytdlp-lan-configure")
+def examples_ytdlp_lan_configure(
+    url: str = typer.Option(..., "--url",
+        help="PC-A private IPv4 URL including port, never a public endpoint."),
+    secret_file: Path = typer.Option(..., "--secret-file",
+        help="Existing local copy of the shared LAN credential; never pass secret bytes."),
+    config_file: Path = typer.Option(DEFAULT_CLIENT_CONFIG, "--config-file",
+        help="Local-only JSON configuration path (default ignored by Git)."),
+    replace: bool = typer.Option(False, "--replace",
+        help="Explicitly replace a different saved LAN client profile."),
+) -> None:
+    """Create private local connection settings without calling YouTube."""
+    try:
+        status = configure_lan_client(
+            url=url, secret_file=secret_file,
+            config_path=config_file, replace=replace,
+        )
+    except (OSError, ValueError, UnicodeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_LAN_CLIENT_CONFIGURATION_REJECTED",
+            "reason": type(exc).__name__, "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps({
+        "status": status,
+        "credential_bytes_copied": False, "remote_authentication_verified": False,
+        "ready": False,
+    }))
+
+
 @app.command("examples-ytdlp-lan-serve")
 def examples_ytdlp_lan_serve(
     bind_ip: str = typer.Option("127.0.0.1", "--bind-ip"),
@@ -1150,6 +1180,7 @@ def examples_ytdlp_lan_serve(
 @app.command("examples-ytdlp-lan-status")
 def examples_ytdlp_lan_status() -> None:
     """Check configured trusted coordinator, never touch YouTube or a video."""
+    _load_env_file()
     from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
 
     try:

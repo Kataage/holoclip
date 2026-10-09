@@ -61,6 +61,31 @@ Human editor/original match evidence remains absent,
 `ready=false`. Real two-host networking and Windows Task
 Scheduler environment propagation remain deployment checks.
 
+## Increment: local per-PC coordinator client onboarding
+
+`examples-ytdlp-lan-configure` saves a Git-ignored, non-secret local JSON
+profile pointing to an existing credential file and private IP coordinator.
+Secret bytes are never transferred, stored in JSON or displayed. The profile
+is versioned and bounded in size, with strict type/address/file validation.
+Saving a different profile requires explicit replacement; malformed,
+symlinked, missing or corrupt configured values fail closed before any
+yt-dlp subprocess. Complete legacy env settings take precedence, but
+partial env settings block instead of silently falling back to JSON.
+
+An adjacent non-secret required marker is written before the local JSON
+profile. When the profile disappears but its marker remains, clients fail
+closed. An explicit absolute `HOLOCLIP_YTDLP_COORDINATOR_CONFIG` path also
+blocks missing/invalid profiles. Removing both default profile and marker
+opts out and must never happen on PCs expected to share pacing. The old
+unconfigured local-only mode remains and is not shared-IP safe.
+
+`examples-ytdlp-lan-status` loads the local `.env` like existing source
+commands. Its signed status establishes broker authentication only, not
+that both Windows PCs were actually enrolled or that remote footage was
+acquired. CI exercises only synthetic files and loopback-only services;
+it never touches YouTube or actual Windows Task Scheduler registration.
+No editor gold, source truth or production qualification is inferred.
+`ready=false` remains mandatory.
 ## Increment: opt-in Windows LAN coordinator supervision
 
 On PC-A only, `scripts/install-ytdlp-lan-task.ps1` registers an
