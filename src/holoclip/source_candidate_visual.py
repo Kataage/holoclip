@@ -324,12 +324,30 @@ def verify_pending_source_visual(
     def persist():
         _atomic_json(state_path, state.model_dump(mode="json"))
 
-    for key, item in sorted(state.items.items()):
-        if attempted >= max_clips:
-            break
-        if item.status != "source_visual_pending":
-            continue
+    # Advance the pending-clip queue across separate invocations. The old
+    # sorted-first selection could repeatedly spend every cycle on one clip,
+    # starving other original streams of measured video controls.
+    cursor = state.cursors.get("source_visual_pending_round_robin", 0)
+    if type(cursor) is not int or cursor < 0:
+        raise ValueError("Invalid persistent pending-source visual cursor")
+    pending_keys = sorted(
+        key for key, item in state.items.items()
+        if item.status == "source_visual_pending"
+    )
+    rotated = (
+        pending_keys[cursor % len(pending_keys):]
+        + pending_keys[:cursor % len(pending_keys)]
+        if pending_keys else []
+    )
+    attempted_keys = []
+    for key in rotated[:max_clips]:
+        item = state.items[key]
         attempted += 1
+        attempted_keys.append(key)
+        # Checkpoint *before* network acquisition, so a recurring bad clip
+        # cannot starve the queue when a process fails mid-cycle.
+        state.cursors["source_visual_pending_round_robin"] = cursor + attempted
+        persist()
         report = {
             "version": VERSION,
             "status": "UNKNOWN_NO_VERIFIED_VISUAL_CORROBORATION",
@@ -725,4 +743,5 @@ def verify_pending_source_visual(
             report["error_class"] = type(exc).__name__
             finish("UNKNOWN_BOUNDED_FINISHED_PROBE_FAILURE")
     return {"version": VERSION, "attempted": attempted, "counts": counts,
+            "attempted_clip_keys": attempted_keys,
             "state_path": str(state_path), **_NO_GOLD}

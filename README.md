@@ -30,6 +30,26 @@ Production AI access uses capability-based, quality-qualified routing with a per
 quota ledger and bounded stage timeouts. Missing qualified/free routes stop processing
 with preserved artifacts. See [production provider setup](docs/production-provider-runtime.md).
 
+## Collect real public-source constructed pattern measurements
+
+The source-pattern collector combines **metadata-only public clip discovery**
+with rotating, bounded yt-dlp video checks. It reuses the acquired sections,
+persists the existing SHA-bound five-pattern histories, and returns a
+source-diverse report with explicit unknowns. No cloud model, GPU, URLs, gold
+labels or paid service are required:
+
+```powershell
+uv run --extra media holoclip examples-collect-source-patterns --cycles 3
+uv run --extra media holoclip examples-source-controls-report
+```
+
+Use `--no-discover` to work from an existing pending shortlist without additional
+searches. Bounded network media retrieval still requires yt-dlp/FFmpeg and access
+to public ended videos. The command is an **invoked** bounded batch, not a
+persistent background daemon or proof that live media has already been collected.
+Output may contain zero measured cases; unsupported or failed acquisitions remain
+unknown, never measured negatives or human-editor gold. `ready=false` holds.
+
 ## Unattended data and evaluation policy
 
 For measured clip-to-original correspondence (no cloud AI inference),
