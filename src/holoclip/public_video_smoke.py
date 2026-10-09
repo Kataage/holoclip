@@ -218,10 +218,18 @@ def main() -> int:
     root = Path.cwd()
     data = root / "data" / "public-video-smoke"
     data.mkdir(parents=True, exist_ok=True)
-    code, timed_out = _invoke_bounded_collector(root, data / "collector.log")
+    diagnostic_error = None
+    try:
+        code, timed_out = _invoke_bounded_collector(
+            root, data / "collector.log",
+        )
+    except (OSError, RuntimeError) as exc:
+        # uv/tool launch failures must still yield a machine-readable,
+        # non-green artifact rather than disappearing before upload.
+        code, timed_out = 127, False
+        diagnostic_error = type(exc).__name__
     audit = None
     audit_path = data / "collector.json"
-    diagnostic_error = None
     if audit_path.is_file():
         try:
             audit = json.loads(audit_path.read_text(encoding="utf-8"))
