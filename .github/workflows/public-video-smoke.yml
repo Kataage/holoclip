@@ -1,0 +1,64 @@
+name: bounded-public-video-smoke
+
+# One push-triggered attempt when this smoke is introduced/changed.
+# No recurring hosted-runner costs and no user-supplied YouTube URLs.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/public-video-smoke.yml
+      - src/holoclip/public_video_smoke.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: holoclip-bounded-public-video-smoke
+  cancel-in-progress: false
+
+jobs:
+  unreviewed-real-source-sample:
+    # Private repo, ephemeral Ubuntu only; never execute on forked PRs.
+    if: github.repository == 'Kataage/holoclip'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install the free CPU-only media toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
+          fi
+          python -m pip install uv
+          python -m pip install -e ".[media]"
+          uv --version
+          node --version
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Attempt one public Hololive-source sample within a strict deadline
+        shell: bash
+        # Nonzero when video access is blocked or the sample lacks byte evidence.
+        # This is an evidence result, not a fixture-backed green smoke.
+        run: python -m holoclip.public_video_smoke
+      - name: Preserve diagnostic JSON only (never upload copyrighted media)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unreviewed-public-video-smoke-diagnostics
+          path: |
+            data/public-video-smoke/summary.json
+            data/public-video-smoke/collector.json
+            data/public-video-smoke/doctor.json
+          if-no-files-found: warn
+          retention-days: 7
