@@ -164,6 +164,32 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: single-PC-command combined LAN onboarding observations
+
+After operator-controlled, verified SSH host-key pinning and key-only
+access have been provisioned, PC-A can execute
+`examples-ytdlp-lan-onboard-check`. It runs the existing PC-A
+read-only setup doctor, calls PC-B's new
+`examples-ytdlp-lan-onboard-node` over a pinned SSH transport,
+and compares purpose-signed coordinator receipts using an existing
+shared credential *without transferring its bytes*. A remote node can
+report partial configuration; the comparison is considered inconclusive
+until it has valid receipts.
+
+Remote report schemas, diagnostic field names, codes, roles, boolean
+safety claims and HMAC signatures are strictly validated; arbitrary
+remote action strings are discarded and remediation wording is always
+locally defined. SSH failure, oversized/bad JSON, a tampered receipt,
+replayed role or incongruent state fails closed. Even when all observed
+items match, this is *not* proof of verified physical machines,
+operational routing, effective firewall security, media access or
+editorial acceptance: `ready=false` and
+`two_host_verified=false` remain obligatory.
+
+This command never provisions infrastructure, edits credentials or
+ACLs, changes firewall rules, reserves media leases, or contacts
+YouTube. CI uses synthetic/loopback data and mocked SSH only.
+
 ## Increment: one-command pinned SSH LAN observation collection
 
 `examples-ytdlp-lan-pair-collect` uses the installed client
