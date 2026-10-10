@@ -20,12 +20,12 @@ try {
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $template = @'
 $ErrorActionPreference = 'Stop'
-$script:scenario = '__CASE__'
+$global:scenario = '__CASE__'
 function Get-ScheduledTask {
     [CmdletBinding()]
     param()
-    if ($script:scenario -eq 'absent') { return }
-    if ($script:scenario -eq 'unavailable') { throw 'permission denied with secret' }
+    if ($global:scenario -eq 'absent') { return }
+    if ($global:scenario -eq 'unavailable') { throw 'permission denied with secret' }
     $repoRoot = (Resolve-Path -LiteralPath (Join-Path '__SCRIPTS__' '..')).Path
     $runner = Join-Path '__SCRIPTS__' 'run-ytdlp-lan-monitor.ps1'
     $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -37,9 +37,9 @@ function Get-ScheduledTask {
         $runner,$uv,'192.168.1.21','pc_b_account','C:\Work\hosts',
         'D:\AI\holoclip',22,8878,'C:\Work\evidence.sqlite3','C:\Work\alert.json'
     )
-    if ($script:scenario -eq 'mismatch') { $expected += ' --include-pacing-trial' }
+    if ($global:scenario -eq 'mismatch') { $expected += ' --include-pacing-trial' }
     $state = 'Ready'
-    if ($script:scenario -eq 'disabled') { $state = 'Disabled' }
+    if ($global:scenario -eq 'disabled') { $state = 'Disabled' }
     [pscustomobject]@{
         TaskName='Holoclip yt-dlp LAN Monitor';State=$state
         Actions=@([pscustomobject]@{
@@ -53,11 +53,11 @@ function Get-ScheduledTask {
 function Get-ScheduledTaskInfo {
     [CmdletBinding()]
     param([string]$TaskName)
-    if ($script:scenario -eq 'unavailable-info') { throw 'Task read denied' }
+    if ($global:scenario -eq 'unavailable-info') { throw 'Task read denied' }
     $last = (Get-Date).AddMinutes(-1)
-    if ($script:scenario -eq 'never') { $last = [datetime]::MinValue }
+    if ($global:scenario -eq 'never') { $last = [datetime]::MinValue }
     $code = 0
-    if ($script:scenario -eq 'failed') { $code = 6 }
+    if ($global:scenario -eq 'failed') { $code = 6 }
     [pscustomobject]@{LastRunTime=$last;LastTaskResult=$code}
 }
 & '__PROBE__' -TaskName 'Holoclip yt-dlp LAN Monitor' -HostIp '192.168.1.21' -SshUser 'pc_b_account' -KnownHosts 'C:\Work\hosts' -RemoteRepo 'D:\AI\holoclip' -SshPort 22 -CoordinatorPort 8878 -IntervalMinutes 60 -EvidenceDb 'C:\Work\evidence.sqlite3' -AlertFile 'C:\Work\alert.json'
