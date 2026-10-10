@@ -1350,7 +1350,8 @@ def render_local_source_acquire_command(
             max_filesize_mb=max_filesize_mb, execute=execute,
             approve_local_preview=approve_local_preview,
         )
-    except (ValueError, OSError, UnicodeError, TypeError) as exc:
+    except (ValueError, OSError, UnicodeError, TypeError,
+            YtDlpError, LocalYtDlpDeferred) as exc:
         typer.echo(json.dumps({
             "status": "LOCAL_RENDER_SOURCE_ACQUISITION_BLOCKED",
             "reason": (str(exc) if str(exc).startswith("LOCAL_RENDER_")
