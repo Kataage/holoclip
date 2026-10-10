@@ -144,6 +144,10 @@ filter and a recognized local font are required. If missing, if SRT is
 untrusted, or if the second encode fails, the original technical MP4/SRT are
 still valid and the optional burn-in is recorded as unavailable/failed.
 No silent font fallback to unreadable Japanese is considered a quality pass.
+The second encode has a 10-minute ceiling so that a full-length automatic
+180-second preview plus burn-in stays inside the existing bounded Windows
+scheduled-task budget. Slow hosts may need a later separate manual retry;
+there is no unbounded or silent retry.
 
 `render_burnin_evidence` saves the burn-in status, output and SRT hashes
 transactionally with the original queue's technical QA row. The read-only
