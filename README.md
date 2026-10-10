@@ -737,6 +737,37 @@ and task registration still need explicit owner action. Use the existing
 diagnostics and further guidance. A successful local bootstrap alone
 does not prove shared-IP pacing or production qualification.
 
+#### Read-only two-PC deployment diagnosis with ordered next actions
+
+Run on PC-A after independently pinning PC-B's SSH host key and provisioning
+public-key-only SSH access. This command never applies configuration changes:
+
+    uv run holoclip examples-ytdlp-lan-deployment-diagnose --host 192.168.1.21 --user pc_b_account --known-hosts "D:\AI\holoclip\data\runtime\pc-b-known-hosts" --remote-repo "D:\AI\holoclip"
+
+Replace example host settings. Optional flags: --ssh-port, --coordinator-port
+and --task-name. The diagnostic reuses the strict pre-pinned SSH onboarding
+inspection, signed coordinator receipts and fixed-code local/remote results.
+It orders observed deficits by deployment dependency: PC-A credential and
+ACL, exact-peer firewall, task/listener and signed status; PC-B credential,
+ACL and signed status; then paired observation. Each plan entry contains
+one static recommended CLI command name, never a credential or shell
+fragment. Nothing is automatically repaired.
+
+If PC-B SSH is unavailable, its report malformed or its signature untrusted,
+the command still returns a fresh, independently sanitized local PC-A
+inspection where possible. It emits pc_b=null and a fixed failure code;
+it does not guess PC-B state or use remote-supplied actions. A blocked
+or incomplete diagnosis returns a nonzero exit code.
+
+Even when both sets of codes and signed pair reports match, this is only
+consistent setup observation. The tool does not prove actual hardware
+identity, out-of-band SSH fingerprint authenticity, effective firewall
+packet filtering, simultaneous two-PC pacing or editorial/media quality.
+The response separately lists required real-host/manual qualification
+gates; ready=false, two_host_verified=false and
+firewall_effective_policy_verified=false always. CI uses mocked SSH
+and never contacts the owner's PCs or YouTube.
+
 #### One-command read-only PC-A/PC-B setup inspection
 
 The paired setup doctor combines both PCs' local prerequisites with the
