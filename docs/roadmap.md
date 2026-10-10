@@ -120,6 +120,8 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Preview-only missing full-video inventory; opt-in one-at-a-time paced source acquisition with metadata/policy checks and file/duration budgets
 - [x] Durable Windows-local queued missing-source acquisition, serialized one-at-a-time worker, Task Scheduler opt-in, pacing delay and fail-closed manual crash reconciliation
 - [x] Once-authorized automatic candidate selection -> durable source queue enrollment from analyze/discover, bounded confidence/warning/stream eligibility filters
+- [x] Detect COMPLETED acquisition queue and persist a separately claimed local FFmpeg MP4 render with policy/AV checks and technical QA evidence; opt-in scheduled worker processes one render in a later idle tick
+- [ ] Complete creative editing, captions, sound processing, human-quality evaluation, output repair and publication approval without promoting unqualified previews
 - [ ] Integrate completion of source acquisition with local rendering, technical QA and further editorial review without repeated user preparation; never auto-publish unqualified clips
 - [ ] Automatically enroll queue jobs from candidate selection and connect post-acquisition rendering/QA without per-video setup or unsupported failure auto-retries
 - [x] Read-only automatic canonical source ID to full editing_video cache mapping, with identity and ambiguity fail-closed checks

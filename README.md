@@ -1,5 +1,7 @@
 # holoclip
 
+**Post-download local preview automation:** after the source queue reaches COMPLETE, the scheduled worker now creates at most one verified FFmpeg MP4 preview per subsequent tick and persists technical QA results. Inspect with `render-ready-preview`, or run explicitly with `render-ready-preview --execute`. No publishing or production-ready status is implied. See [renderer QA contract](docs/local-render-plan.md).
+
 **Candidate-to-queue bridge:** `render-candidate-autoqueue-setup --apply --approve-local-preview` enables one-time local authorization so subsequent `analyze`/`discover` runs can enqueue eligible measured candidate timelines automatically. It never downloads media during analysis. [Details](docs/local-render-plan.md).
 
 **Durable acquisition queue:** use `render-source-queue-enqueue` to preview/approve a saved timeline once, `render-source-queue-status` for offline state, and `render-source-queue-task-prepare --apply` to install a guarded current-user Windows periodic worker. Crashed/blocked jobs are not auto-retried. See [render queue guide](docs/local-render-plan.md).

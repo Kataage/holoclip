@@ -121,6 +121,63 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Automatic technical MP4 after complete-source acquisition (PR #208)
+
+The existing Windows periodic source queue worker now has a local-only
+second stage. It attempts at most one missing video download per scheduled
+tick. **Only when the source queue is fully complete and no download
+was attempted in this tick** does the same worker invoke an offline
+one-clip MP4 renderer on a later tick. This protects the scheduled
+task's resource/time budget; it neither contacts YouTube nor makes
+an upload.
+
+Inspect completed-source preview eligibility without starting FFmpeg:
+
+    uv run holoclip render-ready-preview
+
+To explicitly process one locally ready timeline outside Task Scheduler:
+
+    uv run holoclip render-ready-preview --execute
+
+Existing --queue and --preview-root options allow configurable SQLite
+state and preview output directories. The default output root is
+data/render-previews; outputs are named after the stable acquisition
+job ID, creating a local MP4 only if the filename does not exist.
+
+Every run rechecks the source queue COMPLETE status, the enrolled
+measured ClipTimeline, original archive identities and full-duration
+ffprobe AV measurements, and the cached yt-dlp receipt plus local
+RENDER source/range policy rules. A source without trustworthy
+title/description metadata, a no-clipping marker, or a policy
+BLOCK/REVIEW must not render. Source hashes and decode time ranges
+are again validated by the existing local RenderPlan.
+
+Render progress is stored durably in a separate render_jobs table
+within the original SQLite source queue. State flow:
+
+    pending complete source -> RENDERING -> QA_PASSED
+                                      -> PAUSED on validation/QA error
+
+Claims are serialised with SQLite BEGIN IMMEDIATE. A crashed
+RENDERING job or a PAUSED job blocks additional auto renders.
+Neither will be retried or overwritten automatically. An interrupted
+render can leave a new untracked output: investigate manually;
+do not treat file existence as proof of success.
+
+A successful QA_PASSED row records plan ID, MP4 path, output SHA-256
+and measured duration. It means only ffprobe A/V tracks, output
+duration and basic source/plan checks passed, **not** verified
+subtitles, transitions, sync accuracy, creative quality, policy
+clearance or publishing. The current scheduled integration permits
+only clips up to **180 seconds** automatically, to keep rendering
+separate from a long download within a bounded 55-minute scheduler
+task. Larger clips must go through explicitly controlled offline
+`render-local-preview --execute` with adequate resource budgeting.
+
+No changes promote production readiness. `ready=false` and
+`human_editorial_qa_completed=false` remain mandatory, and
+publishing always requires separate policy/quality approval.
+
 ## Automatic source-queue enrollment after candidate analysis (PR #207)
 
 After creating the PR #206 durable queue, the next manual step—the
