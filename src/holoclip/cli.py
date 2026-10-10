@@ -1404,7 +1404,6 @@ def examples_ytdlp_lan_pc_b_prepare(
     typer.echo(json.dumps(report, sort_keys=True))
     if report["status"] not in {
         "LAN_PC_B_PREVIEW_ELIGIBLE", "LAN_PC_B_PREPARED_AUTHENTICATED",
-        "LAN_PC_B_PREPARED_STATUS_UNVERIFIED",
     }:
         raise typer.Exit(6)
 
