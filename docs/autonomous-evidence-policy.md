@@ -164,6 +164,27 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: guarded one-command PC-A logon-task registration
+
+The new `examples-ytdlp-lan-task-prepare` is a read-only preview by
+default, and registers a **non-elevated current-user logon task** only
+after explicit `--apply`. It enforces distinct private non-loopback
+PC-A/PC-B IPv4 values, a valid existing credential with separately
+verified Windows NTFS ACL, exact-PC-B-only inbound firewall-rule
+**observation**, and independently enumerated absence of any matching
+Task Scheduler task name. Unavailable inspection and broad/missing
+allow rules fail closed.
+
+The underlying installer no longer uses `-Force`: it will not
+replace an existing task, including the case where another process
+registers one after the last preflight. The command neither creates
+firewall rules nor starts tasks, installs sshd, transfers keys or
+contacts media websites. Logon trigger and limited run level are
+preserved. It never declares physical two-PC identity, Windows
+effective firewall policy or editorial/source-media readiness.
+`ready=false` and `two_host_verified=false` are mandatory.
+Only offline mock/Windows-sandbox checks occur in GitHub Actions.
+
 ## Increment: preview-first, safe local LAN bootstrap
 
 `examples-ytdlp-lan-bootstrap-local` is a small, Windows-only,
