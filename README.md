@@ -476,6 +476,33 @@ spending, make the repository public, or reroute CI to a user-PC runner
 merely to bypass the gate without the owner's explicit approval.
 The workflow already cancels superseded PR runs to reduce future waste.
 
+#### Strict Windows Firewall scope review for LAN coordinator
+
+The `examples-ytdlp-lan-setup-doctor`,
+`examples-ytdlp-lan-onboard-check`, and
+`examples-ytdlp-lan-task-prepare` commands share the Windows
+ActiveStore firewall rule inspector. It now **rejects certification**
+if an additional enabled inbound allow rule covers the coordinator
+TCP port with a scope broader than PC-B's exact literal IPv4, even
+when a separate correct rule also exists. CIDR/ranges,
+`LocalSubnet`, `Any`, IPv6 addresses, other destination
+addresses, protocol `Any`, wildcard/multiple TCP ports and
+unknown rule selectors are all treated conservatively. Known
+unrelated TCP ports or UDP-only rules do not themselves block an
+exact rule. Missing or unrecognized fields fail closed with
+`INCOMPLETE_RULE_INSPECTION`; broad scopes report
+`BROAD_INBOUND_ALLOW_RULE_OBSERVED`.
+
+This is intentionally strict; a different application's matching
+allow rule can produce a **false alarm**, but must never silently be
+accepted as PC-B-only. To resolve a warning, review the active
+Windows Firewall inbound rules for the exact coordinator TCP port.
+Do not add blanket allow rules or disable the firewall. No Holoclip
+inspector command edits the firewall; Windows Firewall policy
+effectiveness is still **unverified**, and production stays
+`ready=false` pending real two-PC testing. GitHub CI exercises
+synthetic PowerShell firewall rules only, without opening ports.
+
 #### Safe PC-A Task Scheduler registration: preview before apply
 
 After PC-A's local credential/client setup and **independent review** of the

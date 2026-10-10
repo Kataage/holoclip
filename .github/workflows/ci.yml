@@ -73,6 +73,11 @@ jobs:
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-acl.ps1"
           if ($LASTEXITCODE -ne 0) { throw "Windows LAN credential ACL tests failed: $LASTEXITCODE" }
 
+      - name: Verify Windows Firewall scope against CIDR and multi-rule mock matrix
+        run: |
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-firewall-scope.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "Windows LAN firewall scope tests failed: $LASTEXITCODE" }
+
       - name: Verify Windows LAN setup inspection using mocked cmdlets
         run: |
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-setup-doctor.ps1"
