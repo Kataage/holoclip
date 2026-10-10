@@ -223,8 +223,8 @@ def _row(row: tuple) -> dict:
         type(rid) is not int or rid < 1 or type(when) is not int or when < 0
         or diag not in _ALLOWED_DIAGNOSIS or scope not in _ALLOWED_SCOPE
         or trial not in _ALLOWED_TRIAL or not isinstance(issues, list)
-        or len(issues) != len(set(issues))
         or any(type(k) is not str or k not in _ALLOWED_ISSUES for k in issues)
+        or len(issues) != len(set(issues))
         or issues != sorted(issues)
     ):
         raise ValueError("LAN_EVIDENCE_HISTORY_CORRUPT")
@@ -247,8 +247,13 @@ def _open(path: Path, *, readonly: bool) -> sqlite3.Connection | None:
         db.parent.mkdir(parents=True, exist_ok=True)
         _path(db)  # Repeat symlink and path validation after parent creation.
         if not db.exists():
-            descriptor = os.open(db, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            os.close(descriptor)
+            try:
+                descriptor = os.open(db, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                pass  # Another writer may have won the creation race.
+            else:
+                os.close(descriptor)
+        _path(db)
         connection = sqlite3.connect(db, timeout=5)
     return connection
 
@@ -405,6 +410,9 @@ def capture_lan_evidence(
     # Validate destination before any SSH or lease when recording is requested.
     if record:
         _path(evidence_db)
+        # Detect corrupted or mismatched history before optional live
+        # coordinator lease and before any SSH-based network observation.
+        read_lan_evidence_history(evidence_db)
     arguments = {
         "host": host, "user": user, "known_hosts": known_hosts,
         "remote_repo": remote_repo, "ssh_port": ssh_port,
