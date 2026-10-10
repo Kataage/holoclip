@@ -164,6 +164,31 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: ordered, read-only two-PC deployment diagnosis
+
+The PC-A examples-ytdlp-lan-deployment-diagnose entrypoint reuses
+the strict pinned-SSH onboarding inspection, safe reduced remote codes
+and authenticated pair receipt comparison. It emits fixed-code ordered
+repair steps for PC-A and PC-B credential, ACL, firewall/task/listener,
+status and the final signed pair check. Suggested commands come from a
+static local allowlist and never contain shell arguments, credentials
+or raw remote diagnostic text.
+
+When SSH is unavailable, remote JSON invalid, or signatures rejected,
+the report does not promote any PC-B evidence. It attempts one fresh
+independent sanitized PC-A-only diagnosis and marks the remote state
+unverified. If the local audit fails, pc_a remains null. All unknown
+failure messages are reduced to stable negative codes; raw SSH stderr
+and private paths are never included. It does not retry through weaker
+transport, trust unknown host keys, modify client settings or firewall
+rules, start tasks, reserve leases or contact media services.
+
+A successful observation is not physical host attestation, firewall
+effective-policy proof, real two-PC shared pacing or editorial/media
+qualification. Manual gates remain explicit. Each response retains
+ready=false, two_host_verified=false, and
+firewall_effective_policy_verified=false. CI uses mocks only.
+
 ## Increment: pinned SFTP PC-B single-command enrollment
 
 The PC-B-only `examples-ytdlp-lan-pc-b-prepare` command safely
