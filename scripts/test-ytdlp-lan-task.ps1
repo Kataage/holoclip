@@ -110,6 +110,23 @@ try {
     Assert-Lan (-not $output.Contains(('a' * 64))) 'Runner leaked secret bytes'
     Assert-Lan ($output -match 'restart_count=2') 'Missing bounded restart event'
     Assert-Lan (-not (Test-Path -LiteralPath $state)) 'Fake runner opened a real SQLite store'
+    # Exercise the exact Task Scheduler inventory probe with a fake cmdlet
+    # in a separate Windows PowerShell process. Never inspect real user tasks.
+    $probe = (Join-Path $PSScriptRoot 'probe-ytdlp-lan-task.ps1').Replace("'", "''")
+    $cases = @(
+        @{ Body = '[pscustomobject]@{ TaskName = "Unrelated" }'; Expected = 'LAN_TASK_ABSENT_OBSERVED'; Exit = 0 },
+        @{ Body = '[pscustomobject]@{ TaskName = "Holoclip yt-dlp LAN Coordinator" }'; Expected = 'LAN_TASK_ALREADY_PRESENT'; Exit = 0 },
+        @{ Body = 'throw "denied"'; Expected = 'LAN_TASK_ENUMERATION_UNAVAILABLE'; Exit = 6 }
+    )
+    foreach ($case in $cases) {
+        $scriptBody = ('function Get-ScheduledTask {{ [CmdletBinding()] param() {0} }}; ' +
+            '& ''{1}'' -TaskName ''Holoclip yt-dlp LAN Coordinator''') -f $case.Body, $probe
+        $text = & $psExe -NoProfile -NonInteractive -Command $scriptBody | Out-String
+        Assert-Lan ($LASTEXITCODE -eq $case.Exit) 'Task inventory probe exit code mismatch'
+        $doc = $text | ConvertFrom-Json
+        Assert-Lan ($doc.status -eq $case.Expected) 'Task inventory probe failed closed incorrectly'
+        Assert-Lan ($doc.ready -eq $false) 'Task inventory probe claimed production readiness'
+    }
     Write-Host 'Windows LAN task and restart tests passed; zero real tasks registered'
 }
 finally {
