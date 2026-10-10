@@ -503,6 +503,56 @@ effectiveness is still **unverified**, and production stays
 `ready=false` pending real two-PC testing. GitHub CI exercises
 synthetic PowerShell firewall rules only, without opening ports.
 
+#### One-command PC-A LAN setup (safe staged preview, opt-in apply)
+
+For a new Windows PC-A, the combined setup command reduces three
+independent preparations to one **dry-run by default**. It reuses the
+same guarded operations and does not bypass their validations:
+
+    uv run holoclip examples-ytdlp-lan-pc-a-prepare --bind-ip 192.168.1.10 --peer-ip 192.168.1.21
+
+Replace both example IPs with PC-A and PC-B's **actual, distinct**
+private IPv4 addresses. Optional deployment settings: --port,
+--task-name, --secret-file, --config-file and --state-path.
+The JSON report shows the preview outcome of local credential and
+client-profile setup, exact-peer Windows Firewall rule preparation,
+and limited current-user Task Scheduler registration. In a fresh
+installation, missing credentials and firewall allow rules are normal
+**task preview blockers** that preceding stages would address.
+
+Only after reviewing the preview, rerun on **PC-A with an elevated
+PowerShell for the same Windows user** and explicitly pass --apply:
+
+    uv run holoclip examples-ytdlp-lan-pc-a-prepare --bind-ip 192.168.1.10 --peer-ip 192.168.1.21 --apply
+
+The apply path first validates *all three* stages before any changes,
+then locally creates/protects a secret and persistent client profile,
+adds a one-PC-B-only Private-profile inbound TCP allow rule, and
+registers a non-elevated current-user logon task **without starting it**.
+Each underlying step revalidates safety before its own write; missing
+PowerShell/permissions, uninspectable or broad firewall rules,
+existing task-name conflicts, unsafe paths, legacy env overrides,
+public addresses and a changed preflight prevent unsafe continuation.
+An already-scoped firewall without a conflicting reserved rule name
+does not require a new allow rule.
+
+A failed step may leave preceding protected local state in place:
+Holoclip **does not delete an existing credential or roll back a
+firewall rule** during an interrupted setup. Instead it reports the
+last completed stage and a conservative partial-change warning.
+Manually review that stage before retrying; the existing lower-level
+diagnostic commands remain available for recovery. Re-running on a
+configured system is intentionally not a destructive reset.
+
+The command does not start/verify the coordinator, configure SSH,
+trust a host key, import the secret to PC-B, transfer credentials,
+contact YouTube or certify a physical LAN. Separate PC-B secure
+credential enrollment, two-host observations and actual firewall
+effective-policy verification remain required. Regardless of how
+many stages succeed, ready=false and two_host_verified=false.
+GitHub CI tests simulate only the Windows operations and never
+modify users' machines.
+
 #### Preview-first PC-A Windows Firewall preparation (explicit opt-in)
 
 On **PC-A only**, Holoclip can preview and explicitly create a single
