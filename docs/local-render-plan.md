@@ -121,6 +121,78 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Durable unattended missing-source queue (Windows, preview-first)
+
+The approved missing-video acquisition can now be enrolled in a local
+SQLite queue and advanced by a bounded Windows Task Scheduler worker.
+One saved job snapshot records the measured ClipTimeline, canonical
+database/cache/policy paths and acquisition budgets, with no passwords,
+tokens, OAuth cookies or yt-dlp stderr. Store this local runtime DB
+privately; it contains source asset IDs and machine-local paths.
+
+Step 1, preview offline (no queue file created or network request):
+
+    uv run holoclip render-source-queue-enqueue --timeline data/timeline.json
+
+To enroll once, explicitly authorize local preview acquisition:
+
+    uv run holoclip render-source-queue-enqueue --timeline data/timeline.json --apply --approve-local-preview
+
+Step 2, preview the current-worker state without network:
+
+    uv run holoclip render-source-queue-status
+    uv run holoclip render-source-queue-run
+
+Step 3, optionally execute a *single* bounded queue worker iteration:
+
+    uv run holoclip render-source-queue-run --execute
+
+One attempt per invocation means no rapid bulk downloads. The worker
+uses the existing authenticated PC-A LAN coordinator, local SQLite
+yt-dlp pacing, conservative native yt-dlp sleeps, source policy and
+full-video identity checks. First source in a timeline is acquired
+and the durable job stays QUEUED if another source remains missing.
+An existing valid complete cache is recognized without new network.
+
+Step 4, to schedule recurring single-item checks on Windows, inspect
+the preview then explicitly install the current-user task:
+
+    uv run holoclip render-source-queue-task-prepare
+    uv run holoclip render-source-queue-task-prepare --apply
+
+These steps register, but do not immediately start, a non-elevated
+interactive Task Scheduler job that repeats approximately hourly
+(configurable --interval-minutes 30..1440). It requires the existing
+uv environment and an already enrolled queue. It never overwrites
+an existing task or resets yt-dlp cooldown. Windows user sign-in
+is required for interactive tasks; this alone does not guarantee
+24-hour service uptime or automatic wake after a PC shutdown.
+
+**Fail-closed recovery:** an interrupted RUNNING attempt stays RUNNING
+and blocks later jobs. Do not assume unfinished media is safe.
+After 2 hours, inspect the job ID from render-source-queue-status,
+and run a read-only reconciliation:
+
+    uv run holoclip render-source-queue-reconcile --job-id JOB_ID
+
+Add --apply only after checking the result. If all caches are
+fully source-duration-matched and FFprobe verifies both A/V tracks,
+reconciliation can mark COMPLETE. Otherwise it moves the job to
+PAUSED. It never downloads while reconciling. Unknown errors,
+rate-limit/bot checks, timeouts and policy restrictions also PAUSE
+without retry. Only explicit --apply --resume on a *PAUSED* job
+rearms it after fixing the cause; the queue does not silently
+re-enroll or reset a block. Shared pacing contention may become
+DEFERRED with a minimum 30-minute delay, at most three total tries;
+after that the job requires manual intervention. A paused or running
+oldest job blocks later jobs to avoid shared-IP bursts.
+
+Queue preview and hosted CI never contact YouTube, owner Windows PCs
+or Task Scheduler. The scheduler tests replace Windows cmdlets with
+mocks. No source policy or copyrights are automatically certified,
+and neither acquired media nor a generated preview is publishable
+without separate verification. All results remain ready=false.
+
 ## Deterministic technical behavior and safety
 
 - Supports continuous, same-source multi-cut and multiple-source ordered
