@@ -1,4 +1,5 @@
-# Opt-in non-elevated Windows logon startup. Does not start a server or access YouTube.
+# Opt-in non-elevated Windows logon startup. Never overwrites an existing task.
+# Does not start a server or access YouTube.
 param(
     [string]$TaskName = 'Holoclip yt-dlp LAN Coordinator',
     [string]$BindIp = '127.0.0.1',
@@ -91,6 +92,6 @@ $userId = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1)) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description 'Trusted-LAN-only authenticated yt-dlp pacing; no media collection' -Force | Out-Null
+Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description 'Trusted-LAN-only authenticated yt-dlp pacing; no media collection' | Out-Null
 Write-Host "Registered LAN coordinator for current-user logon: $TaskName"
 Write-Host 'Not started. Confirm local firewall scope, then use Start-ScheduledTask.'
