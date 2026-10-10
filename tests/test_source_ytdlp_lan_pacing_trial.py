@@ -21,7 +21,6 @@ from holoclip.providers.source import yt_dlp
 from holoclip.source_ytdlp_lan_coordinator import (
     LanCoordinatorClient, _CoordinatorServer, _CoordinatorState, create_coordinator_secret,
 )
-from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
 
 HOST = "192.168.1.21"
 
