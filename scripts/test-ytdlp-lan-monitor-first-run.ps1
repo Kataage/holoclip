@@ -61,6 +61,7 @@ function Get-ScheduledTaskInfo {
     [pscustomobject]@{LastRunTime=$last;LastTaskResult=$code}
 }
 & '__PROBE__' -TaskName 'Holoclip yt-dlp LAN Monitor' -HostIp '192.168.1.21' -SshUser 'pc_b_account' -KnownHosts 'C:\Work\hosts' -RemoteRepo 'D:\AI\holoclip' -SshPort 22 -CoordinatorPort 8878 -IntervalMinutes 60 -EvidenceDb 'C:\Work\evidence.sqlite3' -AlertFile 'C:\Work\alert.json'
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 '@
     $tests = @(
         @{Case='absent';Code='LAN_FIRST_RUN_TASK_ABSENT';Execution='LAN_FIRST_RUN_NEVER_RUN';Exit=0},
