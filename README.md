@@ -1,5 +1,7 @@
 # holoclip
 
+**Guarded missing-video acquisition:** `uv run holoclip render-local-source-acquire --timeline <file>` previews missing complete sources without network. With explicit `--execute --approve-local-preview`, at most one missing video is acquired through the existing authenticated LAN/local yt-dlp pacing and source-policy checks. See [renderer instructions](docs/local-render-plan.md). No automatic retries or mass downloads.
+
 **Full-video cache auto-mapping:** `render-local-preview --auto-sources --approve-local-preview` can use canonical source IDs and existing full yt-dlp editing_video caches without a handwritten sources.json. No YouTube access or publishing rights are inferred; see [mapping rules](docs/local-render-plan.md).
 
 **New local A/V baseline:** measured multi-source ClipTimeline to deterministic FFmpeg MP4 preview is available via `uv run holoclip render-local-preview` (dry-run default; explicit `--execute`). See [local renderer guide](docs/local-render-plan.md). No publishing or production readiness is implied.
