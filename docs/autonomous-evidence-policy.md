@@ -164,6 +164,43 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: opt-in Windows periodic no-media LAN monitoring
+
+PC-A can register a non-elevated, non-overwriting, current-user
+interactive Task Scheduler task with
+examples-ytdlp-lan-monitor-task-prepare --apply.
+Default preview only checks safe private address, already-present
+independently pinned SSH host entry, fixed task name and destination
+paths, and task absence. The task runner invokes offline uv with
+examples-ytdlp-lan-monitor-run and NO pacing lease trial flag.
+It may record negative deployment observations, but must not
+acquire coordinator leases, run media, contact YouTube, create
+credentials, edit firewall rules or attempt SSH trust-on-first-use.
+
+Fixed allowlisted repeated-issue signals from the code-only SQLite
+history are persisted to a separate bounded JSON alert marker.
+Three relevant observations are required by the existing history
+evaluator; one-off or healthy results never trigger a popup.
+Repeated identical alerts are suppressed until they clear/change;
+recovery records NONE without notification. A best-effort current
+interactive user Windows msg.exe notification may be attempted for
+new repeated issues only; it is not guaranteed in headless/locked
+desktop sessions. The persisted marker is authoritative for
+whether an alert was raised. Raw SSH stderr, fingerprints, IPs,
+username, task parameters, secret bytes, source URLs and media
+metadata are never written to the marker.
+
+Task Scheduler itself necessarily retains the non-secret
+IP/account/path arguments for its registered action, visible to
+authorized Windows Task Scheduler readers. It is a deliberately
+different privacy boundary from the redacted SQLite/JSON evidence.
+No task is automatically started or overwritten, and Windows
+mock tests never register a real task. Missing or tampered state
+must fail closed. Observed run counts are not calendar uptime,
+physical machine attestation, actual firewall policy verification,
+real two-PC pacing qualification, or editorial quality. The system
+retains ready=false.
+
 ## Increment: private LAN evidence snapshots and fixed-code trend signals
 
 PC-A's examples-ytdlp-lan-evidence-capture composes the previously
