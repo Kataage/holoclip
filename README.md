@@ -1,5 +1,13 @@
 # holoclip
 
+> **End-to-end readiness (2026-10-11):** Local acquisition, candidate discovery and
+> measured editorial planning are engineering foundations, **not** a proven
+> autonomous clip production pipeline. Full RenderPlan, deterministic final
+> rendering, editing-profile quality calibration and final-video QA are still
+> outstanding. See [current end-to-end audit](docs/end-to-end-audit-2026-10-11.md).
+> Production routing remains fail-closed (`ready=false`).
+
+
 Zero-cost provider comparisons and evidence-bound qualification are documented in
 [the real-media benchmark workflow](docs/provider-benchmark.md). A free API smoke
 response does not grant production quality qualification.
