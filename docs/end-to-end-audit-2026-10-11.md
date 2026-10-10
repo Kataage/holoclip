@@ -41,7 +41,16 @@ values, non-finite source measurements, unrelated context, stored plan drift,
 and unchanged legacy continuous candidates. No real media or paid service is
 required for these regressions.
 
-## Priority order for subsequent delivery
+## Priority order for subsequent delivery## Post-audit implementation note (PR #203)
+
+A first local, deterministic A/V-only `ClipTimeline` renderer and basic ffprobe
+integrity QA are now implemented; see [local render guide](local-render-plan.md).
+This narrows the initial gap but does **not** finish the editing-intelligence
+pipeline, subtitle/framing/audio-mix synthesis, finished-clip editorial QA,
+permission checks, publishing approval or production-grade quality evaluation.
+The inventory above captures the state audited before this implementation.
+
+
 
 1. **Production capability and editorial quality gates:** collect genuine
    no-cost service/account evidence and held-out Japanese stream reviews,
