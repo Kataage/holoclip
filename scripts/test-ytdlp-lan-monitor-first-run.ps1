@@ -22,6 +22,8 @@ try {
 $ErrorActionPreference = 'Stop'
 $script:scenario = '__CASE__'
 function Get-ScheduledTask {
+    [CmdletBinding()]
+    param()
     if ($script:scenario -eq 'absent') { return }
     if ($script:scenario -eq 'unavailable') { throw 'permission denied with secret' }
     $repoRoot = (Resolve-Path -LiteralPath (Join-Path '__SCRIPTS__' '..')).Path
@@ -49,6 +51,7 @@ function Get-ScheduledTask {
     }
 }
 function Get-ScheduledTaskInfo {
+    [CmdletBinding()]
     param([string]$TaskName)
     if ($script:scenario -eq 'unavailable-info') { throw 'Task read denied' }
     $last = (Get-Date).AddMinutes(-1)
@@ -75,7 +78,7 @@ function Get-ScheduledTaskInfo {
         $raw = & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $scenarioFile 2>&1 | Out-String
         Assert-FirstRun ($LASTEXITCODE -eq $test.Exit) ('Probe exit code wrong: ' + $test.Case)
         $result = $raw | ConvertFrom-Json
-        Assert-FirstRun ($result.status -eq $test.Code) ('Probe status wrong: ' + $test.Case)
+        Assert-FirstRun ($result.status -eq $test.Code) ('Probe status wrong: ' + $test.Case + ' actual=' + $result.status)
         Assert-FirstRun ($result.task_execution -eq $test.Execution) ('Probe run state wrong: ' + $test.Case)
         Assert-FirstRun ($result.ready -eq $false) 'No task result may claim ready'
         Assert-FirstRun (-not $raw.Contains('permission denied with secret')) 'Raw errors leaked'
