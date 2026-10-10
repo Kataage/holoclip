@@ -88,6 +88,11 @@ jobs:
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-monitor-task.ps1"
           if ($LASTEXITCODE -ne 0) { throw "Windows LAN monitor task tests failed: $LASTEXITCODE" }
 
+      - name: Verify Windows render source queue task installer with mocked scheduler
+        run: |
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-render-source-queue-task.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "Windows render queue scheduler mock failed: $LASTEXITCODE" }
+
       - name: Verify Windows first-run LAN monitor task probe with mocked scheduler
         run: |
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-monitor-first-run.ps1"
