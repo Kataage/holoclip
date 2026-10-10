@@ -155,6 +155,7 @@ from holoclip.render_source_queue import (
     DEFAULT_QUEUE, enqueue_render_timeline, inspect_render_queue,
     advance_render_queue, reconcile_render_queue,
 )
+from holoclip.render_source_queue_task import prepare_render_queue_task
 from holoclip.migration import migrate_legacy_data, report_as_json
 from holoclip.models import ReviewDecision
 from holoclip.providers.embedding.base import EmbeddingProviderError
@@ -1316,6 +1317,33 @@ def examples_ytdlp_lan_pacing_trial(
     typer.echo(json.dumps(report, sort_keys=True, separators=(",", ":")))
     if report["status"] not in {
         "LAN_PACING_PREVIEW_ONLY", "LAN_PACING_CROSS_SSH_LEASE_GAP_OBSERVED",
+    }:
+        raise typer.Exit(6)
+
+
+@app.command("render-source-queue-task-prepare")
+def render_source_queue_task_prepare_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    task_name: str = typer.Option("Holoclip render source queue", "--task-name"),
+    interval_minutes: int = typer.Option(60, "--interval-minutes", min=30, max=1440),
+    apply: bool = typer.Option(False, "--apply",
+        help="Explicitly register a current-user recurring worker; never start task."),
+) -> None:
+    """Preview-first scheduled unattended queue worker installation on Windows."""
+    try:
+        report = prepare_render_queue_task(
+            queue=queue, task_name=task_name,
+            interval_minutes=interval_minutes, apply=apply,
+        )
+    except (ValueError, OSError, TypeError, sqlite3.Error) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_RENDER_QUEUE_TASK_SETUP_REJECTED", "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True))
+    if report["status"] not in {
+        "LOCAL_RENDER_QUEUE_TASK_PREVIEW_ELIGIBLE",
+        "LOCAL_RENDER_QUEUE_TASK_REGISTERED_NOT_STARTED",
     }:
         raise typer.Exit(6)
 
