@@ -45,6 +45,17 @@ required for these regressions.
 
 The local RenderPlan can now resolve existing canonical YouTube source IDs into complete editing_video cache files. Handwritten source mapping is not required when valid local complete-video caches already exist. Missing/ambiguous audio-only or bounded-section caches are blocked without redownloading. This does not establish clipping rights, real cross-stream semantic coherence, final editorial quality or production readiness.
 
+## Post-PR #205 bounded missing-source acquisition
+
+The local renderer can inventory missing complete full-source caches offline and,
+with explicit one-shot execution and local preview permission, attempt one
+bounded public video acquisition using the existing authenticated shared-LAN
+and per-host yt-dlp pacing controls. Strict policy/metadata eligibility is
+checked before attempting full media, and old caches are never overwritten.
+This is a bounded on-demand integration, not yet a fully unattended collection
+queue, true site-side rate-limit guarantee, production render QA or permission
+to publish; ready=false remains unchanged.
+
 ## Priority order for subsequent delivery## Post-audit implementation note (PR #203)
 
 A first local, deterministic A/V-only `ClipTimeline` renderer and basic ffprobe

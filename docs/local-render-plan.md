@@ -76,6 +76,51 @@ Source bytes and A/V durations are separately hashed and checked
 by the preexisting RenderPlan compiler/executor. A successful preview
 still retains ready=false and has no upload path.
 
+## Missing source acquisition through the existing shared yt-dlp gate
+
+If the automatic source mapper reports a missing full stream, inspect the
+existing caches and the canonical timeline *offline* with:
+
+    uv run holoclip render-local-source-acquire --timeline data/timeline.json --database data/holoclip.db --cache-root data/sources
+
+This command never probes YouTube and never creates/overwrites media. It
+reports missing source asset IDs in timeline order and cache counts. Existing
+corrupt, ambiguous, linked or untrusted caches are blockers, NOT invitations
+to overwrite them or guess another candidate. Audio-only caches and bounded
+video sections never substitute for complete original video timestamps.
+
+To explicitly try acquiring **one** missing complete public source video,
+after installing and configuring the authenticated PC-A LAN coordinator
+and existing conservative local yt-dlp pacing gate:
+
+    uv run holoclip render-local-source-acquire --timeline data/timeline.json --database data/holoclip.db --cache-root data/sources --execute --approve-local-preview
+
+Only the first missing stream by timeline order is attempted per command.
+The default max recorded archive duration is 14400 seconds (4 hours), and
+yt-dlp's max file size request is 512 MiB; change using
+--max-duration-seconds (60..14400) and --max-filesize-mb (64..1024).
+These are *requested acquisition limits*, not guarantees that all protocols
+can stop downloads at exactly the limit. After download, observed file
+size is rechecked and the media/receipt are validated before reuse.
+Access may take substantial time and network bandwidth; do not automate
+rapid loops. A configured shared-LAN coordinator is mandatory to execute
+this command even when only one PC is actually downloading.
+
+Before downloading, one yt-dlp metadata probe is made **through the same
+shared lease/local pacing**. Live/upcoming sources, unknown or oversized
+durations, mismatched IDs and blocked/review clip rules are rejected.
+The metadata policy registry is read from data/policy/clip_rules.jsonl by
+default; optional --policy-file points to a different local registry.
+Then a single bounded full-video acquisition uses the existing provider
+with its rate-limit cooldown and conservative request pacing. Neither
+stage bypasses the LAN gate, resets cooldowns or silently tries another
+source after a failed request. No publishing is performed.
+
+The approval flag is **not proof of ownership or a platform-policy grant**.
+Only locally approved technical previews should use this path; apply
+applicable Hololive source restrictions and review finished edits separately.
+The output status remains ready=false even when an archive is acquired.
+
 ## Deterministic technical behavior and safety
 
 - Supports continuous, same-source multi-cut and multiple-source ordered
