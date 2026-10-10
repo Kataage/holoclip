@@ -363,6 +363,11 @@ def test_srt_generated_from_existing_asr_and_caption_qa_persisted(
     db, cache, queue, root, timeline, receipt = _case(tmp_path)
     _probe(monkeypatch)
     _fake_render(monkeypatch)
+    monkeypatch.setattr(ready, "burn_captioned_preview", lambda **kwargs: {
+        "status": "LOCAL_SUBTITLE_BURNED_PREVIEW_UNVERIFIED_EDITORIAL",
+        "output_sha256": "f" * 64,
+        "subtitle_sha256": kwargs["subtitle_sha256"] or "",
+    })
     transcripts = tmp_path / "transcripts"
     transcripts.mkdir()
     (transcripts / f"{VIDEO}.json").write_text(
@@ -381,6 +386,8 @@ def test_srt_generated_from_existing_asr_and_caption_qa_persisted(
     assert done["subtitle_status"] == "LOCAL_SUBTITLE_SRT_CREATED_UNVERIFIED_ASR"
     assert done["subtitle_cue_count"] == 2
     assert done["subtitle_dropped_cue_count"] == 1
+    assert done["burnin_status"] == "LOCAL_SUBTITLE_BURNED_PREVIEW_UNVERIFIED_EDITORIAL"
+    assert done["burnin_output_sha256"] == "f" * 64
     video = root / f"{receipt['job_id']}.mp4"
     sidecar = video.with_suffix(".srt")
     assert video.is_file() and sidecar.is_file()
@@ -399,6 +406,15 @@ def test_srt_generated_from_existing_asr_and_caption_qa_persisted(
     assert len(row[3]) == 64
     status = ready.inspect_completed_source_renders(queue=queue)
     assert status["subtitle_counts"]["srt_created"] == 1
+    assert status["burnin_counts"]["created"] == 1
+    with sqlite3.connect(queue) as conn:
+        burn = conn.execute(
+            "SELECT status,output_sha256,subtitle_sha256 FROM render_burnin_evidence "
+            "WHERE job_id=?", (receipt["job_id"],),
+        ).fetchone()
+    assert burn[0] == done["burnin_status"]
+    assert burn[1] == "f" * 64
+    assert burn[2] == row[3]
     assert done["ready"] is False
 
 
@@ -415,4 +431,38 @@ def test_missing_transcript_does_not_misclassify_mp4_qa(tmp_path, monkeypatch):
     assert not (root / f"{receipt['job_id']}.srt").exists()
     status = ready.inspect_completed_source_renders(queue=queue)
     assert status["subtitle_counts"]["unavailable"] == 1
+    assert status["burnin_counts"]["unavailable"] == 1
     assert status["counts"]["QA_PASSED"] == 1
+
+
+def test_optional_burnin_encoder_failure_preserves_successful_video_qa(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    transcripts = tmp_path / "transcripts"
+    transcripts.mkdir()
+    (transcripts / f"{VIDEO}.json").write_text(
+        json.dumps([{"start": 10.2, "end": 11.0, "text": "安全な字幕"}],
+                   ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        ready, "burn_captioned_preview",
+        lambda **kw: (_ for _ in ()).throw(ValueError("synthetic FFmpeg failure")),
+    )
+    outcome = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root,
+        transcript_root=transcripts, execute=True,
+    )
+    assert outcome["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert outcome["burnin_status"] == "LOCAL_SUBTITLE_BURNIN_UNAVAILABLE_OR_FAILED"
+    assert (root / f"{receipt['job_id']}.mp4").exists()
+    assert (root / f"{receipt['job_id']}.srt").exists()
+    assert ready.inspect_completed_source_renders(queue=queue)["burnin_counts"]["failed"] == 1
+    with sqlite3.connect(queue) as conn:
+        assert conn.execute(
+            "SELECT state FROM render_jobs WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()[0] == "QA_PASSED"
