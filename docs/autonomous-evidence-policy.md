@@ -164,6 +164,39 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: staged single-command PC-A LAN preparation
+
+The PC-A-only examples-ytdlp-lan-pc-a-prepare entrypoint composes the
+existing local client bootstrap, exact-peer Windows Firewall rule
+preparer, and guarded logon-task registrar. Dry-run is the default:
+it checks for valid storage, no conflicting local coordinator
+environment override, a non-ambiguous firewall preview, and a
+verified absence of a matching Windows Task Scheduler task. Its
+structured report uses fixed stage labels and never exposes secret
+bytes, local machine identity, SSH stderr or media metadata.
+
+Explicit --apply on Windows preflights all three stages before any
+mutation, then performs **local credential/profile setup → strictly
+limited firewall rule add or already-scoped check → task registration**
+in that order, deferring to the existing per-stage fail-closed checks.
+The initial task diagnostic may be blocked by absent credentials or
+firewall rules on a fresh PC-A; this alone does not block a chained
+apply when those are the only reparable prerequisites. A task already
+registered or an unavailable task inventory always blocks upfront.
+Inputs must be distinct RFC1918 addresses; invalid task names and
+overlapping state/credential/config paths are rejected pre-mutation.
+
+A later-stage failure stops the sequence, **never attempts rollback
+or unsafe fallback**, and returns completed stage names and a
+conservative partial-change flag. The composed command does not
+remove or rotate existing secrets, overwrite firewall rules/tasks,
+start the coordinator, edit SSH trust, transfer credentials to PC-B,
+contact YouTube or declare production readiness. Running under an
+elevated Windows session is normally required for the firewall step.
+Signed PC-A/PC-B observations and effective firewall/host verification
+remain outstanding. Tests use mocks and CI sandbox only; no real user
+firewall or scheduler changes are made.
+
 ## Increment: opt-in exact-peer Windows Firewall rule creation
 
 PC-A may call examples-ytdlp-lan-firewall-prepare in dry-run mode, and
