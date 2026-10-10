@@ -259,7 +259,6 @@ def render_local_preview(plan: RenderPlan) -> dict[str, object]:
     Output is strictly a local technical preview, never a qualified publication.
     """
     plan = RenderPlan.model_validate(plan.model_dump(mode="json"))
-    inputs: list[LocalRenderSource] = []
     # Do not bypass explicit permissions at execution: validate the original
     # fixed identity, source bytes and duration against the compiled snapshot.
     for src in plan.sources:
@@ -286,6 +285,15 @@ def render_local_preview(plan: RenderPlan) -> dict[str, object]:
         found = next(s for s in plan.sources if s.asset_id == segment.source_asset_id)
         if segment.source_end > found.duration_seconds + 0.001:
             raise ValueError("LOCAL_RENDER_PLAN_CHANGED")
+    expected_id = stable_id(
+        "localrender", VERSION, timeline.model_dump(mode="json"),
+        sorted((src.asset_id, src.sha256, src.duration_seconds)
+               for src in plan.sources),
+        VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS,
+        length=32,
+    )
+    if expected_id != plan.id:
+        raise ValueError("LOCAL_RENDER_PLAN_FINGERPRINT_CHANGED")
     output = _target_file(plan.output, [s.path for s in plan.sources])
     # No output file is created unless QA succeeds.
     with tempfile.TemporaryDirectory(prefix=".holoclip-render-", dir=output.parent) as tmp:
