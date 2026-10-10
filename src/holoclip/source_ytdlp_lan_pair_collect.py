@@ -50,7 +50,7 @@ def _pinned_ssh_command(*, host: str, user: str, known_hosts: Path,
                         remote_repo: str, port: int,
                         remote_probe: str = "pair") -> list[str]:
     # Never permit a caller-supplied command fragment through the SSH shell.
-    if remote_probe not in {"pair", "onboard"}:
+    if remote_probe not in {"pair", "onboard", "pacing-held", "pacing-gap"}:
         raise ValueError("LAN_PAIR_INVALID_REMOTE_PROBE")
     peer = _private_ipv4(host)
     if not _SSH_USER.fullmatch(user):
@@ -73,11 +73,18 @@ def _pinned_ssh_command(*, host: str, user: str, known_hosts: Path,
     quoted_repo = repo.replace("'", "''")
     # The onboarding probe uses offline uv and has no credential or
     # arbitrary shell arguments. The established pair probe is unchanged.
-    command = (
-        "& uv run --no-sync holoclip examples-ytdlp-lan-pair-observe --role pc-b; "
-        if remote_probe == "pair" else
-        "& uv run --offline --no-sync holoclip examples-ytdlp-lan-onboard-node; "
-    )
+    command = {
+        "pair": "& uv run --no-sync holoclip examples-ytdlp-lan-pair-observe --role pc-b; ",
+        "onboard": "& uv run --offline --no-sync holoclip examples-ytdlp-lan-onboard-node; ",
+        "pacing-held": (
+            "& uv run --offline --no-sync holoclip "
+            "examples-ytdlp-lan-pacing-witness --phase held; "
+        ),
+        "pacing-gap": (
+            "& uv run --offline --no-sync holoclip "
+            "examples-ytdlp-lan-pacing-witness --phase gap; "
+        ),
+    }[remote_probe]
     remote_script = (
         "$ErrorActionPreference = 'Stop'; "
         f"Set-Location -LiteralPath '{quoted_repo}'; "
