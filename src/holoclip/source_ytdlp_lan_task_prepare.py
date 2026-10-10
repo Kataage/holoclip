@@ -140,17 +140,18 @@ def inspect_lan_task_registration(
     if blockers:
         report["status"] = "LAN_TASK_APPLY_BLOCKED"
         return report
+    # Reprobe task absence before attempting the installer. An existing
+    # name takes precedence over missing host tools in offline diagnostics.
+    # The actual installer also has no -Force, closing the final race.
+    if _task_state(task_name) != "LAN_TASK_ABSENT_OBSERVED":
+        report["status"] = "LAN_TASK_APPLY_BLOCKED"
+        report["blockers"] = {"task": "LAN_TASK_ALREADY_PRESENT_OR_UNVERIFIED"}
+        return report
     if not _INSTALL.is_file():
         raise ValueError("LAN_TASK_INSTALLER_UNAVAILABLE")
     ps = shutil.which("powershell.exe")
     if not ps:
         raise ValueError("LAN_TASK_INSTALLER_UNAVAILABLE")
-    # Reprobe immediately before registration. The installer intentionally
-    # does NOT use -Force, so concurrent name creation cannot be overwritten.
-    if _task_state(task_name) != "LAN_TASK_ABSENT_OBSERVED":
-        report["status"] = "LAN_TASK_APPLY_BLOCKED"
-        report["blockers"] = {"task": "LAN_TASK_ALREADY_PRESENT_OR_UNVERIFIED"}
-        return report
     try:
         completed = subprocess.run(
             [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
