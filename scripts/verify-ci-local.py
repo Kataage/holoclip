@@ -28,6 +28,7 @@ WINDOWS_TESTS = (
     "tests/test_source_ytdlp_lan_setup_doctor.py",
     "tests/test_source_ytdlp_lan_pair_evidence.py",
     "tests/test_source_ytdlp_lan_pair_collect.py",
+    "tests/test_source_ytdlp_lan_local_bootstrap.py",
 )
 WINDOWS_PS_SCRIPTS = (
     "test-source-pattern-windows.ps1",
