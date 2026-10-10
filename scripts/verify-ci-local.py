@@ -45,6 +45,7 @@ WINDOWS_PS_SCRIPTS = (
     "test-source-pattern-install.ps1",
     "test-ytdlp-lan-task.ps1",
     "test-ytdlp-lan-monitor-task.ps1",
+    "test-ytdlp-lan-monitor-first-run.ps1",
     "test-ytdlp-lan-acl.ps1",
     "test-ytdlp-lan-setup-doctor.ps1",
     "test-ytdlp-lan-firewall-scope.ps1",
