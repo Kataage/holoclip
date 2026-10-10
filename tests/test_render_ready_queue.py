@@ -354,3 +354,65 @@ def test_render_duration_ceiling_fails_closed_without_ffmpeg(tmp_path, monkeypat
     )
     assert report["status"] == "LOCAL_RENDER_AUTO_QA_PAUSED_NEEDS_REVIEW"
     assert not root.exists()
+
+
+
+def test_srt_generated_from_existing_asr_and_caption_qa_persisted(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    transcripts = tmp_path / "transcripts"
+    transcripts.mkdir()
+    (transcripts / f"{VIDEO}.json").write_text(
+        json.dumps([
+            {"start": 10.25, "end": 11.25, "text": "こんにちは"},
+            {"start": 12.5, "end": 14.0, "text": "cut boundary partial"},
+            {"start": 20.5, "end": 21.5, "text": "嬉しい！"},
+        ], ensure_ascii=False),
+        encoding="utf-8",
+    )
+    done = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, transcript_root=transcripts,
+        execute=True,
+    )
+    assert done["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert done["subtitle_status"] == "LOCAL_SUBTITLE_SRT_CREATED_UNVERIFIED_ASR"
+    assert done["subtitle_cue_count"] == 2
+    assert done["subtitle_dropped_cue_count"] == 1
+    video = root / f"{receipt['job_id']}.mp4"
+    sidecar = video.with_suffix(".srt")
+    assert video.is_file() and sidecar.is_file()
+    srt = sidecar.read_text(encoding="utf-8")
+    assert "00:00:00,250 --> 00:00:01,250" in srt
+    assert "00:00:03,500 --> 00:00:04,500" in srt
+    assert "cut boundary partial" not in srt
+    with sqlite3.connect(queue) as conn:
+        row = conn.execute(
+            "SELECT status,cue_count,dropped_cue_count,output_sha256 "
+            "FROM render_caption_evidence WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()
+    assert row[0] == done["subtitle_status"]
+    assert row[1:3] == (2, 1)
+    assert len(row[3]) == 64
+    status = ready.inspect_completed_source_renders(queue=queue)
+    assert status["subtitle_counts"]["srt_created"] == 1
+    assert done["ready"] is False
+
+
+def test_missing_transcript_does_not_misclassify_mp4_qa(tmp_path, monkeypatch):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    done = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root,
+        transcript_root=tmp_path / "no-transcripts", execute=True,
+    )
+    assert done["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert done["subtitle_status"] == "LOCAL_SUBTITLE_UNAVAILABLE_OR_UNTRUSTED"
+    assert not (root / f"{receipt['job_id']}.srt").exists()
+    status = ready.inspect_completed_source_renders(queue=queue)
+    assert status["subtitle_counts"]["unavailable"] == 1
+    assert status["counts"]["QA_PASSED"] == 1
