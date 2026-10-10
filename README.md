@@ -546,7 +546,7 @@ profile. If these local steps succeed, a signed **status-only** request
 checks coordinator authentication; it neither reserves a yt-dlp lease
 nor accesses YouTube. If PC-A is not running, the command reports
 `LAN_PC_B_PREPARED_STATUS_UNVERIFIED` rather than claiming the peer
-was authenticated. It may be rerun after PC-A is online. On partial
+was authenticated. In that case the CLI returns a nonzero exit status\nso unattended setup cannot treat missing authentication as success. It\nmay be rerun after PC-A is online. On partial
 failure, inspect the completed stages before retrying: it does not
 silently roll back existing credentials or client profiles.
 
