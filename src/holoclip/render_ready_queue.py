@@ -114,6 +114,32 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                 raise ValueError("LOCAL_RENDER_AUTO_QA_JOB_ID_INVALID")
             state = state_map.get(row["job_id"], "PENDING")
             counts[state] += 1
+        caption_counts = {
+            "srt_created": 0, "unavailable": 0,
+            "no_full_utterances": 0,
+        }
+        caption_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_caption_evidence'"
+        ).fetchone() is not None
+        if caption_table:
+            captions = conn.execute(
+                "SELECT status FROM render_caption_evidence LIMIT 1001"
+            ).fetchall()
+            if len(captions) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            for item in captions:
+                status = item["status"]
+                if status == "LOCAL_SUBTITLE_SRT_CREATED_UNVERIFIED_ASR":
+                    caption_counts["srt_created"] += 1
+                elif status in {"LOCAL_SUBTITLE_UNAVAILABLE_OR_UNTRUSTED",
+                              "LOCAL_SUBTITLE_NOT_AVAILABLE"}:
+                    caption_counts["unavailable"] += 1
+                elif status == "LOCAL_SUBTITLE_NO_FULL_UTTERANCES":
+                    caption_counts["no_full_utterances"] += 1
+                else:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_CAPTION_STATE_UNTRUSTED")
+        report["subtitle_counts"] = caption_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
