@@ -33,6 +33,11 @@ def _windows_remote_repo(value: str) -> str:
         raise ValueError("LAN_PAIR_UNSAFE_REMOTE_REPOSITORY")
     if any(ord(char) < 32 or char in '*?"<>|' for char in value):
         raise ValueError("LAN_PAIR_UNSAFE_REMOTE_REPOSITORY")
+    # PureWindowsPath silently normalizes "." and redundant separators.
+    # Inspect the original components first, before canonicalization.
+    parts = value.replace("/", "\\").split("\\")
+    if any(part in ("", ".", "..") or part.endswith((".", " ")) for part in parts[1:]):
+        raise ValueError("LAN_PAIR_UNSAFE_REMOTE_REPOSITORY")
     parsed = PureWindowsPath(value)
     if any(part in (".", "..") or part.endswith((".", " ")) for part in parsed.parts[1:]):
         raise ValueError("LAN_PAIR_UNSAFE_REMOTE_REPOSITORY")
