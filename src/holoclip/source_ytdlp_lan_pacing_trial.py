@@ -12,7 +12,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from holoclip.source_ytdlp_lan_coordinator import LanCoordinatorClient
+from holoclip.source_ytdlp_lan_coordinator import LanCoordinatorClient, _private_ipv4
 from holoclip.source_ytdlp_lan_onboard_check import check_lan_onboarding
 from holoclip.source_ytdlp_lan_pair_collect import _pinned_ssh_command
 from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
@@ -131,6 +131,15 @@ def trial_lan_pacing(
     Test may introduce a normal 20-second central gap. If release is lost,
     lease stays held until its bounded deadline; never erase gate state.
     """
+    # Reject loopback/public/noncanonical endpoints even in preview.
+    try:
+        peer = _private_ipv4(host)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("LAN_PACING_UNSAFE_PC_B") from exc
+    if peer != host or peer.startswith("127."):
+        raise ValueError("LAN_PACING_UNSAFE_PC_B")
+    if type(coordinator_port) is not int or not 1024 <= coordinator_port <= 65535:
+        raise ValueError("LAN_PACING_INVALID_COORDINATOR_PORT")
     # Validate both pinned remote command variants even during preview.
     commands = {
         phase: _pinned_ssh_command(
