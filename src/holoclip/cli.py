@@ -32,6 +32,7 @@ from holoclip.source_ytdlp_lan_onboarding import diagnose_lan_client, import_lan
 from holoclip.source_ytdlp_lan_pair_evidence import export_lan_pair_evidence, compare_lan_pair_evidence, observe_lan_pair_evidence
 from holoclip.source_ytdlp_lan_pair_collect import collect_lan_pair_over_ssh
 from holoclip.source_ytdlp_lan_onboard_check import inspect_lan_onboard_node, check_lan_onboarding
+from holoclip.source_ytdlp_lan_local_bootstrap import bootstrap_local_lan
 from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
 from holoclip.source_ytdlp_lan_setup_doctor import inspect_lan_setup
 from holoclip.source_ytdlp_lan_ssh_transfer import pull_lan_secret_sftp, _secure_windows_path
@@ -1357,6 +1358,39 @@ def examples_ytdlp_lan_pair_verify(
         raise typer.Exit(6) from exc
     typer.echo(json.dumps(report))
     if report["status"] != "LAN_PAIR_OBSERVATIONS_MATCH":
+        raise typer.Exit(6)
+
+
+@app.command("examples-ytdlp-lan-bootstrap-local")
+def examples_ytdlp_lan_bootstrap_local(
+    role: str = typer.Option(..., "--role", help="pc-a or pc-b on this Windows PC."),
+    coordinator_ip: str = typer.Option(..., "--coordinator-ip",
+        help="PC-A's explicit RFC1918 LAN IPv4; never use an internet IP."),
+    coordinator_port: int = typer.Option(8878, "--coordinator-port", min=1024, max=65535),
+    secret_file: Path = typer.Option(DEFAULT_SECRET_PATH, "--secret-file"),
+    config_file: Path = typer.Option(DEFAULT_CLIENT_CONFIG, "--config-file"),
+    apply: bool = typer.Option(False, "--apply",
+        help="Opt in to new PC-A secret, secure NTFS ACL and client profile writes."),
+) -> None:
+    """Preview first; optionally initialize only safe local LAN client state."""
+    try:
+        report = bootstrap_local_lan(
+            role=role, coordinator_ip=coordinator_ip,
+            secret_file=secret_file, config_file=config_file,
+            coordinator_port=coordinator_port, apply=apply,
+        )
+    except (ValueError, OSError, UnicodeError, LocalYtDlpDeferred) as exc:
+        reason = str(exc)
+        typer.echo(json.dumps({
+            "status": "LAN_BOOTSTRAP_REJECTED",
+            "reason": (reason if reason.startswith("LAN_BOOTSTRAP_")
+                       else type(exc).__name__),
+            "changes_may_be_partial": apply,
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True))
+    if report["status"] == "LAN_BOOTSTRAP_TRUSTED_CREDENTIAL_REQUIRED":
         raise typer.Exit(6)
 
 

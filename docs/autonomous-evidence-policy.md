@@ -164,6 +164,32 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: preview-first, safe local LAN bootstrap
+
+`examples-ytdlp-lan-bootstrap-local` is a small, Windows-only,
+opt-in local bootstrap: dry-run is the default. It prevalidates the
+requested private non-loopback IPv4, absolute storage targets, linked
+paths, existing credentials, required marker and exact existing profile
+before any writes. The only `--apply` changes are PC-A
+exclusive creation of a new random secret (never PC-B secret generation),
+existing NTFS ACL hardening for that local secret, and creation of the
+fail-closed client profile with its durable required marker. Existing
+credentials/profiles are not overwritten or rotated. An ACL failure
+cleans up only a newly created secret. Existing files, especially
+credentials, are preserved when an operation fails. Default files
+remain under Git-ignored data/runtime; tracked source-tree paths are
+rejected so temporarily public repositories do not receive generated
+secrets by accident.
+
+No task scheduling, SSH bootstrap, host trust decisions, remote import,
+firewall modification, network/media requests, or production switch is
+authorized by local setup. If PC-B lacks the *existing* shared secret,
+apply fails closed with explicit trusted-credential-import guidance.
+All results show `two_host_verified=false`,
+`ready=false`, and no remotely authenticated coordinator
+proof. The Windows CI suite uses disposable paths and mocked ACL
+assertions; tests never operate user-PC configuration or YouTube.
+
 ## Increment: single-PC-command combined LAN onboarding observations
 
 After operator-controlled, verified SSH host-key pinning and key-only
