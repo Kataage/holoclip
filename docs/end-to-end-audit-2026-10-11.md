@@ -67,6 +67,19 @@ reconciliation after a conservative active-worker grace period; no unmeasured
 partial media is considered complete. This still is not verified unattended
 Windows uptime or a complete finished-clip editing pipeline; ready=false.
 
+## Post-PR #207 automatic evaluated-candidate enqueue
+
+The regular `analyze` and `discover` paths can now enqueue bounded eligible
+candidate timelines into the persistent source-acquisition queue after
+**one-time** local-preview opt-in; no handwritten ClipTimeline is needed.
+Enrollment refuses unknown stream IDs, noncanonical/nonpublic sources,
+flagged or low-confidence candidates, malformed cut plans and oversized
+selection windows. It does not make raw LLM confidence a human quality
+assessment, initiate a download during candidate inference, certify
+source rights or perform output video QA. The remaining connection is
+**completed source queue → technical render → editorial QA**, without
+any automatic publication or readiness promotion (`ready=false`).
+
 ## Priority order for subsequent delivery## Post-audit implementation note (PR #203)
 
 A first local, deterministic A/V-only `ClipTimeline` renderer and basic ffprobe
