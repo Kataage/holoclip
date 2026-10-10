@@ -164,6 +164,44 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: private LAN evidence snapshots and fixed-code trend signals
+
+PC-A's examples-ytdlp-lan-evidence-capture composes the previously
+implemented read-only paired deployment diagnosis with an optional
+explicitly requested real no-media pacing trial. Capture defaults
+to no persisted changes. --record opts into one local SQLite
+observation; --include-pacing-trial **requires** --record, is
+never triggered automatically, and is skipped unless the signed
+paired setup passes all existing observation gates. Capturing a
+diagnostic result never starts yt-dlp, changes tasks/firewall or
+copies credentials. The optional real trial retains its existing
+short lease/20-second central gap and fail-closed release behavior.
+
+Only allowlisted fixed codes for diagnosis, observation scope,
+named missing checks, and pacing outcome plus a local timestamp
+are committed. Never store IPs, account names, host fingerprints,
+machine identity tokens, SSH stderr, raw reports, paths, original
+video URLs or secret bytes. Reject malformed/tampered observations
+before storing; never let remote-provided strings become SQL.
+Store at most 90 observations under Git-ignored data/runtime.
+The SQLite evidence DB is distinct from the live coordinator
+lease SQLite DB and may not overwrite a credential, profile,
+required marker or active coordinator state. Corrupt history
+is rejected, not reset. Tests use only synthetic PC receipts
+and local disposable SQLite files.
+
+Offline examples-ytdlp-lan-evidence-history reports bounded
+latest observations, the trailing incomplete-observation streak,
+repeated deficits across the most recent three runs, and
+same-scope change signals. Missing/partial PC-B observations
+must NEVER be interpreted as improvement because fewer checks
+were measured. These signals count **executed snapshots only**;
+no continuous monitoring, uptime, duration, physical two-PC
+attestation, effective firewall policy, global shared pacing
+qualification, automatic remediation, source authenticity or
+editorial correctness can be inferred. All statuses retain
+ready=false and production_ready=false.
+
 ## Increment: opt-in no-media live PC-A/PC-B shared-lease trial
 
 The examples-ytdlp-lan-pacing-trial command is a guarded
