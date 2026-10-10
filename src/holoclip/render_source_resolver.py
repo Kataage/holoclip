@@ -11,7 +11,6 @@ import json
 import re
 import sqlite3
 from pathlib import Path
-from urllib.parse import quote
 
 from holoclip.domain import (
     AccessClass, ClipTimeline, SourceAsset, SourceAvailability, SourcePlatform,
@@ -31,7 +30,7 @@ def _canonical_assets(database: Path, required: set[str]) -> dict[str, SourceAss
     if (not db.is_file() or db.suffix.lower() not in {".db", ".sqlite", ".sqlite3"}
             or db.stat().st_size > MAX_REPOSITORY_BYTES):
         raise ValueError("LOCAL_RENDER_CANONICAL_REPOSITORY_UNAVAILABLE")
-    uri = "file:" + quote(db.as_posix(), safe="/:") + "?mode=ro&immutable=1"
+    uri = db.as_uri() + "?mode=ro"
     try:
         with sqlite3.connect(uri, uri=True, timeout=2) as conn:
             conn.execute("PRAGMA query_only = ON")
