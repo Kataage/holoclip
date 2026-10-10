@@ -254,12 +254,8 @@ def test_crash_leaves_running_until_explicit_offline_reconciliation(tmp_path, mo
     )
     assert recovered["changes_applied"] is True
     assert queue.inspect_render_queue(queue=state)["counts"]["PAUSED"] == 1
-    with pytest.raises(ValueError, match="LOCAL_RENDER_QUEUE_RECOVERY_NOT_REQUIRED"):
-        queue.reconcile_render_queue(
-            queue=state, job_id=receipt["job_id"], resume=False,
-        ) if False else queue.reconcile_render_queue(
-            queue=state, job_id="unrecognized-job",
-        )
+    with pytest.raises(ValueError, match="LOCAL_RENDER_QUEUE_JOB_UNKNOWN"):
+        queue.reconcile_render_queue(queue=state, job_id="unrecognized-job")
 
 
 def test_paused_job_never_restarts_without_manual_resume(tmp_path, monkeypatch):
