@@ -283,3 +283,21 @@ def test_cli_local_positive_without_remote(tmp_path, monkeypatch):
     outcome = CliRunner().invoke(cli.app, ["examples-ytdlp-lan-first-run-check"])
     assert outcome.exit_code == 0, outcome.output
     assert json.loads(outcome.stdout)["ready"] is False
+
+
+def test_missing_durable_monitor_marker_cannot_claim_monitor_executed(
+    tmp_path, monkeypatch,
+):
+    _arrange(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        first, "read_lan_monitor_alert", lambda **kw: {
+            "status": "LAN_MONITOR_NEVER_RECORDED", "alert": "NONE",
+        },
+    )
+    report = first.inspect_lan_first_run()
+    assert report["alert"] == "LAN_FIRST_RUN_ALERT_MISSING"
+    assert report["scheduler_and_history_consistent"] is True
+    assert report["local_monitor_observations_current"] is False
+    assert report["status"] == "LAN_FIRST_RUN_ACTION_REQUIRED"
+    assert "examples-ytdlp-lan-monitor-alert" in report["next_actions"]
+    _safety(report)
