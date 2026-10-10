@@ -503,6 +503,60 @@ effectiveness is still **unverified**, and production stays
 `ready=false` pending real two-PC testing. GitHub CI exercises
 synthetic PowerShell firewall rules only, without opening ports.
 
+#### One-command PC-B LAN setup using preverified PC-A host key
+
+On Windows **PC-B only**, this command composes the existing pinned-key
+SFTP credential import, NTFS credential ACL protection, fail-closed
+client profile creation and signed status-only coordinator check. It does
+**not** set up SSH trust or copy a new credential from PC-B to PC-A.
+
+Before running it, independently verify PC-A's SSH host-key fingerprint,
+place the verified key in a dedicated `known_hosts` file on **PC-B**, and
+configure noninteractive public-key SSH login to PC-A. PC-A must have
+already generated the shared credential. A found host-key entry is **not
+proof** the fingerprint was independently authenticated. The program
+never accepts a new host key automatically.
+
+First, on PC-B, preview **without SFTP connection or filesystem writes**:
+
+```powershell
+uv run holoclip examples-ytdlp-lan-pc-b-prepare --coordinator-ip 192.168.1.10 --ssh-user pc_a_account --known-hosts "D:\AI\holoclip\data\runtime\pc-a-known-hosts" --remote-path "D:/AI/holoclip/data/runtime/yt-dlp-lan-secret.txt"
+```
+
+After reviewing the checks, explicitly opt in to import/configuration:
+
+```powershell
+uv run holoclip examples-ytdlp-lan-pc-b-prepare --coordinator-ip 192.168.1.10 --ssh-user pc_a_account --known-hosts "D:\AI\holoclip\data\runtime\pc-a-known-hosts" --remote-path "D:/AI/holoclip/data/runtime/yt-dlp-lan-secret.txt" --apply
+```
+
+Replace all example values. The host and coordinator use the **same**
+literal PC-A RFC1918 address; optional overrides are `--ssh-port`,
+`--coordinator-port`, `--secret-file`, and `--config-file`.
+The remote SFTP path currently accepts only safe absolute slash-style
+paths **without spaces** or wildcard characters. A missing key pin,
+malformed destination path, legacy coordinator env override, different
+existing secret/profile, or failed NTFS ACL check blocks the sequence.
+Existing secret bytes are never overwritten, rotated or printed.
+
+Explicit apply first checks the pinned host entry and validates the
+local bootstrap preview, then performs only a **public-key-only pinned
+SFTP download** into ACL-protected staging, imports the shared key into
+a protected local credential file, and writes the latched client
+profile. If these local steps succeed, a signed **status-only** request
+checks coordinator authentication; it neither reserves a yt-dlp lease
+nor accesses YouTube. If PC-A is not running, the command reports
+`LAN_PC_B_PREPARED_STATUS_UNVERIFIED` rather than claiming the peer
+was authenticated. It may be rerun after PC-A is online. On partial
+failure, inspect the completed stages before retrying: it does not
+silently roll back existing credentials or client profiles.
+
+This command does not install an SSH server, generate an SSH key,
+disable Windows Firewall, start tasks/coordinator, prove physical
+PC-A/PC-B identities, or qualify effective firewall policy or media
+readiness. All outcomes preserve `two_host_verified=false` and
+`ready=false`. In CI, SFTP and status are mocked: no real PC or
+YouTube connections are made.
+
 #### One-command PC-A LAN setup (safe staged preview, opt-in apply)
 
 For a new Windows PC-A, the combined setup command reduces three
