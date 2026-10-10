@@ -737,6 +737,67 @@ and task registration still need explicit owner action. Use the existing
 diagnostics and further guidance. A successful local bootstrap alone
 does not prove shared-IP pacing or production qualification.
 
+#### One-time PC-A operator profile: enter LAN/SSH details once
+
+PC-A now has a preview-first, **non-secret** local operator profile for
+the previously implemented pinned-SSH two-PC deployment and periodic
+LAN monitor. Instead of retyping all PC-B endpoint and monitoring
+options, enter them once:
+
+    uv run holoclip examples-ytdlp-lan-operator-setup --host 192.168.1.21 --user pc_b_account --known-hosts "D:\AI\holoclip\data\runtime\pc-b-known-hosts" --remote-repo "D:\AI\holoclip"
+
+The default does not write, connect over SSH or register/start tasks.
+It validates the literal RFC1918 address, fixed SSH client command,
+dedicated existing pinned known_hosts entry, safe Windows repository
+path, safe local evidence/alert destinations and existing profile.
+**Checking host key presence is not independent verification of the
+fingerprint.** Verify PC-B's SSH key out of band before applying.
+
+After reviewing the preview, add --apply to save the fixed-schema
+profile at data/runtime/yt-dlp-lan-operator.json. Optionally add BOTH
+--apply --register-monitor to also register the guarded, non-elevated
+Windows monitor Task Scheduler job in the same sequence. The monitor
+is registered but not explicitly started; its future scheduled trigger
+runs according to the chosen interval. No passwords, private keys,
+shared LAN credential, authentication headers or signed receipts
+enter this profile. It does contain PC-B's LAN IP, SSH username and
+local/remote file paths, so it must remain a private local runtime
+file and should not be committed or shared. NTFS ACL hardening is
+required on apply. An existing different profile is never silently
+overwritten.
+
+From then on, status/history/alert checks need no repeated arguments:
+
+    uv run holoclip examples-ytdlp-lan-operator-status
+
+The default is **offline** (reads only the local profile, evidence
+history, alert marker and Task Scheduler inventory). Two explicit
+follow-ups are supported:
+
+    uv run holoclip examples-ytdlp-lan-operator-status --diagnose
+    uv run holoclip examples-ytdlp-lan-operator-status --register-monitor
+
+--diagnose additionally makes the existing read-only pinned SSH and
+signed two-PC diagnostic call. --register-monitor explicitly registers
+the monitor task if absent without starting/overwriting it; do not
+combine these two flags in one invocation. None of these commands
+run yt-dlp, contact YouTube, request pacing leases, generate new
+shared credentials or establish production eligibility.
+
+For changes to IP, account, SSH path or schedule, rerun the original
+setup with updated values and BOTH --apply --update. The change is
+only permitted after the old and new monitor task names are observed
+absent, so previously registered Task Scheduler actions cannot
+silently keep using stale endpoint settings. Remove the old task
+through Windows Task Scheduler after reviewing it, then recreate
+with the new profile. Existing history/alert state is not deleted.
+
+The one-command profile+monitor registration sequence has no global
+rollback: if profile save succeeds but task setup is blocked, it
+reports partial progress and leaves the profile intact. Hardware
+identity, effective Windows Firewall policy, physical two-PC
+deployment and clip quality are still unqualified; ready=false.
+
 #### Windows periodic LAN monitor with repeated-problem notifications
 
 On PC-A, after paired LAN onboarding and preverified SSH trust,
