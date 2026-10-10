@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from holoclip.alignment import ClipSourceAlignment
 from holoclip.domain import (
     CanonicalTranscriptSegment,
@@ -86,6 +88,27 @@ def candidate_to_source_moment(
 
 def candidate_to_clip_timeline(source_asset_id: str, candidate: ClipCandidate) -> ClipTimeline:
     plan = candidate.editorial_edit_plan
+    if plan is not None:
+        spans = plan.spans
+        if not spans:
+            raise ValueError("editorial edit plan requires source spans")
+        measured = 0.0
+        prior_end = -1.0
+        for span in spans:
+            if (not math.isfinite(span.source_start)
+                    or not math.isfinite(span.source_end)
+                    or span.source_start < prior_end
+                    or not span.start_segment_id or not span.end_segment_id):
+                raise ValueError("editorial edit spans must be chronological measured IDs")
+            measured += span.source_end - span.source_start
+            prior_end = span.source_end
+        omitted = spans[-1].source_end - spans[0].source_start - measured
+        if (not plan.pattern_ids
+                or abs(candidate.start - spans[0].source_start) > 0.001
+                or abs(candidate.end - spans[-1].source_end) > 0.001
+                or abs(plan.selected_seconds - measured) > 0.01
+                or abs(plan.omitted_seconds - omitted) > 0.01):
+            raise ValueError("editorial edit plan does not match measured candidate timeline")
     ranges = [(s.source_start, s.source_end) for s in plan.spans] if plan else [(candidate.start, candidate.end)]
     segments = []
     for i, (start, end) in enumerate(ranges):
