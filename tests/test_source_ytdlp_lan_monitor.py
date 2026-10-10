@@ -89,7 +89,7 @@ def test_three_recorded_failures_notify_once_and_keep_durable_marker(tmp_path, m
     assert alert["alert"] == "REPEATED_SAME_LAN_DEFICITS"
     assert alert["issue_keys"] == ["pc-b:remote_ssh"]
     raw = params["alert_file"].read_bytes()
-    for forbidden in (b"192.168.", b"safeuser", b"holoclip", b"known_hosts",
+    for forbidden in (b"192.168.", b"safeuser", b"PrivateUser", b"known_hosts",
                       b"secret", b"password", b"D:\\"):
         assert forbidden not in raw
     assert c["ready"] is False and d["ready"] is False
