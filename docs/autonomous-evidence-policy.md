@@ -164,6 +164,38 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: fail-closed Windows inbound firewall rule-scope inventory
+
+The read-only Windows inspector now enumerates **every** enabled inbound
+allow rule in Firewall ActiveStore, rather than assuming that finding one
+exact-PC-B rule proves no wider overlapping rule exists. For each rule it
+inspects all associated port and remote-address filters without changing
+Windows Firewall. A matching TCP rule with any additional permitted
+address, CIDR (even /32), address range, IPv6 address, LocalSubnet,
+Internet, wildcard, mixed address list, broader TCP port range/port
+list, or protocol 'Any' yields
+`BROAD_INBOUND_ALLOW_RULE_OBSERVED`. Another rule that applies to
+an unrelated TCP port or non-TCP protocol does not by itself make a
+narrow rule broad. Unknown port selectors (RPC dynamic and future
+tokens), unfamiliar protocol codes, null/missing filters and invalid
+input yield `INCOMPLETE_RULE_INSPECTION`, never a positive result.
+Any broad/unknown rule prevents the presence of another exact rule
+from passing PC-A's onboarding and task registration checks.
+
+All observations are deliberately conservative: an allow rule for a
+different program may still be reported broad because the active-rule
+metadata alone does not establish the effect on the coordinator
+process. `EXACT_PEER_ALLOW_RULE_OBSERVED` remains a syntactic
+observation of active allow rules **not a firewall effective-policy or
+two-PC access attestation**. Real local/network firewall policy and
+transport must be checked separately. `firewall_effective_policy_verified=false`,
+`two_host_verified=false`, and `ready=false` persist.
+
+Windows CI runs the dedicated 31-case mock firewall matrix in a
+non-elevated Windows PowerShell 5.1 process. It changes no real
+firewall rules, Task Scheduler entries or credentials and never
+contacts YouTube.
+
 ## Increment: guarded one-command PC-A logon-task registration
 
 The new `examples-ytdlp-lan-task-prepare` is a read-only preview by
