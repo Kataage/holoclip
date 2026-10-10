@@ -26,8 +26,10 @@ from holoclip.render_plan import (
 from holoclip.render_source_queue import DEFAULT_QUEUE, _connect, _queue_path
 from holoclip.render_source_queue import _recovery_cache_verified
 from holoclip.render_source_resolver import resolve_cached_render_sources
+from holoclip.render_subtitles import export_cut_aligned_srt
 
 DEFAULT_PREVIEW_ROOT = Path("data/render-previews")
+DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
 _MAX_AUTO_SECONDS = 180.0
 _JOB_ID = re.compile(r"renderqueue_[a-f0-9]{32}\Z")
 _RENDER_STATES = frozenset({"RENDERING", "PAUSED", "QA_PASSED"})
@@ -51,6 +53,12 @@ def _db(queue: Path, *, write: bool) -> sqlite3.Connection | None:
             "reason TEXT NOT NULL, output_path TEXT NOT NULL,"
             "output_sha256 TEXT NOT NULL, render_plan_id TEXT NOT NULL,"
             "measured_duration REAL NOT NULL, updated_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS render_caption_evidence ("
+            "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
+            "cue_count INTEGER NOT NULL, dropped_cue_count INTEGER NOT NULL,"
+            "output_sha256 TEXT NOT NULL, updated_at REAL NOT NULL)"
         )
         connection.commit()
         return connection
@@ -106,6 +114,32 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                 raise ValueError("LOCAL_RENDER_AUTO_QA_JOB_ID_INVALID")
             state = state_map.get(row["job_id"], "PENDING")
             counts[state] += 1
+        caption_counts = {
+            "srt_created": 0, "unavailable": 0,
+            "no_full_utterances": 0,
+        }
+        caption_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_caption_evidence'"
+        ).fetchone() is not None
+        if caption_table:
+            captions = conn.execute(
+                "SELECT status FROM render_caption_evidence LIMIT 1001"
+            ).fetchall()
+            if len(captions) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            for item in captions:
+                status = item["status"]
+                if status == "LOCAL_SUBTITLE_SRT_CREATED_UNVERIFIED_ASR":
+                    caption_counts["srt_created"] += 1
+                elif status in {"LOCAL_SUBTITLE_UNAVAILABLE_OR_UNTRUSTED",
+                              "LOCAL_SUBTITLE_NOT_AVAILABLE"}:
+                    caption_counts["unavailable"] += 1
+                elif status == "LOCAL_SUBTITLE_NO_FULL_UTTERANCES":
+                    caption_counts["no_full_utterances"] += 1
+                else:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_CAPTION_STATE_UNTRUSTED")
+        report["subtitle_counts"] = caption_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
@@ -163,7 +197,7 @@ def _claim(queue: Path) -> tuple[dict | None, str, str]:
 def _finish(
     queue: Path, *, job_id: str, token: str, state: str, reason: str,
     output: Path | None = None, sha256: str = "", plan_id: str = "",
-    duration: float = 0.0,
+    duration: float = 0.0, caption_evidence: dict | None = None,
 ) -> None:
     if state not in {"PAUSED", "QA_PASSED"} or reason not in {
         "NONE", "LOCAL_RENDER_AUTO_QA_VALIDATION_FAILED",
@@ -184,6 +218,18 @@ def _finish(
         )
         if changed.rowcount != 1:
             raise ValueError("LOCAL_RENDER_AUTO_QA_CLAIM_LOST")
+        if state == "QA_PASSED" and caption_evidence is not None:
+            # The subtitle sidecar is optional evidence, not media QA.
+            conn.execute(
+                "INSERT INTO render_caption_evidence VALUES (?,?,?,?,?,?)",
+                (
+                    job_id, str(caption_evidence["status"]),
+                    int(caption_evidence["cue_count"]),
+                    int(caption_evidence["dropped_cue_count"]),
+                    str(caption_evidence["output_sha256"] or ""),
+                    time.time(),
+                ),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -241,6 +287,7 @@ def _offline_render_policy(timeline: ClipTimeline, sources: list,
 def advance_completed_source_renders(
     *, queue: Path = DEFAULT_QUEUE,
     preview_root: Path = DEFAULT_PREVIEW_ROOT,
+    transcript_root: Path = DEFAULT_TRANSCRIPT_ROOT,
     execute: bool = False,
 ) -> dict:
     """At most one offline MP4 technical preview, never any network or publish."""
@@ -276,11 +323,21 @@ def advance_completed_source_renders(
         details = render_local_preview(plan)
         if details["status"] != "LOCAL_RENDER_BASIC_AV_QA_PASSED_NOT_PRODUCTION_READY":
             raise ValueError("LOCAL_RENDER_AUTO_QA_RENDER_UNQUALIFIED")
+        # Never conflate transcript availability or ASR accuracy with technical
+        # MP4 readiness. Missing/ambiguous ASR does not falsify video QA.
+        caption_evidence = export_cut_aligned_srt(
+            timeline, sources, transcript_root=transcript_root,
+            mp4_output=output,
+        )
         _finish(
             queue, job_id=job_id, token=token, state="QA_PASSED", reason="NONE",
             output=output, sha256=str(details["output_sha256"]),
             plan_id=plan.id, duration=float(details["measured_duration"]),
+            caption_evidence=caption_evidence,
         )
+        report["subtitle_status"] = caption_evidence["status"]
+        report["subtitle_cue_count"] = caption_evidence["cue_count"]
+        report["subtitle_dropped_cue_count"] = caption_evidence["dropped_cue_count"]
         report["status"] = "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
         report["rendered_count"] = 1
         report["output_sha256"] = details["output_sha256"]
