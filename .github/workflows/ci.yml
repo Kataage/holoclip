@@ -83,6 +83,11 @@ jobs:
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-firewall-prepare.ps1"
           if ($LASTEXITCODE -ne 0) { throw "Windows LAN firewall prepare mock tests failed: $LASTEXITCODE" }
 
+      - name: Verify Windows LAN periodic monitor task using mocked scheduler
+        run: |
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-monitor-task.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "Windows LAN monitor task tests failed: $LASTEXITCODE" }
+
       - name: Verify Windows LAN setup inspection using mocked cmdlets
         run: |
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-setup-doctor.ps1"
