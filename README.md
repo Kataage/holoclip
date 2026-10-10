@@ -737,6 +737,57 @@ and task registration still need explicit owner action. Use the existing
 diagnostics and further guidance. A successful local bootstrap alone
 does not prove shared-IP pacing or production qualification.
 
+#### Explicit no-media two-PC shared-pacing live trial
+
+After configuring both PCs and passing the existing strict paired
+onboarding check, PC-A can verify that **PC-B cannot acquire a shared
+coordinator lease while PC-A holds it, or during the normal gap
+immediately after release**. The trial uses pre-pinned, public-key-only
+SSH to run the fixed PC-B witness commands. No YouTube, yt-dlp,
+media, URLs, Task Scheduler or firewall changes are involved.
+
+Start with a local **preview**, which only validates the pinned SSH
+client and known_hosts file and does not send a coordinator request:
+
+    uv run holoclip examples-ytdlp-lan-pacing-trial --host 192.168.1.21 --user pc_b_account --known-hosts "D:\AI\holoclip\data\runtime\pc-b-known-hosts" --remote-repo "D:\AI\holoclip"
+
+After manually reviewing the PC-B SSH key fingerprint out of band,
+configuring both client profiles and observing PC-A as available,
+run the same command with the explicit --apply flag **on PC-A**.
+
+    uv run holoclip examples-ytdlp-lan-pacing-trial --host 192.168.1.21 --user pc_b_account --known-hosts "D:\AI\holoclip\data\runtime\pc-b-known-hosts" --remote-repo "D:\AI\holoclip" --apply
+
+Nondefault ports can be set with --ssh-port and --coordinator-port.
+An alternate Task Scheduler name uses --task-name. The explicit
+trial first requires successful strict paired onboarding and an
+AVAILABLE signed shared coordinator status. It then reserves one
+**real, short-lived production coordinator lease**, runs PC-B's
+signed status + denied-reservation witness over pinned SSH while
+that lease is held, confirms release, and runs PC-B's second
+witness during the normal **20-second shared gap**. Witnesses must
+report the same persistent coordinator instance identity and fixed
+negative lease codes. Incomplete, delayed, replayed, mismatched,
+unavailable or corrupted observations are **not** successful.
+
+**Operational side effect:** Even though no media is accessed, the
+trial consumes a real coordinator lease and imposes its regular
+20-second gate gap. Run it only when the coordinator is otherwise
+idle, not during planned media acquisition. If the client crashes
+or release confirmation fails, the gate may remain held until
+its bounded lease expiry; the command never deletes/reset a
+production SQLite gate or overrides a cooldown. Running it
+does not bypass existing yt-dlp pacing or YouTube access restrictions.
+
+A positive LAN_PACING_CROSS_SSH_LEASE_GAP_OBSERVED reports only
+this one authenticated, bounded SSH witness trial. It does not
+establish independent physical PC identity, verified fingerprint
+provenance, effective Windows Firewall policy, continuous uptime,
+future no-BAN guarantees, real YouTube access, rendered clip quality
+or production eligibility. It leaves two_host_verified=false,
+real_two_host_pacing_qualified=false and ready=false. Linux and
+Windows CI use an **isolated loopback broker and fake SSH only**;
+they do not perform a real two-PC or media test.
+
 #### Read-only two-PC deployment diagnosis with ordered next actions
 
 Run on PC-A after independently pinning PC-B's SSH host key and provisioning
