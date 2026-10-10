@@ -77,6 +77,15 @@ def _fake_full_video(root, video):
     (folder / "media.mkv").write_bytes(b"synthetic local full source" * 20)
 
 
+def _expire_claim(state: Path):
+    # Simulate the 2h guard elapsed after a crashed Windows subprocess.
+    with sqlite3.connect(state) as conn:
+        conn.execute(
+            "UPDATE queue_jobs SET updated_at=? WHERE state='RUNNING'",
+            (queue.time.time() - 7300,),
+        )
+
+
 def test_preview_and_status_do_not_create_queue_or_contact_provider(tmp_path, monkeypatch):
     monkeypatch.setattr(
         queue, "acquire_one_missing_render_source",
@@ -241,6 +250,9 @@ def test_crash_leaves_running_until_explicit_offline_reconciliation(tmp_path, mo
     # Simulate process death after atomic claim before any network call.
     row, token, status = queue._claim(state)
     assert status == "LOCAL_RENDER_QUEUE_JOB_CLAIMED"
+    with pytest.raises(ValueError, match="LOCAL_RENDER_QUEUE_RUN_MAY_STILL_BE_ACTIVE"):
+        queue.reconcile_render_queue(queue=state, job_id=receipt["job_id"], apply=True)
+    _expire_claim(state)
     assert queue.advance_render_queue(queue=state, execute=True)["status"] == (
         "LOCAL_RENDER_QUEUE_STOPPED_UNCERTAIN_OR_PAUSED"
     )
@@ -328,6 +340,7 @@ def test_interrupted_worker_requires_full_duration_av_before_recovery(
 ):
     state, receipt, _, _, root = _enroll(tmp_path)
     row, token, status = queue._claim(state)
+    _expire_claim(state)
     for vid in _IDS:
         _fake_full_video(root, vid)
     # Even a seemingly complete file with matching identity cannot prove
@@ -356,6 +369,7 @@ def test_interrupted_worker_requires_full_duration_av_before_recovery(
 def test_corrupt_partial_video_is_only_manually_paused(tmp_path):
     state, receipt, _, _, root = _enroll(tmp_path)
     queue._claim(state)
+    _expire_claim(state)
     folder = root / _IDS[0] / "editing_video"
     folder.mkdir(parents=True)
     (folder / "media.mkv").write_bytes(b"INCOMPLETE")
