@@ -164,6 +164,38 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: pinned SFTP PC-B single-command enrollment
+
+The PC-B-only `examples-ytdlp-lan-pc-b-prepare` command safely
+composes **preexisting independently verified PC-A host-key entry
+inspection → strict public-key-only SFTP credential import → Windows NTFS
+ACL review/hardening → latched client configuration → signed
+coordinator status-only observation**. It never generates a new PC-B
+credential or trusts a new host key. SSH trust, public-key account
+provisioning and host-key fingerprint verification remain manual,
+out-of-band prerequisites; the `HOST_PIN_ENTRY_OBSERVED` check only
+proves that an entry exists in the supplied dedicated file.
+
+Default preview is read-only and performs neither SSH/SFTP connection
+nor coordinator RPC. On explicit `--apply` (Windows only), the command
+reuses established strict SFTP staging/credential ACL and
+no-overwrite import, then existing no-replace client bootstrap. A
+differing existing key or profile is rejected, without deletion or
+rotation. Any later-step failure halts the sequence with a fixed-code
+progress result, preserving protected previous state and indicating
+possible partial changes; raw SSH errors and key bytes are never echoed.
+
+Even a signed coordinator response authenticates only an enrolled
+client's knowledge of the shared key, not a physical host. If PC-A is
+offline or status is untrusted, the local configuration can remain
+prepared but the coordinator authentication is explicitly unverified.
+No media, pacing lease, yt-dlp, SSH server setup, host-key pinning,
+firewall edits or Task Scheduler activation occurs. Reports always
+preserve `firewall_effective_policy_verified=false`,
+`two_host_verified=false`, and `ready=false`.
+Both platform suites use mocked SSH or loopback-only status; actual
+two-host deployment remains unqualified.
+
 ## Increment: staged single-command PC-A LAN preparation
 
 The PC-A-only examples-ytdlp-lan-pc-a-prepare entrypoint composes the

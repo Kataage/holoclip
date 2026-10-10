@@ -36,6 +36,7 @@ from holoclip.source_ytdlp_lan_local_bootstrap import bootstrap_local_lan
 from holoclip.source_ytdlp_lan_task_prepare import inspect_lan_task_registration
 from holoclip.source_ytdlp_lan_firewall_prepare import prepare_lan_firewall
 from holoclip.source_ytdlp_lan_pc_a_prepare import prepare_pc_a_lan
+from holoclip.source_ytdlp_lan_pc_b_prepare import prepare_pc_b_lan
 from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
 from holoclip.source_ytdlp_lan_setup_doctor import inspect_lan_setup
 from holoclip.source_ytdlp_lan_ssh_transfer import pull_lan_secret_sftp, _secure_windows_path
@@ -1361,6 +1362,49 @@ def examples_ytdlp_lan_pair_verify(
         raise typer.Exit(6) from exc
     typer.echo(json.dumps(report))
     if report["status"] != "LAN_PAIR_OBSERVATIONS_MATCH":
+        raise typer.Exit(6)
+
+
+@app.command("examples-ytdlp-lan-pc-b-prepare")
+def examples_ytdlp_lan_pc_b_prepare(
+    coordinator_ip: str = typer.Option(..., "--coordinator-ip",
+        help="PC-A coordinator and pinned SFTP server private IPv4."),
+    ssh_user: str = typer.Option(..., "--ssh-user",
+        help="Existing PC-A public-key SSH account."),
+    remote_path: str = typer.Option(..., "--remote-path",
+        help="Existing PC-A secret absolute SFTP path, with forward slashes."),
+    known_hosts: Path = typer.Option(..., "--known-hosts",
+        help="PC-A SSH host key file already independently verified."),
+    ssh_port: int = typer.Option(22, "--ssh-port", min=1, max=65535),
+    coordinator_port: int = typer.Option(8878, "--coordinator-port",
+        min=1024, max=65535),
+    secret_file: Path = typer.Option(DEFAULT_SECRET_PATH, "--secret-file"),
+    config_file: Path = typer.Option(DEFAULT_CLIENT_CONFIG, "--config-file"),
+    apply: bool = typer.Option(False, "--apply",
+        help="Fetch pinned SFTP credential and configure PC-B, then check signed status."),
+) -> None:
+    """Preview without network/writes; apply never trusts unknown SSH host keys."""
+    _load_env_file()
+    try:
+        report = prepare_pc_b_lan(
+            coordinator_ip=coordinator_ip, ssh_user=ssh_user,
+            remote_path=remote_path, known_hosts=known_hosts,
+            ssh_port=ssh_port, coordinator_port=coordinator_port,
+            secret_file=secret_file, config_file=config_file, apply=apply,
+        )
+    except (ValueError, OSError, UnicodeError) as exc:
+        code = str(exc)
+        typer.echo(json.dumps({
+            "status": "LAN_PC_B_PREPARE_REJECTED",
+            "reason": code if code.startswith("LAN_PC_B_") else type(exc).__name__,
+            "changes_may_be_partial": apply,
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True))
+    if report["status"] not in {
+        "LAN_PC_B_PREVIEW_ELIGIBLE", "LAN_PC_B_PREPARED_AUTHENTICATED",
+    }:
         raise typer.Exit(6)
 
 
