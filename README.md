@@ -430,6 +430,52 @@ PCs have actually enrolled, that the coordinator is reachable from both,
 or that the eventual video/edit quality is production ready. Only
 site-free loopback/CI simulations have been exercised so far;
 `ready=false` remains unchanged.
+#### One-command cross-PC LAN status collection over pinned SSH
+
+After **both Windows PCs** already have working Holoclip LAN coordinator
+client configurations and PC-B has a trusted OpenSSH server, a single
+command on PC-A can run PC-B's **read-only** status probe remotely and
+compare it to a fresh PC-A status probe **without report files or secret
+transfer**:
+
+```powershell
+uv run holoclip examples-ytdlp-lan-pair-collect --host 192.168.1.21 --user pc_b_account --known-hosts "D:\AI\holoclip\data\runtime\pc-b-known-hosts" --remote-repo "D:\AI\holoclip"
+```
+
+Replace the IP, SSH account, PC-B known_hosts file and PC-B Holoclip
+directory with your own settings. Nondefault SSH ports use
+`--ssh-port`. **PC-B's SSH host-key fingerprint must be
+verified independently** and pinned in the specified file. The command
+does not provision an SSH server, keys, firewall access, PC-B environment
+or SSH trust. It refuses missing known_hosts, external IPs, untrusted SSH,
+interactive password authentication, SSH agent forwarding, proxies and
+jump hosts. The remote shell command is encoded rather than concatenated
+with untrusted input, and the PC-B working directory is validated and
+configurable, including spaces.
+
+The collector uses a noninteractive SSH connection to PC-B and invokes
+`uv run --no-sync holoclip examples-ytdlp-lan-pair-observe --role pc-b`
+via remote Windows PowerShell, while obtaining PC-A's signed observation
+locally. It receives one bounded JSON receipt directly over SSH and
+compares both reports in memory, never saving/transporting the shared
+credential or persisting report files. Remote and local status calls
+never request a pacing lease or contact YouTube.
+
+The report explicitly shows only authenticated observation consistency.
+Two registered clients knowing the shared credential can still produce
+forged evidence; NAT and other network configurations can collapse
+TCP-peer tags. SSH host-key pinning verifies the identity *assigned
+during the manual out-of-band enrollment*, not the independent identity
+of physical hardware. If the coordinator/SSH connection fails or the
+response is invalid, the command fails closed. Even when pair observations
+match, it **never** declares two physical machines independently verified
+or production-ready: `two_host_verified=false` and
+`ready=false`. This is not a real media-pacing qualification.
+
+The original `examples-ytdlp-lan-pair-export` and
+`examples-ytdlp-lan-pair-verify` commands remain available
+for environments without remotely configured SSH.
+
 #### Signed cross-PC LAN coordinator pairing observations (no media)
 
 The optional pair-export command queries only coordinator's HMAC-authenticated
