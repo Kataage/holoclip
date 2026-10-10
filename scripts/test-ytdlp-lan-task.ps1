@@ -119,11 +119,26 @@ try {
         @{ Body = '[pscustomobject]@{ TaskName = "holoclip yt-dlp lan coordinator" }'; Expected = 'LAN_TASK_ALREADY_PRESENT'; Exit = 0 },
         @{ Body = 'throw "denied"'; Expected = 'LAN_TASK_ENUMERATION_UNAVAILABLE'; Exit = 6 }
     )
+    $scenarioPath = Join-Path $testRoot 'task-probe-mock-case.ps1'
     foreach ($case in $cases) {
-        $scriptBody = ('function Get-ScheduledTask {{ [CmdletBinding()] param() {0} }}; ' +
-            '& ''{1}'' -TaskName ''Holoclip yt-dlp LAN Coordinator''') -f $case.Body, $probe
-        $text = & $psExe -NoProfile -NonInteractive -Command $scriptBody | Out-String
-        Assert-Lan ($LASTEXITCODE -eq $case.Exit) 'Task inventory probe exit code mismatch'
+        # -File avoids WindowsPowerShell 5.1 -Command string-quoting
+        # differences. The temp script defines a fake cmdlet *only*
+        # in this disposable child process (never the actual scheduler).
+        $scenario = @'
+function Get-ScheduledTask {
+    [CmdletBinding()]
+    param()
+    __CASE_BODY__
+}
+& '__PROBE_PATH__' -TaskName 'Holoclip yt-dlp LAN Coordinator'
+'@
+        $scenario = $scenario.Replace('__CASE_BODY__', $case.Body).Replace('__PROBE_PATH__', $probe)
+        [IO.File]::WriteAllText($scenarioPath, $scenario, [Text.Encoding]::UTF8)
+        $text = & $psExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $scenarioPath 2>&1 | Out-String
+        Assert-Lan ($LASTEXITCODE -eq $case.Exit) (
+            'Task inventory probe exit code mismatch: ' + $LASTEXITCODE +
+            ' expected=' + $case.Exit + ' output=' + $text
+        )
         $doc = $text | ConvertFrom-Json
         Assert-Lan ($doc.status -eq $case.Expected) 'Task inventory probe failed closed incorrectly'
         Assert-Lan ($doc.ready -eq $false) 'Task inventory probe claimed production readiness'
