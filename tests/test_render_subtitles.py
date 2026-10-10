@@ -123,10 +123,10 @@ def test_uses_existing_ingest_transcript_layout(tmp_path):
 def test_metadata_mismatched_source_video_id_blocks(tmp_path):
     timeline, sources, root, _ = _case(tmp_path)
     target = root / f"{VID_A}.json"
-    document = json.loads(target.read_text())
+    document = json.loads(target.read_text(encoding="utf-8"))
     target.write_text(json.dumps({
         "source_id": VID_B, "segments": document,
-    }))
+    }, ensure_ascii=False), encoding="utf-8")
     with pytest.raises(ValueError, match="LOCAL_SUBTITLE_TRANSCRIPT_ID_MISMATCH"):
         compose_cut_aligned_srt(timeline, sources, transcript_root=root)
 
