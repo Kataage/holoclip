@@ -15,19 +15,22 @@ try {
 @echo off
 echo %* >> "%~dp0calls.txt"
 echo %* | findstr /C:"render-source-queue-run" >nul
-if not errorlevel 1 (
-  if "%MOCK_SOURCE_MODE%"=="all" (
-    echo {"status":"LOCAL_RENDER_QUEUE_ALL_COMPLETE","acquired_count":0}
-  ) else if "%MOCK_SOURCE_MODE%"=="acquired" (
-    echo {"status":"LOCAL_RENDER_QUEUE_JOB_COMPLETE","acquired_count":1}
-  ) else if "%MOCK_SOURCE_MODE%"=="blocked" (
-    echo {"status":"LOCAL_RENDER_QUEUE_PAUSED_VALIDATION","acquired_count":0}
-    exit /b 6
-  ) else (
-    echo invalid-json
-  )
+if errorlevel 1 goto render
+if "%MOCK_SOURCE_MODE%"=="all" (
+  echo {"status":"LOCAL_RENDER_QUEUE_ALL_COMPLETE","acquired_count":0}
   exit /b 0
 )
+if "%MOCK_SOURCE_MODE%"=="acquired" (
+  echo {"status":"LOCAL_RENDER_QUEUE_JOB_COMPLETE","acquired_count":1}
+  exit /b 0
+)
+if "%MOCK_SOURCE_MODE%"=="blocked" (
+  echo {"status":"LOCAL_RENDER_QUEUE_PAUSED_VALIDATION","acquired_count":0}
+  exit /b 6
+)
+echo invalid-json
+exit /b 0
+:render
 echo {"status":"LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY","rendered_count":1}
 exit /b 0
 '@
@@ -47,7 +50,7 @@ exit /b 0
       Assert-Run ($exitCode -eq 0) 'Source acquired but skip render this tick'
       Assert-Run ($history.Count -eq 1) 'Never immediately encode after download'
     } else {
-      Assert-Run ($exitCode -eq 6) 'Unsafe source status must fail closed'
+      Assert-Run ($exitCode -eq 6) ('Unsafe source status must fail closed: mode=' + $mode + ', exit=' + $exitCode)
       Assert-Run ($history.Count -eq 1) 'Never render after unsafe source status'
     }
   }
