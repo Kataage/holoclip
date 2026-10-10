@@ -14,7 +14,9 @@ from holoclip.clip_policy import (
     PolicyDecision, PolicyOperation, evaluate_source_metadata,
     evaluate_source_ranges, load_policy_rules,
 )
-from holoclip.domain import AccessClass, ClipTimeline, SourceAvailability, SourcePlatform
+from holoclip.domain import (
+    AccessClass, ClipTimeline, SourceAvailability, SourcePlatform, SourceType,
+)
 from holoclip.providers.source.base import AcquisitionProfile
 from holoclip.providers.source.yt_dlp import YtDlpSourceProvider
 from holoclip.render_plan import _no_links
@@ -57,6 +59,7 @@ def _inventory(
         asset = assets[aid]
         if (
             asset.platform != SourcePlatform.YOUTUBE
+            or asset.source_type not in {SourceType.STREAM, SourceType.VIDEO}
             or not _YOUTUBE_ID.fullmatch(asset.external_id)
             or asset.availability != SourceAvailability.AVAILABLE
             or asset.access_class not in {AccessClass.PUBLIC, AccessClass.AUTHORIZED}
