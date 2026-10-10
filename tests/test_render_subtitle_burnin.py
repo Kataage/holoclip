@@ -26,6 +26,13 @@ def _files(tmp_path, *, srt=SRT):
     return video, sidecar, hashlib.sha256(sidecar.read_bytes()).hexdigest()
 
 
+def test_windows_crlf_srt_remains_valid_and_lone_cr_is_rejected():
+    cues = burn._read_cues(SRT.replace("\n", "\r\n").encode("utf-8"))
+    assert len(cues) == 2 and cues[0].text == "こんにちは！"
+    with pytest.raises(ValueError, match="SRT_UNTRUSTED"):
+        burn._read_cues(SRT.replace("\n", "\r", 1).encode("utf-8"))
+
+
 def test_deterministic_ass_japanese_style_and_two_line_wrap():
     cues = burn._read_cues(SRT.encode("utf-8"))
     ass = burn._ass(cues, font_name="Meiryo")
