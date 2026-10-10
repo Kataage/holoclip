@@ -140,6 +140,30 @@ real two-PC network is exercised in GitHub. Cryptographic host
 identity verification by the operator and physical two-host
 commissioning remain outstanding. Shared-IP pacing remains an
 opt-in feature and `ready=false` remains mandatory.
+## Increment: offline developer CI preflight during hosted-runner budget failure
+
+When private GitHub Actions fails during job allocation with **zero steps
+and no assigned runner**, no test assertions have actually executed.
+Do not infer a bad patch or treat the run as success. The repository
+has exceeded 1,000 GitHub Actions workflow runs across Holoclip and
+Artifex since October 2026 began, making free-usage exhaustion
+plausible; exact billed minutes / account budget require owner access
+to GitHub Billing and are **not confirmed**. Retry loops should stop
+rather than consume additional GitHub Actions quota.
+
+The optional `scripts/verify-ci-local.py` runs Ruff and
+matching Windows offline suites or Linux full Pytest using
+`uv run --offline --no-sync`, without Docker, installing tools
+or visiting media websites. Python 3.12, installed uv, a clean tracked
+worktree and optional exact-SHA proof are required. Explicit local
+results are never misrepresented as Actions results: on success the
+status says `LOCAL_PREFLIGHT_PASSED_NOT_GITHUB_CI`, with
+`github_actions_ci_verified=false`,
+`both_platforms_verified=false` and `ready=false`.
+Only successful GitHub Linux+Windows CI on the exact head can unblock
+PR merge. Separate real-PC and media/editorial qualification remain
+outstanding.
+
 ## Increment: one-command pinned SSH LAN observation collection
 
 `examples-ytdlp-lan-pair-collect` uses the installed client
