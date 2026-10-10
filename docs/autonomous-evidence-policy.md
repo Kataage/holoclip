@@ -164,6 +164,47 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: fail-closed post-start LAN monitor evidence inspection
+
+The PC-A `examples-ytdlp-lan-first-run-check` is a read-only audit
+of already saved operator profile, Windows Task Scheduler registration
+and task's most recent run, the code-only local evidence database,
+and the fixed-code alert marker. It does not start/restart a task,
+edit a Task Scheduler action or ACL, touch the shared lease/cooldown
+state, request media access, auto-accept host keys or contact YouTube.
+Optional `--check-remote` independently makes an already trusted
+pinned SSH and signed setup-status observation; it never suppresses
+local failure evidence or fabricates a PC-B result.
+
+The dedicated Windows PowerShell 5.1 probe validates exact installed
+task action arguments against the saved operator profile, fixed
+runner path, current uv executable, execution working directory,
+non-elevated interactive principal, single-instance policy, 3-minute
+execution cap and configured repeat interval. It then emits ONLY
+fixed state/run-status codes and a numeric last-run epoch. Missing
+task, disabled task, action drift, unauthorized inspection and a
+nonzero last task result remain distinct failure categories.
+No raw Task Scheduler error, usernames or host addresses appear
+in public diagnostic JSON. Windows mocks never inspect or register
+real tasks.
+
+A success requires a fresh *recorded* positive paired diagnostic
+snapshot correlated with the most recent successful Task Scheduler
+run; timestamps that are stale, inconsistent or unexpectedly in
+the future fail closed. An alert for repeated failures prevents
+positive status even if the last recorded snapshot was healthy.
+A Task Scheduler exit result of 0 alone is insufficient, and
+manual local snapshots are not evidence of scheduled execution
+unless consistent with an actual task run. Local and signed-peer
+observations have distinct status codes; neither claims physical
+PC identity or a fully authenticated Windows Firewall effective
+packet-filtering policy.
+
+An observed first-run is not proof of continuous uptime or reliable
+task delivery after reboots, nor verification of shared-IP YouTube
+rate limits, source authenticity or edited clip quality. The
+production router is not upgraded; `ready=false` is invariant.
+
 ## Increment: reusable PC-A non-secret LAN operator profile
 
 The operator-setup command offers one-time, preview-first enrollment

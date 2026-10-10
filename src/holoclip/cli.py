@@ -45,6 +45,7 @@ from holoclip.source_ytdlp_lan_monitor import (
 from holoclip.source_ytdlp_lan_operator_profile import (
     DEFAULT_OPERATOR_PROFILE, prepare_operator_profile, operator_status,
 )
+from holoclip.source_ytdlp_lan_first_run_check import inspect_lan_first_run
 from holoclip.source_ytdlp_lan_local_bootstrap import bootstrap_local_lan
 from holoclip.source_ytdlp_lan_task_prepare import inspect_lan_task_registration
 from holoclip.source_ytdlp_lan_firewall_prepare import prepare_lan_firewall
@@ -1308,6 +1309,33 @@ def examples_ytdlp_lan_pacing_trial(
     if report["status"] not in {
         "LAN_PACING_PREVIEW_ONLY", "LAN_PACING_CROSS_SSH_LEASE_GAP_OBSERVED",
     }:
+        raise typer.Exit(6)
+
+
+@app.command("examples-ytdlp-lan-first-run-check")
+def examples_ytdlp_lan_first_run_check(
+    profile_file: Path = typer.Option(DEFAULT_OPERATOR_PROFILE, "--profile-file",
+        help="Previously saved PC-A operator profile; no repeated IP or SSH arguments."),
+    check_remote: bool = typer.Option(False, "--check-remote",
+        help="Also check PC-B using already pinned SSH and signed status; no media."),
+) -> None:
+    """Read-only first-run audit: exact task, last run and fresh signed history."""
+    _load_env_file()
+    try:
+        report = inspect_lan_first_run(
+            profile_file=profile_file, check_remote=check_remote,
+        )
+    except (ValueError, OSError, UnicodeError, TypeError, sqlite3.Error,
+            LocalYtDlpDeferred) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_FIRST_RUN_CHECK_REJECTED", "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True, ensure_ascii=False))
+    if report["status"] not in {
+        "LAN_FIRST_RUN_LOCAL_MONITOR_OBSERVED",
+        "LAN_FIRST_RUN_LOCAL_AND_PEER_OBSERVED",
+    } or (check_remote and report["signed_peer"] != "LAN_FIRST_RUN_SIGNED_PEER_OBSERVED"):
         raise typer.Exit(6)
 
 

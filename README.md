@@ -737,6 +737,53 @@ and task registration still need explicit owner action. Use the existing
 diagnostics and further guidance. A successful local bootstrap alone
 does not prove shared-IP pacing or production qualification.
 
+#### First-run LAN monitor audit: task, execution and evidence freshness
+
+After explicitly registering the PC-A operator profile and installing the
+monitor task, the following **read-only** check combines local operator
+settings, exact Windows Task Scheduler action/interval/privilege checks,
+last task result, the latest bounded evidence-history timestamp and
+the repeated-alert marker. No more host/IP/account arguments are required:
+
+    uv run holoclip examples-ytdlp-lan-first-run-check
+
+This command does not start a task, change existing settings, request
+an yt-dlp lease, or contact YouTube. It returns a fixed-code ordered
+next-action list and exits nonzero if setup or evidence is incomplete.
+An absent, disabled, tampered or different Task Scheduler action is
+never treated as a successful startup. The audit also rejects missing,
+failed or unreadable last-run results, clocks that appear to be in the
+future, stale diagnostic snapshots (older than two configured intervals
+plus five minutes), negative paired observations and active alerts.
+
+To assess PC-B at the same time, opt in to a *separate* already-pinned
+key-only SSH and signed coordinator check:
+
+    uv run holoclip examples-ytdlp-lan-first-run-check --check-remote
+
+The default **never opens SSH**. The optional peer check is read-only,
+bounded and keeps incomplete authentication as an unverified result.
+Observed last Task Scheduler success must line up within five minutes
+of the latest sanitized LAN evidence write (with 30 seconds clock
+tolerance); a manual positive snapshot alone cannot establish
+task execution. Even a correlation only supports one observed run,
+not continuous runtime or guaranteed future task scheduling.
+
+Status `LAN_FIRST_RUN_LOCAL_MONITOR_OBSERVED` indicates consistent
+local task + recent positive diagnostic evidence. With a positive
+explicit peer check, `LAN_FIRST_RUN_LOCAL_AND_PEER_OBSERVED` indicates
+additional signed setup observations. Neither is physical two-host
+attestation, effective Windows Firewall policy proof, yt-dlp safety
+guarantee or editorial quality certification. **All outputs retain
+`ready=false` and `production_ready=false`.**
+
+Windows CI exercises a fake Task Scheduler inventory, recorded execution
+result and fixed-code PowerShell outputs. Hosted CI never contacts the
+owner's Windows hosts or registers an actual monitoring task.
+
+To see what is missing before starting anything manually, run the
+command after profile setup and follow the reported safe actions.
+
 #### One-time PC-A operator profile: enter LAN/SSH details once
 
 PC-A now has a preview-first, **non-secret** local operator profile for
