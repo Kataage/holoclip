@@ -1,5 +1,7 @@
 # holoclip
 
+**Full-video cache auto-mapping:** `render-local-preview --auto-sources --approve-local-preview` can use canonical source IDs and existing full yt-dlp editing_video caches without a handwritten sources.json. No YouTube access or publishing rights are inferred; see [mapping rules](docs/local-render-plan.md).
+
 **New local A/V baseline:** measured multi-source ClipTimeline to deterministic FFmpeg MP4 preview is available via `uv run holoclip render-local-preview` (dry-run default; explicit `--execute`). See [local renderer guide](docs/local-render-plan.md). No publishing or production readiness is implied.
 
 > **End-to-end readiness (2026-10-11):** Local acquisition, candidate discovery and
