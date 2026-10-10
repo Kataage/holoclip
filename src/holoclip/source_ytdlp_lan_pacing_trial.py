@@ -87,6 +87,16 @@ def witness_lan_pacing(*, phase: str) -> dict[str, object]:
         except LocalYtDlpDeferred as exc:
             if str(exc) != "LOCAL_YTDLP_COORDINATOR_ACCESS_DEFERRED":
                 return report
+        # A rejection caused by a concurrent cooldown/other state is not
+        # evidence for the expected held lease or shared gap. Re-observe
+        # the same signed state immediately after the denial.
+        after = client.status()
+        if (
+            after.get("ok") is not True
+            or after.get("code") != expected_gate
+            or after.get("coordinator_instance_id") != instance
+        ):
+            return report
         report["lease_access_deferred"] = True
         report["status"] = _WITNESS_CODES[phase]
     except (LocalYtDlpDeferred, ValueError, OSError, UnicodeError):
