@@ -191,17 +191,19 @@ def inspect_lan_first_run(
         alert = read_lan_monitor_alert(
             evidence_db=args["evidence_db"], alert_file=args["alert_file"],
         )
-        report["alert"] = (
-            alert["alert"]
-            if alert.get("status") in {
-                "LAN_MONITOR_ALERT_PRESENT", "LAN_MONITOR_NO_ALERT_RECORDED",
-                "LAN_MONITOR_NEVER_RECORDED",
-            } and alert.get("alert") in {
-                "NONE", "REPEATED_SAME_LAN_DEFICITS",
-                "REPEATED_INCOMPLETE_LAN_DIAGNOSIS",
-            }
-            else "LAN_FIRST_RUN_ALERT_UNTRUSTED"
-        )
+        if alert.get("status") == "LAN_MONITOR_NEVER_RECORDED":
+            # A scheduled monitor run always writes an initial marker.
+            # A valid history row alone could be a manual capture.
+            report["alert"] = "LAN_FIRST_RUN_ALERT_MISSING"
+        elif alert.get("status") in {
+            "LAN_MONITOR_ALERT_PRESENT", "LAN_MONITOR_NO_ALERT_RECORDED",
+        } and alert.get("alert") in {
+            "NONE", "REPEATED_SAME_LAN_DEFICITS",
+            "REPEATED_INCOMPLETE_LAN_DIAGNOSIS",
+        }:
+            report["alert"] = alert["alert"]
+        else:
+            report["alert"] = "LAN_FIRST_RUN_ALERT_UNTRUSTED"
     except (OSError, ValueError, TypeError, UnicodeError):
         report["alert"] = "LAN_FIRST_RUN_ALERT_UNTRUSTED"
     last_run = task["last_run_unix"]
