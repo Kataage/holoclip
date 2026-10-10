@@ -79,14 +79,19 @@ def _signed_evidence(*, client: LanCoordinatorClient, role: str) -> dict:
     return {"payload": payload, "signature": signature}
 
 
-def export_lan_pair_evidence(*, role: str, output: Path) -> dict[str, object]:
-    """Create one owner-held signed observation; never overwrite an existing report."""
+def observe_lan_pair_evidence(*, role: str) -> dict:
+    """Produce one in-memory signed status receipt (no filesystem writes)."""
     if role not in {"pc-a", "pc-b"}:
         raise ValueError("LAN_PAIR_INVALID_ROLE")
     client = LanCoordinatorClient.from_env()
     if client is None:
         raise LocalYtDlpDeferred("LOCAL_YTDLP_COORDINATOR_CONFIGURATION_INVALID")
-    report = _signed_evidence(client=client, role=role)
+    return _signed_evidence(client=client, role=role)
+
+
+def export_lan_pair_evidence(*, role: str, output: Path) -> dict[str, object]:
+    """Create one owner-held signed observation; never overwrite an existing report."""
+    report = observe_lan_pair_evidence(role=role)
     destination = output.absolute()
     _reject_linked_path(destination)
     raw = _canonical(report) + b"\n"
@@ -114,35 +119,44 @@ def _read_evidence(path: Path, *, role: str, key: bytes, now: int) -> dict:
     if not file.is_file() or not 1 <= file.stat().st_size <= _MAX_EVIDENCE_BYTES:
         raise ValueError("LAN_PAIR_MISSING_REPORT")
     try:
-        item = json.loads(file.read_text(encoding="utf-8"))
-        if not isinstance(item, dict) or set(item) != _REQUIRED_ENVELOPE:
+        raw = file.read_bytes()
+        item = json.loads(raw)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("LAN_PAIR_INVALID_REPORT") from exc
+    return validate_lan_pair_report(item, role=role, key=key, now=now)
+
+
+def validate_lan_pair_report(
+    report: object, *, role: str, key: bytes, now: int,
+) -> dict:
+    """Reject unknown/unauthenticated receipt fields without logging them."""
+    try:
+        if not isinstance(report, dict) or set(report) != _REQUIRED_ENVELOPE:
             raise ValueError("LAN_PAIR_INVALID_REPORT")
-        payload = _validated_payload(item["payload"], role=role, now=now)
-        if not _hex(item["signature"], 64) or not hmac.compare_digest(
-            item["signature"], hmac.new(key, _canonical(payload), hashlib.sha256).hexdigest(),
+        if len(_canonical(report)) > _MAX_EVIDENCE_BYTES:
+            raise ValueError("LAN_PAIR_INVALID_REPORT")
+        payload = _validated_payload(report["payload"], role=role, now=now)
+        if not _hex(report["signature"], 64) or not hmac.compare_digest(
+            report["signature"], hmac.new(key, _canonical(payload), hashlib.sha256).hexdigest(),
         ):
             raise ValueError("LAN_PAIR_BAD_SIGNATURE")
-    except (UnicodeError, json.JSONDecodeError, TypeError, KeyError) as exc:
+    except (TypeError, KeyError, UnicodeError) as exc:
         raise ValueError("LAN_PAIR_INVALID_REPORT") from exc
     return payload
 
 
-def compare_lan_pair_evidence(*, pc_a: Path, pc_b: Path) -> dict[str, object]:
-    """Verify both owner-held reports offline using the enrolled shared secret.
-
-    Reports are co-signed by a shared *client* key. An authorized holder can
-    forge them, so they are not hardware attestation or independently
-    verified two-host onboarding.
-    """
-    if pc_a.absolute() == pc_b.absolute():
-        raise ValueError("LAN_PAIR_DUPLICATE_REPORT")
-    client = LanCoordinatorClient.from_env()
-    if client is None:
-        raise LocalYtDlpDeferred("LOCAL_YTDLP_COORDINATOR_CONFIGURATION_INVALID")
-    key = _report_key(client.secret)
+def compare_lan_pair_reports(
+    *, pc_a: object, pc_b: object, shared_secret: bytes,
+) -> dict[str, object]:
+    """Verify signed in-memory receipts; never claim physical machine proof."""
+    key = _report_key(shared_secret)
     now = int(time.time())
-    a = _read_evidence(pc_a, role="pc-a", key=key, now=now)
-    b = _read_evidence(pc_b, role="pc-b", key=key, now=now)
+    a = validate_lan_pair_report(pc_a, role="pc-a", key=key, now=now)
+    b = validate_lan_pair_report(pc_b, role="pc-b", key=key, now=now)
+    return _compare_pair_payloads(a, b)
+
+
+def _compare_pair_payloads(a: dict, b: dict) -> dict[str, object]:
     if a["nonce"] == b["nonce"]:
         raise ValueError("LAN_PAIR_DUPLICATE_REPORT")
     same = hmac.compare_digest(a["coordinator_instance_id"], b["coordinator_instance_id"])
@@ -161,3 +175,22 @@ def compare_lan_pair_evidence(*, pc_a: Path, pc_b: Path) -> dict[str, object]:
         "two_host_verified": False,
         "ready": False,
     }
+
+
+def compare_lan_pair_evidence(*, pc_a: Path, pc_b: Path) -> dict[str, object]:
+    """Verify both owner-held reports offline using the enrolled shared secret.
+
+    Reports are co-signed by a shared *client* key. An authorized holder can
+    forge them, so they are not hardware attestation or independently
+    verified two-host onboarding.
+    """
+    if pc_a.absolute() == pc_b.absolute():
+        raise ValueError("LAN_PAIR_DUPLICATE_REPORT")
+    client = LanCoordinatorClient.from_env()
+    if client is None:
+        raise LocalYtDlpDeferred("LOCAL_YTDLP_COORDINATOR_CONFIGURATION_INVALID")
+    key = _report_key(client.secret)
+    now = int(time.time())
+    a = _read_evidence(pc_a, role="pc-a", key=key, now=now)
+    b = _read_evidence(pc_b, role="pc-b", key=key, now=now)
+    return _compare_pair_payloads(a, b)
