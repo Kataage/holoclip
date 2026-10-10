@@ -1,5 +1,17 @@
 # Roadmap
 
+## Current audited delivery gap (2026-10-11)
+
+The [end-to-end source-to-finished-clip audit](end-to-end-audit-2026-10-11.md)
+separates existing candidate/transcript/alignment **diagnostics** from missing
+RenderPlan, deterministic assembly, subtitle/motion/audio production, QA and
+publication approval. Source/LAN mocks and a good `ClipTimeline` are **not** a
+production-finished clip. Editorial boundary validations now fail closed on
+invalid LLM and stale persisted cut plans. Do not count design-only checks as
+complete implementation, and do not unlock production router without real
+held-out qualification; `ready=false` remains the default.
+
+
 ## Provider foundation status, October 4 2026
 
 PRs #101–#106 have merged after individual CI success: ZERO_COST_ONLY dispatch guards,
