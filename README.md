@@ -476,6 +476,48 @@ spending, make the repository public, or reroute CI to a user-PC runner
 merely to bypass the gate without the owner's explicit approval.
 The workflow already cancels superseded PR runs to reduce future waste.
 
+#### One-command read-only PC-A/PC-B setup inspection
+
+The paired setup doctor combines both PCs' local prerequisites with the
+signed LAN coordinator comparison using **one command from PC-A**, after
+PC-B's OpenSSH public-key access and independently verified host pin have
+already been configured. It **does not** auto-enable a firewall, create
+credentials, trust unknown host keys, install sshd or start services.
+
+```powershell
+uv run holoclip examples-ytdlp-lan-onboard-check --host 192.168.1.21 --user pc_b_account --known-hosts "D:\AI\holoclip\data\runtime\pc-b-known-hosts" --remote-repo "D:\AI\holoclip"
+```
+
+The PC-B directory is configurable, including spaces; nonstandard
+ports can be set with `--ssh-port` or
+`--coordinator-port`. The PC-A task can be set with
+`--task-name`. Replace the example values with private network
+values; the command explicitly rejects loopback for PC-B. SSH is
+noninteractive, pinned-key-only, with forwarding, proxies and session
+sharing disabled. On PC-B, the command executes the built-in
+`examples-ytdlp-lan-onboard-node` through an encoded PowerShell
+command and uses offline/no-sync uv.
+
+The combined JSON report shows fixed, safe code-level observations of
+both PCs' credential/NTFS ACL, signed remote coordinator status, Windows
+Task Scheduler status, listener and firewall rule scope. Missing required
+items are combined into a list of actionable remediations. The output
+also validates fresh signed observations from both PCs when available.
+PC-B can report an incomplete setup without interrupting the collection;
+SSH failures, malformed/tampered responses and untrusted status codes
+fail closed. No secrets, raw SSH stderr, raw IP-derived tag, arbitrary
+remote messages or credential file bytes are copied to the output.
+
+`LAN_ONBOARD_OBSERVATIONS_COMPLETE` **does not** establish
+production readiness. Both reporters share a signing key, so physical
+hardware identities cannot be independently attested; NAT may make
+two PCs' TCP-source tags identical. Observing scoped firewall rules is
+not effective firewall policy validation. All reports retain
+`two_host_verified=false`, `ready=false`, no downloaded
+media and no configuration changes. The real two-PC setup and eventual
+media/editorial performance still require qualification. GitHub tests
+exercise loopback and mock SSH, **never actual PC-B or YouTube**.
+
 #### One-command cross-PC LAN status collection over pinned SSH
 
 After **both Windows PCs** already have working Holoclip LAN coordinator

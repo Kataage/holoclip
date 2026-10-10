@@ -47,7 +47,11 @@ def _windows_remote_repo(value: str) -> str:
 
 
 def _pinned_ssh_command(*, host: str, user: str, known_hosts: Path,
-                        remote_repo: str, port: int) -> list[str]:
+                        remote_repo: str, port: int,
+                        remote_probe: str = "pair") -> list[str]:
+    # Never permit a caller-supplied command fragment through the SSH shell.
+    if remote_probe not in {"pair", "onboard"}:
+        raise ValueError("LAN_PAIR_INVALID_REMOTE_PROBE")
     peer = _private_ipv4(host)
     if not _SSH_USER.fullmatch(user):
         raise ValueError("LAN_PAIR_INVALID_SSH_USER")
@@ -67,11 +71,17 @@ def _pinned_ssh_command(*, host: str, user: str, known_hosts: Path,
     # The remote shell receives only ASCII base64, never a user-supplied
     # shell fragment. Windows PS single-quoted strings escape apostrophes.
     quoted_repo = repo.replace("'", "''")
+    # The onboarding probe uses offline uv and has no credential or
+    # arbitrary shell arguments. The established pair probe is unchanged.
+    command = (
+        "& uv run --no-sync holoclip examples-ytdlp-lan-pair-observe --role pc-b; "
+        if remote_probe == "pair" else
+        "& uv run --offline --no-sync holoclip examples-ytdlp-lan-onboard-node; "
+    )
     remote_script = (
         "$ErrorActionPreference = 'Stop'; "
         f"Set-Location -LiteralPath '{quoted_repo}'; "
-        "& uv run --no-sync holoclip examples-ytdlp-lan-pair-observe --role pc-b; "
-        "exit $LASTEXITCODE"
+        + command + "exit $LASTEXITCODE"
     )
     encoded = base64.b64encode(remote_script.encode("utf-16le")).decode("ascii")
     return [

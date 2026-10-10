@@ -31,6 +31,7 @@ from holoclip.source_pattern_local_history import read_launcher_history
 from holoclip.source_ytdlp_lan_onboarding import diagnose_lan_client, import_lan_secret
 from holoclip.source_ytdlp_lan_pair_evidence import export_lan_pair_evidence, compare_lan_pair_evidence, observe_lan_pair_evidence
 from holoclip.source_ytdlp_lan_pair_collect import collect_lan_pair_over_ssh
+from holoclip.source_ytdlp_lan_onboard_check import inspect_lan_onboard_node, check_lan_onboarding
 from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
 from holoclip.source_ytdlp_lan_setup_doctor import inspect_lan_setup
 from holoclip.source_ytdlp_lan_ssh_transfer import pull_lan_secret_sftp, _secure_windows_path
@@ -1210,6 +1211,61 @@ def examples_ytdlp_lan_secret_acl(
     typer.echo(json.dumps({
         "status": "ACL_SECURE", "acl_verified": True, "ready": False,
     }))
+
+
+@app.command("examples-ytdlp-lan-onboard-node")
+def examples_ytdlp_lan_onboard_node() -> None:
+    """PC-B read-only local setup and signed status for pinned SSH collection."""
+    _load_env_file()
+    try:
+        report = inspect_lan_onboard_node(role="pc-b")
+    except (ValueError, OSError, UnicodeError, LocalYtDlpDeferred) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_ONBOARD_NODE_REJECTED",
+            "reason": (str(exc) if str(exc).startswith(("LAN_ONBOARD_", "LOCAL_YTDLP_"))
+                       else type(exc).__name__),
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    # Always emit a bounded JSON report even when not configured. It is a
+    # negative diagnosis, never a readiness assertion.
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True,
+                          separators=(",", ":")))
+
+
+@app.command("examples-ytdlp-lan-onboard-check")
+def examples_ytdlp_lan_onboard_check(
+    host: str = typer.Option(..., "--host", help="PC-B private IPv4, not localhost."),
+    user: str = typer.Option(..., "--user", help="PC-B SSH public-key login."),
+    known_hosts: Path = typer.Option(..., "--known-hosts",
+        help="PC-B SSH host key file verified independently out of band."),
+    remote_repo: str = typer.Option(..., "--remote-repo",
+        help="PC-B absolute Holoclip Windows repository path."),
+    ssh_port: int = typer.Option(22, "--ssh-port", min=1, max=65535),
+    coordinator_port: int = typer.Option(8878, "--coordinator-port",
+        min=1024, max=65535),
+    task_name: str = typer.Option("Holoclip yt-dlp LAN Coordinator", "--task-name"),
+) -> None:
+    """Check PC-A/B setup and signed coordinator consistency without media."""
+    _load_env_file()
+    try:
+        report = check_lan_onboarding(
+            host=host, user=user, known_hosts=known_hosts,
+            remote_repo=remote_repo, ssh_port=ssh_port,
+            coordinator_port=coordinator_port, task_name=task_name,
+        )
+    except (ValueError, OSError, UnicodeError, LocalYtDlpDeferred) as exc:
+        code = str(exc)
+        typer.echo(json.dumps({
+            "status": "LAN_ONBOARD_CHECK_REJECTED",
+            "reason": (code if code.startswith(("LAN_ONBOARD_", "LAN_PAIR_", "LOCAL_YTDLP_"))
+                       else type(exc).__name__),
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+    if report["status"] != "LAN_ONBOARD_OBSERVATIONS_COMPLETE":
+        raise typer.Exit(6)
 
 
 @app.command("examples-ytdlp-lan-pair-observe")
