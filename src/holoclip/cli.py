@@ -149,6 +149,7 @@ from holoclip.learning import (
 from holoclip.media import play_media_segment
 from holoclip.domain import ClipTimeline
 from holoclip.render_plan import LocalRenderSource, compile_local_render_plan, render_local_preview
+from holoclip.render_source_resolver import resolve_cached_render_sources
 from holoclip.migration import migrate_legacy_data, report_as_json
 from holoclip.models import ReviewDecision
 from holoclip.providers.embedding.base import EmbeddingProviderError
@@ -1318,29 +1319,49 @@ def examples_ytdlp_lan_pacing_trial(
 def render_local_preview_command(
     timeline: Path = typer.Option(..., "--timeline",
         help="Local validated ClipTimeline JSON; no URLs."),
-    sources: Path = typer.Option(..., "--sources",
-        help="Local JSON list of {asset, path, local_render_approved} source mappings."),
+    sources: Path | None = typer.Option(None, "--sources",
+        help="Existing explicit JSON source mappings (default resolver alternative)."),
     output: Path = typer.Option(..., "--output",
         help="New local .mp4; existing files are never overwritten."),
+    auto_sources: bool = typer.Option(False, "--auto-sources",
+        help="Resolve full yt-dlp editing-video caches from the canonical repository."),
+    database: Path = typer.Option(Path("data/holoclip.db"), "--database",
+        help="Existing canonical read-only SQLite source asset repository."),
+    cache_root: Path = typer.Option(Path("data/sources"), "--cache-root",
+        help="Root of prior original editing_video source caches; never downloads."),
+    approve_local_preview: bool = typer.Option(False, "--approve-local-preview",
+        help="Explicit permission assertion for cached source local preview only."),
     execute: bool = typer.Option(False, "--execute",
         help="Explicitly run local FFmpeg after plan validation and input probes."),
 ) -> None:
     """Prepare or execute deterministic video+audio multi-source clip assembly."""
     try:
-        if not timeline.is_file() or not sources.is_file():
+        if (auto_sources and sources is not None) or (not auto_sources and sources is None):
+            raise ValueError("LOCAL_RENDER_SELECT_EXACTLY_ONE_SOURCE_MODE")
+        if not timeline.is_file():
             raise ValueError("LOCAL_RENDER_MANIFEST_MISSING")
-        if timeline.stat().st_size > 1_048_576 or sources.stat().st_size > 131_072:
+        if timeline.stat().st_size > 1_048_576:
             raise ValueError("LOCAL_RENDER_MANIFEST_OVERSIZE")
-        mapped = json.loads(sources.read_text(encoding="utf-8"))
-        if not isinstance(mapped, list) or not 1 <= len(mapped) <= 32:
-            raise ValueError("LOCAL_RENDER_MANIFEST_INVALID")
-        resolved = [
-            LocalRenderSource.model_validate(row) for row in mapped
-        ]
-        plan = compile_local_render_plan(
-            ClipTimeline.model_validate_json(timeline.read_text(encoding="utf-8")),
-            resolved, output,
+        measured_timeline = ClipTimeline.model_validate_json(
+            timeline.read_text(encoding="utf-8")
         )
+        if auto_sources:
+            resolved = resolve_cached_render_sources(
+                measured_timeline, database=database, cache_root=cache_root,
+                approve_local_preview=approve_local_preview,
+            )
+        else:
+            if not sources.is_file():
+                raise ValueError("LOCAL_RENDER_MANIFEST_MISSING")
+            if sources.stat().st_size > 131_072:
+                raise ValueError("LOCAL_RENDER_MANIFEST_OVERSIZE")
+            mapped = json.loads(sources.read_text(encoding="utf-8"))
+            if not isinstance(mapped, list) or not 1 <= len(mapped) <= 32:
+                raise ValueError("LOCAL_RENDER_MANIFEST_INVALID")
+            resolved = [
+                LocalRenderSource.model_validate(row) for row in mapped
+            ]
+        plan = compile_local_render_plan(measured_timeline, resolved, output)
         if execute:
             report = render_local_preview(plan)
         else:
