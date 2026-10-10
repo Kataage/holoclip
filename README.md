@@ -476,6 +476,48 @@ spending, make the repository public, or reroute CI to a user-PC runner
 merely to bypass the gate without the owner's explicit approval.
 The workflow already cancels superseded PR runs to reduce future waste.
 
+#### Safe PC-A Task Scheduler registration: preview before apply
+
+After PC-A's local credential/client setup and **independent review** of the
+Windows Firewall rule that allows **only PC-B's private LAN IPv4** to access
+PC-A's coordinator TCP port, the guarded task installer previews all gates:
+
+```powershell
+# Replace these example addresses with the actual LAN addresses on PC-A / PC-B
+uv run holoclip examples-ytdlp-lan-task-prepare --bind-ip 192.168.1.10 --peer-ip 192.168.1.21
+
+# Explicitly allow a non-elevated logon task registration only after the
+# credential ACL, exact-peer allow rule and absent task are verified:
+uv run holoclip examples-ytdlp-lan-task-prepare --bind-ip 192.168.1.10 --peer-ip 192.168.1.21 --apply
+```
+
+For custom deployment settings, use `--port`, `--task-name`,
+`--secret-file` and `--state-path`. Bind and peer must be
+**distinct literal RFC1918 IPv4 addresses**, not a wildcard, loopback or
+public endpoint. Preview is **read-only**; it returns fixed-code check
+results for secret validity, read-only Windows ACL verification, scoped
+inbound firewall rule and task name availability. Missing permissions or
+ambiguous observations block an apply, rather than silently assuming a
+task does not exist.
+
+Apply only registers a **limited-privilege, current-user logon task**;
+it never starts it or downloads video. The underlying PowerShell
+installer no longer uses `Register-ScheduledTask -Force`, so an
+existing same-name task cannot be overwritten, even if one appears
+during registration. A second read-only inventory probe just before
+install reduces accidental conflicts. An installation failure does not
+delete the existing credential or mutate firewall rules.
+
+This command **does not create a firewall rule or change SSH host trust**.
+It only checks whether a narrow inbound allow rule was observed.
+Windows firewall active-store inspection is **not** proof of the
+effective OS firewall policy; a successful task preview or registration
+is never production qualification. The task is not started until the
+owner separately verifies bind address, peer restriction and network
+scope. No user-PC task is actually created in CI; Windows and Linux
+tests mock the registration and use disposable credentials only.
+All reports retain `ready=false` and `two_host_verified=false`.
+
 #### Preview-first local LAN client bootstrap (Windows, opt-in)
 
 A two-PC deployment can now prepare *local* coordinator client state in
