@@ -159,6 +159,7 @@ def prepare_pc_a_lan(
     # A stage can be interrupted after writing durable state. Never claim
     # a global rollback; stop before later stages and preserve exact progress.
     report["status"] = "LAN_PC_A_APPLY_INCOMPLETE"
+    report["changes_may_be_partial"] = True
     try:
         report["blocking_step"] = "client"
         result = bootstrap_local_lan(
@@ -195,6 +196,7 @@ def prepare_pc_a_lan(
         report["task_registered"] = True
         report["blocking_step"] = None
         report["status"] = "LAN_PC_A_PREPARED_NOT_STARTED"
+        report["changes_may_be_partial"] = False
         return report
     except (OSError, ValueError, UnicodeError, KeyError, TypeError):
         report["status"] = "LAN_PC_A_APPLY_UNCONFIRMED"
