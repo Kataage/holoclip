@@ -844,8 +844,29 @@ class YtDlpSourceProvider:
         output_root: Path,
         *,
         profile: AcquisitionProfile = AcquisitionProfile.TRAINING_AUDIO,
+        max_video_duration_seconds: int | None = None,
+        max_video_filesize_mb: int | None = None,
     ) -> AcquiredSource:
+        bounded = (
+            max_video_duration_seconds is not None
+            or max_video_filesize_mb is not None
+        )
+        if bounded and (
+            profile is not AcquisitionProfile.EDITING_VIDEO
+            or type(max_video_duration_seconds) is not int
+            or not 60 <= max_video_duration_seconds <= 14400
+            or type(max_video_filesize_mb) is not int
+            or not 64 <= max_video_filesize_mb <= 1024
+        ):
+            raise ValueError("LOCAL_RENDER_INVALID_ACQUISITION_BUDGET")
         metadata = self.probe(url)
+        if bounded and (
+            metadata.duration is None
+            or not math.isfinite(metadata.duration)
+            or metadata.duration <= 0
+            or metadata.duration > max_video_duration_seconds
+        ):
+            raise ValueError("LOCAL_RENDER_SOURCE_DURATION_OVER_BUDGET")
         directory = (
             output_root
             / _safe_component(metadata.external_id)
@@ -856,6 +877,11 @@ class YtDlpSourceProvider:
 
         existing = self._existing_media(directory)
         if existing is not None:
+            if bounded:
+                # This caller requires a complete, independently verified
+                # full-video cache. Existing bytes were NOT downloaded by this
+                # invocation, so do not silently treat them as safe.
+                raise ValueError("LOCAL_RENDER_EXISTING_CACHE_REQUIRES_REVALIDATION")
             return AcquiredSource(
                 metadata=metadata,
                 profile=profile,
@@ -890,11 +916,19 @@ class YtDlpSourceProvider:
                 ]
             )
 
+        if bounded:
+            # yt-dlp can reject known oversized formats early. Unknown
+            # streaming sizes must still be checked after acquisition.
+            args.extend([
+                "--max-filesize", f"{max_video_filesize_mb}M",
+                "--match-filter", f"duration <= {max_video_duration_seconds}",
+            ])
         args.append(url)
         result = self._run_yt_dlp(
             args,
             label="yt-dlp acquisition",
             timeout_seconds=MEDIA_ACQUISITION_TIMEOUT_SECONDS,
+            retry_with_fresh_runtime=not bounded,
         )
 
         printed_paths = [
@@ -912,6 +946,11 @@ class YtDlpSourceProvider:
             raise YtDlpError(
                 f"yt-dlp completed but no media file was found under {directory}"
             )
+        if bounded and (
+            not media_path.is_file()
+            or media_path.stat().st_size > max_video_filesize_mb * 1024 * 1024
+        ):
+            raise ValueError("LOCAL_RENDER_ACQUIRED_VIDEO_OVER_BUDGET")
 
         return AcquiredSource(
             metadata=metadata,
