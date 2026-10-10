@@ -150,6 +150,7 @@ from holoclip.media import play_media_segment
 from holoclip.domain import ClipTimeline
 from holoclip.render_plan import LocalRenderSource, compile_local_render_plan, render_local_preview
 from holoclip.render_source_resolver import resolve_cached_render_sources
+from holoclip.render_source_acquisition import acquire_one_missing_render_source
 from holoclip.migration import migrate_legacy_data, report_as_json
 from holoclip.models import ReviewDecision
 from holoclip.providers.embedding.base import EmbeddingProviderError
@@ -1313,6 +1314,51 @@ def examples_ytdlp_lan_pacing_trial(
         "LAN_PACING_PREVIEW_ONLY", "LAN_PACING_CROSS_SSH_LEASE_GAP_OBSERVED",
     }:
         raise typer.Exit(6)
+
+
+@app.command("render-local-source-acquire")
+def render_local_source_acquire_command(
+    timeline: Path = typer.Option(..., "--timeline",
+        help="Existing measured ClipTimeline JSON, no remote URLs."),
+    database: Path = typer.Option(Path("data/holoclip.db"), "--database",
+        help="Existing canonical SQLite asset repository, read only."),
+    cache_root: Path = typer.Option(Path("data/sources"), "--cache-root",
+        help="Existing local video cache root; no downloads in preview."),
+    policy_file: Path = typer.Option(
+        Path("data/policy/clip_rules.jsonl"), "--policy-file"),
+    max_duration_seconds: int = typer.Option(
+        14400, "--max-duration-seconds", min=60, max=14400),
+    max_filesize_mb: int = typer.Option(
+        512, "--max-filesize-mb", min=64, max=1024),
+    execute: bool = typer.Option(False, "--execute",
+        help="Attempt one bounded source download through shared LAN/local pacing."),
+    approve_local_preview: bool = typer.Option(
+        False, "--approve-local-preview",
+        help="Explicit permission assertion for local preview only; not publishing."),
+) -> None:
+    """Show missing full source videos offline, or acquire at most one if approved."""
+    try:
+        if not timeline.is_file() or timeline.stat().st_size > 1_048_576:
+            raise ValueError("LOCAL_RENDER_TIMELINE_UNAVAILABLE")
+        measured = ClipTimeline.model_validate_json(
+            timeline.read_text(encoding="utf-8")
+        )
+        report = acquire_one_missing_render_source(
+            measured, database=database, cache_root=cache_root,
+            policy_file=policy_file,
+            max_duration_seconds=max_duration_seconds,
+            max_filesize_mb=max_filesize_mb, execute=execute,
+            approve_local_preview=approve_local_preview,
+        )
+    except (ValueError, OSError, UnicodeError, TypeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_RENDER_SOURCE_ACQUISITION_BLOCKED",
+            "reason": (str(exc) if str(exc).startswith("LOCAL_RENDER_")
+                       else "LOCAL_RENDER_SOURCE_ACQUISITION_FAILED"),
+            "ready": False, "production_ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True, ensure_ascii=False))
 
 
 @app.command("render-local-preview")
