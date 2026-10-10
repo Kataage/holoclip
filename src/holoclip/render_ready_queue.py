@@ -18,7 +18,7 @@ from holoclip.clip_policy import (
     PolicyDecision, PolicyOperation, evaluate_source_metadata,
     evaluate_source_ranges, load_policy_rules,
 )
-from holoclip.domain import ClipTimeline
+from holoclip.domain import ClipTimeline, SourceType
 from holoclip.providers.source.base import SourceMetadata
 from holoclip.render_plan import (
     _no_links, compile_local_render_plan, render_local_preview,
@@ -123,6 +123,12 @@ def _claim(queue: Path) -> tuple[dict | None, str, str]:
         return None, "", "LOCAL_RENDER_AUTO_QA_QUEUE_NOT_CREATED"
     try:
         conn.execute("BEGIN IMMEDIATE")
+        corrupted = conn.execute(
+            "SELECT 1 FROM render_jobs WHERE state NOT IN "
+            "('RENDERING','PAUSED','QA_PASSED') LIMIT 1"
+        ).fetchone()
+        if corrupted:
+            raise ValueError("LOCAL_RENDER_AUTO_QA_STATE_UNTRUSTED")
         blocked = conn.execute(
             "SELECT state FROM render_jobs WHERE state IN ('PAUSED','RENDERING') "
             "LIMIT 1"
@@ -188,6 +194,8 @@ def _offline_render_policy(timeline: ClipTimeline, sources: list,
     """Recheck cached source RENDER restrictions; unknown metadata fails closed."""
     rules = load_policy_rules(_no_links(policy_file))
     for source in sources:
+        if source.asset.source_type not in {SourceType.STREAM, SourceType.VIDEO}:
+            raise ValueError("LOCAL_RENDER_AUTO_QA_ORIGINAL_ID_UNVERIFIED")
         receipt = _no_links(source.path.parent / "media.info.json")
         if not receipt.is_file() or not 0 < receipt.stat().st_size <= 1048576:
             raise ValueError("LOCAL_RENDER_AUTO_QA_RECEIPT_UNVERIFIED")
