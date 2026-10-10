@@ -164,6 +164,38 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: reusable PC-A non-secret LAN operator profile
+
+The operator-setup command offers one-time, preview-first enrollment
+of PC-B connection settings (canonical private IPv4, safe public-key
+SSH username, local pinned-known-hosts file, Windows repository path,
+ports, monitor cadence, local evidence/alert destinations) into
+a bounded fixed-schema Windows-local JSON profile. Neither the raw
+SSH host-key bytes nor the shared coordinator credential is stored.
+Privacy scope: the profile and Task Scheduler definition necessarily
+contain PC-B IP, account name and file paths; these are not publicly
+shareable. The output/status reports contain only fixed state codes
+and no endpoint strings. NTFS ACL hardening is required before
+committing a new/updated profile. No profile is written in preview.
+
+An existing different profile is never silently overwritten.
+Explicit --apply --update is allowed only when any old/new named
+monitor tasks are verifiably absent; otherwise fail closed rather
+than leave a stale Task Scheduler action pointing elsewhere.
+Optional --apply --register-monitor invokes the existing guarded
+monitor installation after both stages have passed preflight.
+Any partial failure is explicitly reported; no previous secret,
+task or firewall configuration is removed and no task is started.
+
+Operator-status reads the stored profile, local code-only history,
+alert and task inventory offline. --diagnose opts into a read-only
+pinned SSH paired observation; --register-monitor separately opts
+into guarded task registration. These options cannot be combined.
+No default network, pacing lease, media retrieval or YouTube access.
+No host-fingerprint provenance, physical PC identity, effective
+firewall enforcement, uninterrupted monitoring uptime or editorial
+quality is ever inferred. All paths preserve ready=false.
+
 ## Increment: opt-in Windows periodic no-media LAN monitoring
 
 PC-A can register a non-elevated, non-overwriting, current-user
