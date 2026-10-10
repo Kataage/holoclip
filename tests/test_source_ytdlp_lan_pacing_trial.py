@@ -336,3 +336,56 @@ def test_pinned_ssh_trial_restricts_phase_to_internal_allowlist(tmp_path, monkey
             remote_repo=data["remote_repo"], port=22,
             remote_probe="pacing-held; Remove-Item",
         )
+
+
+def test_unconfirmed_release_never_reports_success_or_resets_broker(tmp_path, monkeypatch):
+    from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
+
+    mock_host(monkeypatch)
+    monkeypatch.setattr(
+        trial, "check_lan_onboarding",
+        lambda **kwargs: {"status": "LAN_ONBOARD_OBSERVATIONS_COMPLETE"},
+    )
+    calls = []
+
+    class UnconfirmedReleaseClient:
+        def status(self):
+            return {
+                "ok": True, "code": "AVAILABLE",
+                "coordinator_instance_id": "a" * 64,
+            }
+
+        @contextmanager
+        def reserve(self, *, timeout_seconds):
+            calls.append(timeout_seconds)
+            yield
+            raise LocalYtDlpDeferred("LOCAL_YTDLP_COORDINATOR_RELEASE_UNCONFIRMED")
+
+    monkeypatch.setattr(
+        trial.LanCoordinatorClient, "from_env",
+        lambda: UnconfirmedReleaseClient(),
+    )
+    monkeypatch.setattr(
+        trial, "_remote_witness", lambda *args, **kwargs: True,
+    )
+    report = trial.trial_lan_pacing(**params(tmp_path), apply=True)
+    assert calls == [70]
+    assert report["status"] == "LAN_PACING_RELEASE_UNCONFIRMED"
+    assert report["held_witness"] == "LAN_PACING_WITNESS_HELD_DENIED"
+    assert report["gap_witness"] == "NOT_OBSERVED"
+    assert report["lease_acquired"] is True
+    assert report["lease_release_confirmed"] is False
+    assert report["possible_active_lease_until_expiry"] is True
+    assert report["regular_pacing_gap_created"] is False
+    assert report["changes_may_be_partial"] is True
+    no_media(report)
+
+
+def test_preview_refuses_unpinned_missing_known_hosts(tmp_path, monkeypatch):
+    mock_host(monkeypatch)
+    with pytest.raises(ValueError, match="PINNED_HOST_KEY_REQUIRED"):
+        trial.trial_lan_pacing(
+            host=HOST, user="testuser",
+            known_hosts=tmp_path / "absent-key-pin",
+            remote_repo=r"D:\AI\holoclip",
+        )
