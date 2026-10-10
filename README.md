@@ -430,6 +430,52 @@ PCs have actually enrolled, that the coordinator is reachable from both,
 or that the eventual video/edit quality is production ready. Only
 site-free loopback/CI simulations have been exercised so far;
 `ready=false` remains unchanged.
+#### Local CI preflight when GitHub hosted private runners are blocked
+
+The private GitHub Actions budget can be exhausted despite clean code.
+This repository retains **mandatory** Linux full-Pytest + Windows offline
+CI before merging any code PR. A failed GitHub job with zero steps
+and no assigned runner is **not** a failing Ruff/Pytest test run.
+
+An additional optional, safe one-command fallback can run the CI checks
+available on a Windows development PC, **without Docker or accessing
+YouTube**. It requires the repo's existing dev/media environment to
+have been installed earlier, and verifies the checkout is clean at the
+specified exact PR commit.
+
+```powershell
+# Example only: replace the SHA with the current PR head from GitHub
+uv run --offline --no-sync python scripts/verify-ci-local.py --expected-head 386e8eba5df2eec1573c8fc2a39ec61901ddcea0
+```
+
+The script always runs Ruff. On Windows, it runs the same focused
+Windows Pytest suites (including LAN pair-collection tests), native
+process-tree tests and PowerShell 5.1 mock/sandbox smoke checks used
+in GitHub Actions. On Linux it runs full Pytest. Test subprocesses
+are constrained to local, offline uv usage; no dependencies are
+automatically downloaded. Use `--plan` to list checks without
+running them. The optional `--full-windows-pytest` flag also
+tries Linux-oriented full Pytest on Windows.
+
+The script emits only safe JSON status codes and exit statuses without
+echoing potentially sensitive local test output. It checks Python 3.12,
+a clean tracked worktree, available uv, and exact SHA if supplied. A
+successful **local** outcome is deliberately named
+`LOCAL_PREFLIGHT_PASSED_NOT_GITHUB_CI`; flags
+`github_actions_ci_verified=false`,
+`both_platforms_verified=false` and
+`ready=false` are always set. A local check **never**
+authorizes merge in place of both GitHub Linux and Windows gates.
+
+For private GitHub Actions that finish in seconds with zero steps,
+the repo owner must check account **Settings → Billing and licensing /
+Usage → Actions / Budgets and alerts** (UI labels may vary) and the
+specific failed run's check annotations. GitHub Free's included
+private-repository runner minutes may be depleted. Do not enable
+spending, make the repository public, or reroute CI to a user-PC runner
+merely to bypass the gate without the owner's explicit approval.
+The workflow already cancels superseded PR runs to reduce future waste.
+
 #### One-command cross-PC LAN status collection over pinned SSH
 
 After **both Windows PCs** already have working Holoclip LAN coordinator
