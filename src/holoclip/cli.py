@@ -157,7 +157,7 @@ from holoclip.render_source_queue import (
 )
 from holoclip.render_source_queue_task import prepare_render_queue_task
 from holoclip.render_ready_queue import (
-    DEFAULT_PREVIEW_ROOT, advance_completed_source_renders,
+    DEFAULT_PREVIEW_ROOT, DEFAULT_TRANSCRIPT_ROOT, advance_completed_source_renders,
 )
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
@@ -1407,13 +1407,16 @@ def render_source_queue_task_prepare_command(
 def render_ready_preview_command(
     queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
     preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root",
+        help="Existing local ASR transcripts for optional cut-aligned SRT sidecar."),
     execute: bool = typer.Option(False, "--execute",
         help="Render at most one complete-source timeline to local MP4, never publish."),
 ) -> None:
     """Offline source-complete queue -> one technical MP4 + persistent QA outcome."""
     try:
         result = advance_completed_source_renders(
-            queue=queue, preview_root=preview_root, execute=execute,
+            queue=queue, preview_root=preview_root,
+            transcript_root=transcript_root, execute=execute,
         )
     except (ValueError, OSError, UnicodeError, TypeError, sqlite3.Error) as exc:
         typer.echo(json.dumps({
