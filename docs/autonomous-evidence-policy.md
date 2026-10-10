@@ -164,6 +164,49 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: opt-in no-media live PC-A/PC-B shared-lease trial
+
+The examples-ytdlp-lan-pacing-trial command is a guarded
+operator-initiated real LAN runtime test, not a default monitoring
+task or production qualification. Preview validates configured
+pre-pinned key-only SSH command arguments without contacting PC-B
+or the coordinator. Explicit --apply requires the existing strict
+signed onboarding check to be complete and the central shared
+coordinator gate to report AVAILABLE. It makes no yt-dlp or
+YouTube request and requires no media credentials or stream URLs.
+
+The test leases the real broker for a bounded 70-second client
+process timeout (plus broker's 30-second crash grace period),
+checks that PC-B's fixed witness receives signed ACTIVE status
+and denial of its own reservation, releases the PC-A lease
+using the same token, then verifies PC-B's signed WAIT_GAP
+and denied reservation during the normal 20-second gap.
+Both PC-B phases execute via fixed offline uv commands over
+strict pinned public-key-only SSH. Remote responses are
+bounded and schema-allowlisted, must match the same persistent
+coordinator instance ID, and never carry credential bytes.
+
+**This changes the real pacing state** by creating a standard
+lease and gap. If interrupted, the conservative failure report
+warns that the lease may persist until deadline; no reset,
+deletion, backdating, cooldown override, or forced release of
+another holder is attempted. Delayed witness calls that miss
+the 20-second gap correctly fail as unverified, not as success.
+Live execution is never attempted on GitHub runners or by an
+automatic setup preview. CI uses disposable localhost SQLite,
+actual signed HTTP RPC and synthetic SSH only.
+
+Even an observed negative reservation under both phases
+only establishes one set of signed runtime observations through
+a pinned SSH transport. The shared client HMAC credential
+is not physical-machine identity; host-key fingerprints must
+be independently verified, and OS firewall effective policy
+and physical 2-PC deployment remain external checks.
+The command never attests unrestricted network safety,
+YouTube availability or actual clip/edit quality. All result
+paths preserve ready=false, two_host_verified=false and
+real_two_host_pacing_qualified=false.
+
 ## Increment: ordered, read-only two-PC deployment diagnosis
 
 The PC-A examples-ytdlp-lan-deployment-diagnose entrypoint reuses

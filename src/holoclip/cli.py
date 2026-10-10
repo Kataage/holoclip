@@ -33,6 +33,7 @@ from holoclip.source_ytdlp_lan_pair_evidence import export_lan_pair_evidence, co
 from holoclip.source_ytdlp_lan_pair_collect import collect_lan_pair_over_ssh
 from holoclip.source_ytdlp_lan_onboard_check import inspect_lan_onboard_node, check_lan_onboarding
 from holoclip.source_ytdlp_lan_deployment_diagnosis import diagnose_lan_deployment
+from holoclip.source_ytdlp_lan_pacing_trial import trial_lan_pacing, witness_lan_pacing
 from holoclip.source_ytdlp_lan_local_bootstrap import bootstrap_local_lan
 from holoclip.source_ytdlp_lan_task_prepare import inspect_lan_task_registration
 from holoclip.source_ytdlp_lan_firewall_prepare import prepare_lan_firewall
@@ -1237,6 +1238,66 @@ def examples_ytdlp_lan_onboard_node() -> None:
     # negative diagnosis, never a readiness assertion.
     typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True,
                           separators=(",", ":")))
+
+
+@app.command("examples-ytdlp-lan-pacing-witness")
+def examples_ytdlp_lan_pacing_witness(
+    phase: str = typer.Option(..., "--phase", help="Fixed PC-B trial phase: held or gap."),
+) -> None:
+    """PC-B signed status and denied lease witness; no media operation."""
+    _load_env_file()
+    try:
+        report = witness_lan_pacing(phase=phase)
+    except (ValueError, OSError, UnicodeError, LocalYtDlpDeferred) as exc:
+        typer.echo(json.dumps({
+            "phase": "invalid",
+            "status": "LAN_PACING_WITNESS_REJECTED",
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True, separators=(",", ":")))
+    if report["status"] not in {
+        "LAN_PACING_WITNESS_HELD_DENIED", "LAN_PACING_WITNESS_GAP_DENIED",
+    }:
+        raise typer.Exit(6)
+
+
+@app.command("examples-ytdlp-lan-pacing-trial")
+def examples_ytdlp_lan_pacing_trial(
+    host: str = typer.Option(..., "--host", help="PC-B private LAN IPv4."),
+    user: str = typer.Option(..., "--user", help="PC-B SSH public-key account."),
+    known_hosts: Path = typer.Option(..., "--known-hosts",
+        help="Independently verified PC-B SSH host key file."),
+    remote_repo: str = typer.Option(..., "--remote-repo",
+        help="Absolute Windows Holoclip repository directory on PC-B."),
+    ssh_port: int = typer.Option(22, "--ssh-port", min=1, max=65535),
+    coordinator_port: int = typer.Option(8878, "--coordinator-port",
+        min=1024, max=65535),
+    task_name: str = typer.Option("Holoclip yt-dlp LAN Coordinator", "--task-name"),
+    apply: bool = typer.Option(False, "--apply",
+        help="Opt in to a real coordinator lease and 20s gap, but NO YouTube."),
+) -> None:
+    """Preview first; test cross-PC lease/gap without launching yt-dlp."""
+    _load_env_file()
+    try:
+        report = trial_lan_pacing(
+            host=host, user=user, known_hosts=known_hosts,
+            remote_repo=remote_repo, ssh_port=ssh_port,
+            coordinator_port=coordinator_port, task_name=task_name,
+            apply=apply,
+        )
+    except (ValueError, OSError, UnicodeError, LocalYtDlpDeferred) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_PACING_TRIAL_REJECTED",
+            "reason": "LAN_PACING_INPUT_OR_TRUST_REJECTED",
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True, separators=(",", ":")))
+    if report["status"] not in {
+        "LAN_PACING_PREVIEW_ONLY", "LAN_PACING_CROSS_SSH_LEASE_GAP_OBSERVED",
+    }:
+        raise typer.Exit(6)
 
 
 @app.command("examples-ytdlp-lan-deployment-diagnose")
