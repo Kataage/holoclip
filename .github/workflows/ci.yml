@@ -52,7 +52,7 @@ jobs:
         run: python -m pip install -e ".[dev,media]"
       - name: Verify Windows corpus locks and fail-closed diagnostics
         run: |
-          pytest -q tests/test_source_pattern_worker.py tests/test_corpus_state_writer_lock.py tests/test_source_pattern_diagnostics.py tests/test_source_ytdlp_lan_client_setup.py tests/test_source_ytdlp_lan_onboarding.py tests/test_source_ytdlp_lan_ssh_transfer.py tests/test_source_ytdlp_lan_setup_doctor.py tests/test_source_ytdlp_lan_pair_evidence.py tests/test_source_ytdlp_lan_pair_collect.py tests/test_verify_ci_local.py
+          pytest -q tests/test_source_pattern_worker.py tests/test_corpus_state_writer_lock.py tests/test_source_pattern_diagnostics.py tests/test_source_ytdlp_lan_client_setup.py tests/test_source_ytdlp_lan_onboarding.py tests/test_source_ytdlp_lan_ssh_transfer.py tests/test_source_ytdlp_lan_setup_doctor.py tests/test_source_ytdlp_lan_pair_evidence.py tests/test_source_ytdlp_lan_pair_collect.py tests/test_source_ytdlp_lan_onboard_check.py tests/test_verify_ci_local.py
       - name: Verify real Windows native descendant cleanup without media
         run: |
           pytest -q tests/test_source_ytdlp.py -k "native_process or timeout_terminates_descendant_process"
