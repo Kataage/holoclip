@@ -34,6 +34,7 @@ from holoclip.source_ytdlp_lan_pair_collect import collect_lan_pair_over_ssh
 from holoclip.source_ytdlp_lan_onboard_check import inspect_lan_onboard_node, check_lan_onboarding
 from holoclip.source_ytdlp_lan_local_bootstrap import bootstrap_local_lan
 from holoclip.source_ytdlp_lan_task_prepare import inspect_lan_task_registration
+from holoclip.source_ytdlp_lan_firewall_prepare import prepare_lan_firewall
 from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
 from holoclip.source_ytdlp_lan_setup_doctor import inspect_lan_setup
 from holoclip.source_ytdlp_lan_ssh_transfer import pull_lan_secret_sftp, _secure_windows_path
@@ -1359,6 +1360,35 @@ def examples_ytdlp_lan_pair_verify(
         raise typer.Exit(6) from exc
     typer.echo(json.dumps(report))
     if report["status"] != "LAN_PAIR_OBSERVATIONS_MATCH":
+        raise typer.Exit(6)
+
+
+@app.command("examples-ytdlp-lan-firewall-prepare")
+def examples_ytdlp_lan_firewall_prepare(
+    bind_ip: str = typer.Option(..., "--bind-ip", help="PC-A's local RFC1918 IPv4."),
+    peer_ip: str = typer.Option(..., "--peer-ip", help="Only permitted PC-B RFC1918 IPv4."),
+    port: int = typer.Option(8878, "--port", min=1024, max=65535),
+    apply: bool = typer.Option(False, "--apply", help="Explicitly add one exact rule on PC-A."),
+) -> None:
+    """Preview by default; never overwrite or delete Windows Firewall rules."""
+    try:
+        report = prepare_lan_firewall(
+            bind_ip=bind_ip, peer_ip=peer_ip, port=port, apply=apply,
+        )
+    except (ValueError, OSError, UnicodeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_FIREWALL_REJECTED",
+            "reason": (str(exc) if str(exc).startswith("LAN_FIREWALL_")
+                       else type(exc).__name__),
+            "changes_may_be_partial": apply,
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True))
+    if report["status"] not in {
+        "LAN_FIREWALL_PREVIEW_ELIGIBLE", "LAN_FIREWALL_ALREADY_SCOPED",
+        "LAN_FIREWALL_RULE_ADDED",
+    }:
         raise typer.Exit(6)
 
 
