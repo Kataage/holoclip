@@ -503,6 +503,47 @@ effectiveness is still **unverified**, and production stays
 `ready=false` pending real two-PC testing. GitHub CI exercises
 synthetic PowerShell firewall rules only, without opening ports.
 
+#### Preview-first PC-A Windows Firewall preparation (explicit opt-in)
+
+On **PC-A only**, Holoclip can preview and explicitly create a single
+narrow inbound allow rule without replacing existing rules. The command
+requires **distinct literal RFC1918 PC-A/PC-B IPv4 addresses** and
+refuses wildcard/public/loopback addresses. PC-A's bind address must
+actually be present on one local network interface with a **Private**
+Windows network profile, and that firewall profile must be enabled.
+
+Run the preview first, without administrator rights:
+
+    uv run holoclip examples-ytdlp-lan-firewall-prepare --bind-ip 192.168.1.10 --peer-ip 192.168.1.21
+
+After reviewing the reported rule and confirming the PC-B host identity,
+use an **administrator PowerShell window on PC-A** to apply:
+
+    uv run holoclip examples-ytdlp-lan-firewall-prepare --bind-ip 192.168.1.10 --peer-ip 192.168.1.21 --apply
+
+Replace those sample IPs; the optional --port defaults to 8878.
+The fixed rule name is HoloclipYtDlpLanTcp-<port>.
+The created rule uses **TCP + exact local PC-A IP + exact remote PC-B IP +
+one port + Private profile only + edge traversal blocked**.
+The command makes *no changes* in preview mode and refuses to overwrite
+a same-name rule. If an exact-peer rule already exists, it reports
+LAN_FIREWALL_ALREADY_SCOPED without writing anything. Any broad or
+ambiguous inbound allow rule, unavailable inspection, name conflict,
+non-Private interface, disabled Private firewall profile, or a changed
+preflight blocks creation. The command does not try to remove/repair
+existing rules or disable the firewall. A failed/uncertain apply requires
+manual reinspection; **do not assume that no rule was created**.
+
+The helper is intentionally separate from the read-only setup inspectors.
+It never changes Task Scheduler, SSH trust, secrets, or yt-dlp pacing.
+New-rule verification is still **syntactic observation of ActiveStore
+rules**, not effective Windows firewall-policy attestation or proof that
+PC-B is the only host on the physical LAN. It does not test real host
+reachability or actual packet filtering. ready=false,
+firewall_effective_policy_verified=false and
+two_host_verified=false remain mandatory. CI uses synthetic
+PowerShell cmdlets only; no real firewall rules are opened.
+
 #### Safe PC-A Task Scheduler registration: preview before apply
 
 After PC-A's local credential/client setup and **independent review** of the
