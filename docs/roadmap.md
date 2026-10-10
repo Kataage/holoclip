@@ -114,7 +114,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [ ] Historical entity/topic/relationship graph
 - [ ] Stage-level persistent resume/cache
 
-## Phase 4 - edit plan## Phase 3.9 - local deterministic A/V baseline (2026-10-11)
+## Phase 3.9 - local deterministic A/V baseline (2026-10-11)
 
 - [x] Compile measured multi-source ClipTimeline into bounded local FFmpeg A/V render plan
 - [x] Preview-only missing full-video inventory; opt-in one-at-a-time paced source acquisition with metadata/policy checks and file/duration budgets
@@ -122,7 +122,8 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Once-authorized automatic candidate selection -> durable source queue enrollment from analyze/discover, bounded confidence/warning/stream eligibility filters
 - [x] Detect COMPLETED acquisition queue and persist a separately claimed local FFmpeg MP4 render with policy/AV checks and technical QA evidence; opt-in scheduled worker processes one render in a later idle tick
 - [x] Auto-create optional cut-aligned SRT sidecars from traceable local source transcripts, with no guessed partial word timings and persistent caption evidence
-- [ ] Learned subtitle styles and burn-in, word-level alignment, loudness and emphasis, scene-aware editing, human-quality QA/repair before approved publishing
+- [x] First deterministic Japanese ASS/libass burn-in into a separate create-only captioned MP4, with font detection and optional QA evidence (not editorially qualified)
+- [ ] Learned subtitle styling, word-level alignment, loudness and emphasis, scene-aware editing, human-quality QA/repair before approved publishing
 - [ ] Complete creative editing, captions, sound processing, human-quality evaluation, output repair and publication approval without promoting unqualified previews
 - [ ] Integrate completion of source acquisition with local rendering, technical QA and further editorial review without repeated user preparation; never auto-publish unqualified clips
 - [ ] Automatically enroll queue jobs from candidate selection and connect post-acquisition rendering/QA without per-video setup or unsupported failure auto-retries
@@ -134,7 +135,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 
 This baseline renders **only local A/V previews**; it is not production-ready or policy-certified. See [local renderer guide](local-render-plan.md).
 
-
+## Phase 4 - edit plan
 
 - [ ] NarrativePlan from EditorialIdea
 - [ ] Multi-source deterministic TimelinePlan

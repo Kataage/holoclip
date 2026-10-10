@@ -121,6 +121,43 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Optional Japanese subtitle burn-in (after PR #209)
+
+For a newly completed source-acquisition job, the existing offline scheduled
+renderer now *also* attempts a second local-only FFmpeg encode when PR #209
+generated a trustworthy SRT. This produces a new sibling
+`renderqueue_<id>.captioned.mp4`, leaving the original QA-verified MP4 and
+`renderqueue_<id>.srt` unchanged. No video is overwritten or uploaded.
+
+A strict parser checks the SRT sequence, ordering, time ranges, text controls
+and maximum cue length. Caption text is safely rendered into a fixed 1280x720
+ASS style (white bold Japanese text, dark outline, bottom center, at most two
+lines). This is a deterministic **baseline**, not learned, speaker-aware or
+editorially reviewed styling. It does not guess missing ASR or word timing.
+The input MP4 and SRT must match their measured SHA-256 receipts; FFmpeg uses
+local-only input with libass and checks the new MP4's video, audio and measured
+duration before a create-only hardlink commit.
+
+Japanese font discovery is automatic and conservative: Windows Meiryo / Yu
+Gothic, or Linux Noto Sans CJK JP / TakaoGothic. FFmpeg with the `ass`
+filter and a recognized local font are required. If missing, if SRT is
+untrusted, or if the second encode fails, the original technical MP4/SRT are
+still valid and the optional burn-in is recorded as unavailable/failed.
+No silent font fallback to unreadable Japanese is considered a quality pass.
+The second encode has a 10-minute ceiling so that a full-length automatic
+180-second preview plus burn-in stays inside the existing bounded Windows
+scheduled-task budget. Slow hosts may need a later separate manual retry;
+there is no unbounded or silent retry.
+
+`render_burnin_evidence` saves the burn-in status, output and SRT hashes
+transactionally with the original queue's technical QA row. The read-only
+`render-ready-preview` command exposes burn-in counts. The successful status
+is `LOCAL_SUBTITLE_BURNED_PREVIEW_UNVERIFIED_EDITORIAL`: it certifies
+neither Japanese transcription correctness, visual legibility on every scene,
+creative timing, policy rights, nor publication readiness. The original
+`QA_PASSED` means only independent A/V technical QA. Both remain
+`ready=false`. The existing Windows worker needs no extra per-clip setup.
+
 ## Deterministic cut-aligned subtitle sidecar (PR #209)
 
 The completed-source offline renderer now also attempts to create an
