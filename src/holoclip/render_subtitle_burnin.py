@@ -199,7 +199,9 @@ def _burn(
             proc = subprocess.run(
                 args, cwd=tmp, stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                timeout=min(3600.0, max(120.0, measured * 12.0)),
+                # The first MP4 encode can consume 36 minutes; cap this
+                # second encode to 10 minutes under the 55-minute task budget.
+                timeout=min(600.0, max(90.0, measured * 4.0)),
                 check=False,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
