@@ -10,6 +10,7 @@ No media, LAN, or outbound action occurs in preview, enrollment or status.
 from __future__ import annotations
 
 import json
+import math
 import secrets
 import sqlite3
 import time
@@ -17,7 +18,8 @@ from pathlib import Path
 
 from holoclip.domain import ClipTimeline, stable_id
 from holoclip.providers.source.yt_dlp import YtDlpError, YtDlpTimeout
-from holoclip.render_plan import _no_links
+from holoclip.render_plan import _no_links, _probe
+from holoclip.render_source_resolver import _canonical_assets, _find_complete_cache
 from holoclip.render_source_acquisition import (
     MAX_DURATION_SECONDS, MAX_FILESIZE_MB,
     _DEFAULT_CACHE, _DEFAULT_DB, _DEFAULT_POLICY, _inventory,
@@ -360,6 +362,41 @@ def advance_render_queue(
     return base
 
 
+def _recovery_cache_verified(document: ClipTimeline, database: Path,
+                             cache_root: Path) -> bool:
+    """Real A/V probe and duration-vs-original check, never just file exists.
+
+    Missing original duration evidence remains PAUSED; a truncated video may
+    still possess a valid yt-dlp receipt and a nonzero byte count.
+    """
+    try:
+        required = {s.source_asset_id for s in document.segments}
+        assets = _canonical_assets(database, required)
+        for aid in required:
+            asset = assets[aid]
+            media = _find_complete_cache(cache_root, asset.external_id)
+            receipt = media.parent / "media.info.json"
+            if not 1 <= receipt.stat().st_size <= 1024 * 1024:
+                return False
+            info = json.loads(receipt.read_text(encoding="utf-8"))
+            original_duration = asset.duration if asset.duration is not None else info.get("duration")
+            if type(original_duration) not in (int, float):
+                return False
+            original = float(original_duration)
+            if not math.isfinite(original) or original <= 0:
+                return False
+            measured, video, audio = _probe(media)
+            latest_cut = max(
+                s.source_end for s in document.segments if s.source_asset_id == aid
+            )
+            if (not video or not audio or measured < latest_cut
+                    or abs(measured - original) > max(2.0, original * 0.01)):
+                return False
+        return True
+    except (ValueError, KeyError, TypeError, OSError, UnicodeError):
+        return False
+
+
 def reconcile_render_queue(
     *, queue: Path = DEFAULT_QUEUE, job_id: str, apply: bool = False,
     resume: bool = False,
@@ -382,20 +419,28 @@ def reconcile_render_queue(
         if row["state"] not in {"RUNNING", "PAUSED", "DEFERRED"}:
             raise ValueError("LOCAL_RENDER_QUEUE_RECOVERY_NOT_REQUIRED")
         doc = ClipTimeline.model_validate_json(row["timeline_json"])
-        missing, _ = _inventory(
-            timeline=doc, database=Path(row["database_path"]),
-            cache_root=Path(row["cache_root"]),
-            max_duration_seconds=row["max_duration"],
-            max_filesize_mb=row["max_filesize"],
+        try:
+            missing, _ = _inventory(
+                timeline=doc, database=Path(row["database_path"]),
+                cache_root=Path(row["cache_root"]),
+                max_duration_seconds=row["max_duration"],
+                max_filesize_mb=row["max_filesize"],
+            )
+        except ValueError:
+            # Corrupt or partial media should not trap a crashed RUNNING job
+            # forever. Explicit recovery changes it to PAUSED, not QUEUED.
+            missing = [("UNVERIFIED", "UNVERIFIED")]
+        complete = not missing and _recovery_cache_verified(
+            doc, Path(row["database_path"]), Path(row["cache_root"]),
         )
-        target = "COMPLETE" if not missing else ("QUEUED" if resume
+        target = "COMPLETE" if complete else ("QUEUED" if resume
             and row["state"] == "PAUSED" else "PAUSED")
         result = {
             "status": "LOCAL_RENDER_QUEUE_RECOVERY_PREVIEW" if not apply
             else "LOCAL_RENDER_QUEUE_RECOVERY_APPLIED",
             "job_id": job_id,
             "would_be_state": target,
-            "media_fully_cached": not missing,
+            "media_fully_cached": complete,
             "changes_applied": False,
             "ready": False, "production_ready": False,
         }
@@ -420,7 +465,7 @@ def reconcile_render_queue(
             "reason=?,updated_at=? WHERE job_id=?",
             (target, 0 if target == "QUEUED" else row["attempts"],
              "LOCAL_RENDER_MANUALLY_RESUMED" if target == "QUEUED"
-             else "LOCAL_RENDER_QUEUED_WORKER_INTERRUPTED" if missing else "NONE",
+             else "LOCAL_RENDER_QUEUED_WORKER_INTERRUPTED" if not complete else "NONE",
              time.time(), job_id),
         )
     result["changes_applied"] = True
