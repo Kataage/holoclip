@@ -8,7 +8,6 @@ import json
 import re
 import threading
 from contextlib import contextmanager
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
