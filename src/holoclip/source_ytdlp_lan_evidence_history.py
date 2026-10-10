@@ -11,7 +11,6 @@ import json
 import os
 import sqlite3
 import time
-from collections import Counter
 from pathlib import Path
 from urllib.parse import quote
 
