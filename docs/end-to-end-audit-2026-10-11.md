@@ -92,6 +92,18 @@ remain blocked rather than auto-retried. This is technical A/V-only QA,
 **not** a trained creative edit pipeline, final quality certification,
 source-rights grant or publisher. Production remains ready=false.
 
+## Post-PR #209 cut-aligned offline subtitle sidecars
+
+After technical MP4 QA, the renderer can automatically map existing local
+source transcripts through the ordered ClipTimeline and create a sibling SRT
+without additional cloud ASR or manual timestamp adjustment. Utterances cut
+across an edit boundary are omitted rather than guessed. All source
+transcript identities must be unambiguous; unknown or missing evidence
+produces a recorded caption-unavailable state without falsifying independent
+MP4 technical QA. This is a timed subtitle **sidecar**, not burned-in or
+creatively styled captions; editorial correctness and production remain
+unqualified (ready=false).
+
 ## Priority order for subsequent delivery## Post-audit implementation note (PR #203)
 
 A first local, deterministic A/V-only `ClipTimeline` renderer and basic ffprobe
