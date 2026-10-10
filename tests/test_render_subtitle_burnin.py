@@ -120,6 +120,11 @@ def test_synthetic_encode_no_clobber_and_independent_video(tmp_path, monkeypatch
     }
     result = burn.burn_captioned_preview(**kwargs)
     target = video.with_name("preview.captioned.mp4")
+    if result["status"] != "LOCAL_SUBTITLE_BURNED_PREVIEW_UNVERIFIED_EDITORIAL":
+        # Surface the exact failing precondition on Windows rather than
+        # masking it behind the optional production error-code contract.
+        burn._burn(video, subtitle, target,
+                   video_sha=kwargs["video_sha256"], srt_sha=kwargs["subtitle_sha256"])
     assert result["status"] == "LOCAL_SUBTITLE_BURNED_PREVIEW_UNVERIFIED_EDITORIAL"
     assert result["output_sha256"] == hashlib.sha256(target.read_bytes()).hexdigest()
     assert result["ready"] is False and result["production_ready"] is False
