@@ -156,6 +156,10 @@ from holoclip.render_source_queue import (
     advance_render_queue, reconcile_render_queue,
 )
 from holoclip.render_source_queue_task import prepare_render_queue_task
+from holoclip.render_ready_queue import (
+    DEFAULT_PREVIEW_ROOT, inspect_completed_source_renders,
+    advance_completed_source_renders,
+)
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
 )
@@ -1396,6 +1400,32 @@ def render_source_queue_task_prepare_command(
     if report["status"] not in {
         "LOCAL_RENDER_QUEUE_TASK_PREVIEW_ELIGIBLE",
         "LOCAL_RENDER_QUEUE_TASK_REGISTERED_NOT_STARTED",
+    }:
+        raise typer.Exit(6)
+
+
+@app.command("render-ready-preview")
+def render_ready_preview_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    execute: bool = typer.Option(False, "--execute",
+        help="Render at most one complete-source timeline to local MP4, never publish."),
+) -> None:
+    """Offline source-complete queue -> one technical MP4 + persistent QA outcome."""
+    try:
+        result = advance_completed_source_renders(
+            queue=queue, preview_root=preview_root, execute=execute,
+        )
+    except (ValueError, OSError, UnicodeError, TypeError, sqlite3.Error) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_RENDER_AUTO_QA_WORKER_BLOCKED",
+            "ready": False, "production_ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(result, sort_keys=True, ensure_ascii=False))
+    if result["status"] in {
+        "LOCAL_RENDER_AUTO_QA_BLOCKED_PREVIOUS",
+        "LOCAL_RENDER_AUTO_QA_PAUSED_NEEDS_REVIEW",
     }:
         raise typer.Exit(6)
 
