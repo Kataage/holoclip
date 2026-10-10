@@ -88,7 +88,7 @@ try {
     Assert-Lan ($task.Action.Argument.Contains(('-SecretFile "{0}"' -f $secret))) 'Secret path not pinned'
     Assert-Lan ($task.Action.Argument.Contains(('-StatePath "{0}"' -f $state))) 'SQLite path not pinned'
     Assert-Lan ($task.Action.Argument.Contains(('-File "{0}"' -f $runner))) 'Runner path missing'
-    Assert-Lan ($task.Force) 'Reregistration must be idempotent'
+    Assert-Lan (-not $task.Force) 'Existing tasks must never be overwritten by a forced install'
     Assert-Lan (-not (Test-Path -LiteralPath $marker)) 'Installer unexpectedly ran uv'
     [IO.File]::WriteAllText($secret, 'bad', [Text.Encoding]::ASCII)
     try { . $installer -BindIp '192.168.1.20'; throw 'Invalid secret accepted' }
