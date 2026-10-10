@@ -140,6 +140,34 @@ real two-PC network is exercised in GitHub. Cryptographic host
 identity verification by the operator and physical two-host
 commissioning remain outstanding. Shared-IP pacing remains an
 opt-in feature and `ready=false` remains mandatory.
+## Increment: one-command pinned SSH LAN observation collection
+
+`examples-ytdlp-lan-pair-collect` uses the installed client
+credential locally for an authenticated status-only PC-A observation,
+then executes PC-B's status-only `pair-observe` command
+over SSH with BatchMode, strict pinned host-key enforcement,
+public-key-only login, disabled credential/agent forwarding, disabled
+proxies/jumps, and bounded execution time. Remote Windows PowerShell
+uses UTF-16LE encoded command arguments (not a user-supplied freeform
+shell script) with a validated absolute project directory, which
+can contain spaces. It does not move credentials, request any lease,
+change Windows tasks/ACLs/firewall, create receipt files or access media.
+
+Both receipts are authenticated with the existing purpose-separated
+shared key, validated through the same exact schema, freshness, nonce,
+role, state-ID and TCP-source tag controls as the manual file verifier.
+SSH status, raw stderr and credentials are never printed. Malformed,
+oversize, unsigned, stale and contradictory reports, unconfigured
+client status, and unreachable SSH/coordinator all fail closed.
+
+Verification is of **consistent network observations**, not proof of
+independent physical hosts, SSH fingerprint provenance, real simultaneous
+two-host process scheduling, or editorial/media readiness. The shared
+credential can sign forged receipts. The command always preserves
+`two_host_verified=false` and `ready=false`.
+GitHub CI mocks the remote SSH subprocess and talks only to a
+loopback coordinator; there is no real user-PC or YouTube access.
+
 ## Increment: authenticated cross-PC LAN observation receipts
 
 The coordinator persists a random instance ID in its existing durable
