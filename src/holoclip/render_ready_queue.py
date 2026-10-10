@@ -27,6 +27,7 @@ from holoclip.render_source_queue import DEFAULT_QUEUE, _connect, _queue_path
 from holoclip.render_source_queue import _recovery_cache_verified
 from holoclip.render_source_resolver import resolve_cached_render_sources
 from holoclip.render_subtitles import export_cut_aligned_srt
+from holoclip.render_subtitle_burnin import burn_captioned_preview
 
 DEFAULT_PREVIEW_ROOT = Path("data/render-previews")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
@@ -59,6 +60,12 @@ def _db(queue: Path, *, write: bool) -> sqlite3.Connection | None:
             "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
             "cue_count INTEGER NOT NULL, dropped_cue_count INTEGER NOT NULL,"
             "output_sha256 TEXT NOT NULL, updated_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS render_burnin_evidence ("
+            "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
+            "output_sha256 TEXT NOT NULL, subtitle_sha256 TEXT NOT NULL,"
+            "updated_at REAL NOT NULL)"
         )
         connection.commit()
         return connection
@@ -140,6 +147,27 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                 else:
                     raise ValueError("LOCAL_RENDER_AUTO_QA_CAPTION_STATE_UNTRUSTED")
         report["subtitle_counts"] = caption_counts
+        burnin_counts = {"created": 0, "unavailable": 0, "failed": 0}
+        burnin_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_burnin_evidence'"
+        ).fetchone() is not None
+        if burnin_table:
+            rows = conn.execute(
+                "SELECT status FROM render_burnin_evidence LIMIT 1001"
+            ).fetchall()
+            if len(rows) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            for item in rows:
+                if item["status"] == "LOCAL_SUBTITLE_BURNED_PREVIEW_UNVERIFIED_EDITORIAL":
+                    burnin_counts["created"] += 1
+                elif item["status"] == "LOCAL_SUBTITLE_BURNIN_NOT_AVAILABLE":
+                    burnin_counts["unavailable"] += 1
+                elif item["status"] == "LOCAL_SUBTITLE_BURNIN_UNAVAILABLE_OR_FAILED":
+                    burnin_counts["failed"] += 1
+                else:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_BURNIN_STATE_UNTRUSTED")
+        report["burnin_counts"] = burnin_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
@@ -198,6 +226,7 @@ def _finish(
     queue: Path, *, job_id: str, token: str, state: str, reason: str,
     output: Path | None = None, sha256: str = "", plan_id: str = "",
     duration: float = 0.0, caption_evidence: dict | None = None,
+    burnin_evidence: dict | None = None,
 ) -> None:
     if state not in {"PAUSED", "QA_PASSED"} or reason not in {
         "NONE", "LOCAL_RENDER_AUTO_QA_VALIDATION_FAILED",
@@ -227,6 +256,16 @@ def _finish(
                     int(caption_evidence["cue_count"]),
                     int(caption_evidence["dropped_cue_count"]),
                     str(caption_evidence["output_sha256"] or ""),
+                    time.time(),
+                ),
+            )
+        if state == "QA_PASSED" and burnin_evidence is not None:
+            conn.execute(
+                "INSERT INTO render_burnin_evidence VALUES (?,?,?,?,?)",
+                (
+                    job_id, str(burnin_evidence["status"]),
+                    str(burnin_evidence["output_sha256"]),
+                    str(burnin_evidence["subtitle_sha256"]),
                     time.time(),
                 ),
             )
@@ -329,12 +368,28 @@ def advance_completed_source_renders(
             timeline, sources, transcript_root=transcript_root,
             mp4_output=output,
         )
+        # Optional final presentation output. A missing Japanese font, malformed
+        # SRT, or failed second encode cannot revoke the verified original MP4.
+        try:
+            burnin_evidence = burn_captioned_preview(
+                mp4_output=output,
+                video_sha256=str(details["output_sha256"]),
+                subtitle_sha256=caption_evidence["output_sha256"],
+            )
+        except (ValueError, OSError, TypeError, UnicodeError):
+            burnin_evidence = {
+                "status": "LOCAL_SUBTITLE_BURNIN_UNAVAILABLE_OR_FAILED",
+                "output_sha256": "",
+                "subtitle_sha256": str(caption_evidence["output_sha256"] or ""),
+            }
         _finish(
             queue, job_id=job_id, token=token, state="QA_PASSED", reason="NONE",
             output=output, sha256=str(details["output_sha256"]),
             plan_id=plan.id, duration=float(details["measured_duration"]),
-            caption_evidence=caption_evidence,
+            caption_evidence=caption_evidence, burnin_evidence=burnin_evidence,
         )
+        report["burnin_status"] = burnin_evidence["status"]
+        report["burnin_output_sha256"] = burnin_evidence["output_sha256"]
         report["subtitle_status"] = caption_evidence["status"]
         report["subtitle_cue_count"] = caption_evidence["cue_count"]
         report["subtitle_dropped_cue_count"] = caption_evidence["dropped_cue_count"]
