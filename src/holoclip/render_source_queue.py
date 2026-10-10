@@ -162,6 +162,8 @@ def enqueue_render_timeline(
         row = conn.execute(
             "SELECT state FROM queue_jobs WHERE job_id=?", (jid,),
         ).fetchone()
+        if row is None and conn.execute("SELECT COUNT(*) FROM queue_jobs").fetchone()[0] >= 1000:
+            raise ValueError("LOCAL_RENDER_QUEUE_TOO_LARGE")
         if row is not None:
             report["status"] = "LOCAL_RENDER_QUEUE_ALREADY_ENROLLED"
             return report
@@ -418,6 +420,12 @@ def reconcile_render_queue(
             raise ValueError("LOCAL_RENDER_QUEUE_JOB_UNKNOWN")
         if row["state"] not in {"RUNNING", "PAUSED", "DEFERRED"}:
             raise ValueError("LOCAL_RENDER_QUEUE_RECOVERY_NOT_REQUIRED")
+        if (row["state"] == "RUNNING"
+                and time.time() - row["updated_at"] < 7200):
+            # A timed-out inspection is not proof the old process is gone.
+            # Wait past the acquisition/native-child deadline before allowing
+            # human-triggered recovery of an uncertain in-flight transfer.
+            raise ValueError("LOCAL_RENDER_QUEUE_RUN_MAY_STILL_BE_ACTIVE")
         doc = ClipTimeline.model_validate_json(row["timeline_json"])
         try:
             missing, _ = _inventory(
