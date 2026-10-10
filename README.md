@@ -476,6 +476,53 @@ spending, make the repository public, or reroute CI to a user-PC runner
 merely to bypass the gate without the owner's explicit approval.
 The workflow already cancels superseded PR runs to reduce future waste.
 
+#### Preview-first local LAN client bootstrap (Windows, opt-in)
+
+A two-PC deployment can now prepare *local* coordinator client state in
+one command on each Windows PC without manually invoking secret creation,
+NTFS ACL hardening and client profile configuration as separate steps.
+The **default is read-only preview**:
+
+```powershell
+# Run on PC-A first (replace with PC-A's actual private IPv4)
+uv run holoclip examples-ytdlp-lan-bootstrap-local --role pc-a --coordinator-ip 192.168.1.10
+
+# After reviewing the plan, explicitly opt in to local writes on PC-A
+uv run holoclip examples-ytdlp-lan-bootstrap-local --role pc-a --coordinator-ip 192.168.1.10 --apply
+
+# On PC-B, first import the *existing same* PC-A credential by independently
+# verified pinned SFTP / trusted local file; do NOT create a different key
+uv run holoclip examples-ytdlp-lan-bootstrap-local --role pc-b --coordinator-ip 192.168.1.10
+uv run holoclip examples-ytdlp-lan-bootstrap-local --role pc-b --coordinator-ip 192.168.1.10 --apply
+```
+
+For custom storage, use `--secret-file` and
+`--config-file`; for a nondefault server port,
+`--coordinator-port`. Existing credentials and differing saved
+profiles are **never overwritten or silently rotated**. On PC-A, a new
+credential is created only after `--apply` and immediately
+locked down with the existing Windows NTFS ACL safeguard; if this
+verification fails, the newly created credential is removed.
+PC-B refuses to create its own independent credential: the existing
+credential must be securely imported first. The existing required-client
+marker/latch is retained to prevent accidental local-only yt-dlp fallback.
+
+The default paths are in the Git-ignored `data/runtime` tree;
+the bootstrap refuses to write within tracked checkout locations other
+than its ignored `data` runtime directory. Public Git commits
+must never contain credentials, known_hosts, or real local settings.
+Reports use fixed codes, no secret bytes or file paths and always retain
+`ready=false`, `two_host_verified=false`.
+
+This only prepares the **local credential and client profile**.
+It deliberately does *not* install Task Scheduler jobs, enable a
+listener, modify Windows firewall, install SSH, accept unknown host keys,
+move secrets across PCs or download media. On PC-A, narrow firewall rules
+and task registration still need explicit owner action. Use the existing
+`examples-ytdlp-lan-onboard-check` for read-only two-PC
+diagnostics and further guidance. A successful local bootstrap alone
+does not prove shared-IP pacing or production qualification.
+
 #### One-command read-only PC-A/PC-B setup inspection
 
 The paired setup doctor combines both PCs' local prerequisites with the
