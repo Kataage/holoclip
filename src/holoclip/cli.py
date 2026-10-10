@@ -38,6 +38,10 @@ from holoclip.source_ytdlp_lan_pacing_trial import trial_lan_pacing, witness_lan
 from holoclip.source_ytdlp_lan_evidence_history import (
     DEFAULT_EVIDENCE_DB, capture_lan_evidence, read_lan_evidence_history,
 )
+from holoclip.source_ytdlp_lan_monitor import (
+    DEFAULT_MONITOR_ALERT, run_lan_monitor_once, prepare_lan_monitor_task,
+    read_lan_monitor_alert,
+)
 from holoclip.source_ytdlp_lan_local_bootstrap import bootstrap_local_lan
 from holoclip.source_ytdlp_lan_task_prepare import inspect_lan_task_registration
 from holoclip.source_ytdlp_lan_firewall_prepare import prepare_lan_firewall
@@ -1300,6 +1304,92 @@ def examples_ytdlp_lan_pacing_trial(
     typer.echo(json.dumps(report, sort_keys=True, separators=(",", ":")))
     if report["status"] not in {
         "LAN_PACING_PREVIEW_ONLY", "LAN_PACING_CROSS_SSH_LEASE_GAP_OBSERVED",
+    }:
+        raise typer.Exit(6)
+
+
+@app.command("examples-ytdlp-lan-monitor-run")
+def examples_ytdlp_lan_monitor_run(
+    host: str = typer.Option(..., "--host"),
+    user: str = typer.Option(..., "--user"),
+    known_hosts: Path = typer.Option(..., "--known-hosts"),
+    remote_repo: str = typer.Option(..., "--remote-repo"),
+    ssh_port: int = typer.Option(22, "--ssh-port", min=1, max=65535),
+    coordinator_port: int = typer.Option(8878, "--coordinator-port",
+        min=1024, max=65535),
+    task_name: str = typer.Option("Holoclip yt-dlp LAN Coordinator", "--task-name"),
+    evidence_db: Path = typer.Option(DEFAULT_EVIDENCE_DB, "--evidence-db"),
+    alert_file: Path = typer.Option(DEFAULT_MONITOR_ALERT, "--alert-file"),
+) -> None:
+    """Record one diagnosis and optionally notify persistent repeated issues."""
+    _load_env_file()
+    try:
+        report = run_lan_monitor_once(
+            host=host, user=user, known_hosts=known_hosts, remote_repo=remote_repo,
+            ssh_port=ssh_port, coordinator_port=coordinator_port,
+            task_name=task_name, evidence_db=evidence_db, alert_file=alert_file,
+        )
+    except (ValueError, OSError, UnicodeError, sqlite3.Error,
+            LocalYtDlpDeferred) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_MONITOR_RUN_REJECTED", "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True))
+    # Even a negative observation was successfully recorded. The scheduler
+    # must not retry an incomplete setup as a failed *monitor process*.
+
+
+@app.command("examples-ytdlp-lan-monitor-alert")
+def examples_ytdlp_lan_monitor_alert(
+    alert_file: Path = typer.Option(DEFAULT_MONITOR_ALERT, "--alert-file"),
+    evidence_db: Path = typer.Option(DEFAULT_EVIDENCE_DB, "--evidence-db"),
+) -> None:
+    """Read one durable safe-code Windows LAN monitor alert completely offline."""
+    try:
+        report = read_lan_monitor_alert(alert_file=alert_file, evidence_db=evidence_db)
+    except (ValueError, OSError, UnicodeError) as exc:
+        typer.echo(json.dumps({"status": "LAN_MONITOR_ALERT_REJECTED", "ready": False}))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True))
+
+
+@app.command("examples-ytdlp-lan-monitor-task-prepare")
+def examples_ytdlp_lan_monitor_task_prepare(
+    host: str = typer.Option(..., "--host", help="PC-B private LAN IPv4."),
+    user: str = typer.Option(..., "--user", help="PC-B existing SSH account."),
+    known_hosts: Path = typer.Option(..., "--known-hosts",
+        help="Independently verified PC-B known_hosts file."),
+    remote_repo: str = typer.Option(..., "--remote-repo",
+        help="Absolute Windows PC-B Holoclip repository path."),
+    ssh_port: int = typer.Option(22, "--ssh-port", min=1, max=65535),
+    coordinator_port: int = typer.Option(8878, "--coordinator-port",
+        min=1024, max=65535),
+    interval_minutes: int = typer.Option(60, "--interval-minutes", min=15, max=1440),
+    task_name: str = typer.Option("Holoclip yt-dlp LAN Monitor", "--task-name"),
+    evidence_db: Path = typer.Option(DEFAULT_EVIDENCE_DB, "--evidence-db"),
+    alert_file: Path = typer.Option(DEFAULT_MONITOR_ALERT, "--alert-file"),
+    apply: bool = typer.Option(False, "--apply",
+        help="Register a non-elevated Windows Task Scheduler job; never auto-start."),
+) -> None:
+    """Preview-first, non-overwriting, no-media Windows monitor task registration."""
+    _load_env_file()
+    try:
+        report = prepare_lan_monitor_task(
+            host=host, user=user, known_hosts=known_hosts, remote_repo=remote_repo,
+            ssh_port=ssh_port, coordinator_port=coordinator_port,
+            interval_minutes=interval_minutes, task_name=task_name,
+            evidence_db=evidence_db, alert_file=alert_file, apply=apply,
+        )
+    except (ValueError, OSError, UnicodeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_MONITOR_TASK_REJECTED", "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True))
+    if report["status"] not in {
+        "LAN_MONITOR_TASK_PREVIEW_ELIGIBLE",
+        "LAN_MONITOR_TASK_REGISTERED_NOT_STARTED",
     }:
         raise typer.Exit(6)
 

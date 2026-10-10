@@ -36,11 +36,13 @@ WINDOWS_TESTS = (
     "tests/test_source_ytdlp_lan_deployment_diagnosis.py",
     "tests/test_source_ytdlp_lan_pacing_trial.py",
     "tests/test_source_ytdlp_lan_evidence_history.py",
+    "tests/test_source_ytdlp_lan_monitor.py",
 )
 WINDOWS_PS_SCRIPTS = (
     "test-source-pattern-windows.ps1",
     "test-source-pattern-install.ps1",
     "test-ytdlp-lan-task.ps1",
+    "test-ytdlp-lan-monitor-task.ps1",
     "test-ytdlp-lan-acl.ps1",
     "test-ytdlp-lan-setup-doctor.ps1",
     "test-ytdlp-lan-firewall-scope.ps1",
