@@ -38,6 +38,7 @@ WINDOWS_PS_SCRIPTS = (
     "test-ytdlp-lan-acl.ps1",
     "test-ytdlp-lan-setup-doctor.ps1",
     "test-ytdlp-lan-firewall-scope.ps1",
+    "test-ytdlp-lan-firewall-prepare.ps1",
 )
 MAX_COMMAND_SECONDS = 1200
 
