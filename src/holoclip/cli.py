@@ -1406,6 +1406,8 @@ def render_source_queue_run_command(
         help="Attempt at most one approved missing video via existing LAN/local yt-dlp pacing."),
 ) -> None:
     """Single bounded durable worker iteration; safe for scheduled invocation."""
+    if execute:
+        _load_env_file()
     try:
         result = advance_render_queue(queue=queue, execute=execute)
     except (ValueError, OSError, TypeError, UnicodeError, sqlite3.Error,
