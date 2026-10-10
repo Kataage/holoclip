@@ -114,7 +114,17 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [ ] Historical entity/topic/relationship graph
 - [ ] Stage-level persistent resume/cache
 
-## Phase 4 - edit plan
+## Phase 4 - edit plan## Phase 3.9 - local deterministic A/V baseline (2026-10-11)
+
+- [x] Compile measured multi-source ClipTimeline into bounded local FFmpeg A/V render plan
+- [x] Preview-first local render command, explicit execution, input hashes, no-overwrite commit and basic A/V ffprobe QA
+- [ ] Complete formal NarrativePlan/RenderPlan authoring and media-editing profile
+- [ ] Subtitle, framing, transitions, loudness and editorial QA/repair
+- [ ] Real unseen-stream validation and production provider qualification
+
+This baseline renders **only local A/V previews**; it is not production-ready or policy-certified. See [local renderer guide](local-render-plan.md).
+
+
 
 - [ ] NarrativePlan from EditorialIdea
 - [ ] Multi-source deterministic TimelinePlan

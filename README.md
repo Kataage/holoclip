@@ -1,5 +1,7 @@
 # holoclip
 
+**New local A/V baseline:** measured multi-source ClipTimeline to deterministic FFmpeg MP4 preview is available via `uv run holoclip render-local-preview` (dry-run default; explicit `--execute`). See [local renderer guide](docs/local-render-plan.md). No publishing or production readiness is implied.
+
 > **End-to-end readiness (2026-10-11):** Local acquisition, candidate discovery and
 > measured editorial planning are engineering foundations, **not** a proven
 > autonomous clip production pipeline. Full RenderPlan, deterministic final
