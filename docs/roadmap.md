@@ -118,6 +118,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 
 - [x] Compile measured multi-source ClipTimeline into bounded local FFmpeg A/V render plan
 - [x] Preview-only missing full-video inventory; opt-in one-at-a-time paced source acquisition with metadata/policy checks and file/duration budgets
+- [x] Durable Windows-local queued missing-source acquisition, serialized one-at-a-time worker, Task Scheduler opt-in, pacing delay and fail-closed manual crash reconciliation
 - [ ] Safe unattended bounded missing-source queue with durable cooldown/backoff and automatic restart/resume (without human per-video setup)
 - [x] Read-only automatic canonical source ID to full editing_video cache mapping, with identity and ambiguity fail-closed checks
 - [x] Preview-first local render command, explicit execution, input hashes, no-overwrite commit and basic A/V ffprobe QA
