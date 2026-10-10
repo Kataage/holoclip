@@ -117,6 +117,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 ## Phase 4 - edit plan## Phase 3.9 - local deterministic A/V baseline (2026-10-11)
 
 - [x] Compile measured multi-source ClipTimeline into bounded local FFmpeg A/V render plan
+- [x] Read-only automatic canonical source ID to full editing_video cache mapping, with identity and ambiguity fail-closed checks
 - [x] Preview-first local render command, explicit execution, input hashes, no-overwrite commit and basic A/V ffprobe QA
 - [ ] Complete formal NarrativePlan/RenderPlan authoring and media-editing profile
 - [ ] Subtitle, framing, transitions, loudness and editorial QA/repair

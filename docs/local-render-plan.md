@@ -43,6 +43,39 @@ an output or access the network. Explicit execution:
 Requires local FFmpeg and ffprobe on PATH, with no Docker, yt-dlp, NIM
 API, ComfyUI or cloud resource.
 
+## Resolve existing full-video caches without a manual source manifest
+
+Existing canonical SourceAsset IDs can be matched to already-acquired
+local complete yt-dlp editing_video caches:
+
+    uv run holoclip render-local-preview --timeline data/clip-timeline.json --auto-sources --database data/holoclip.db --cache-root data/sources --approve-local-preview --output data/preview.mp4
+
+The default still validates without output. To produce an MP4 add
+--execute. The manual --sources and --auto-sources modes are exclusive.
+
+Source identity comes from read-only canonical SQLite: the exact
+source_asset_id must exist, be AVAILABLE, have a public/authorized
+YouTube SourceAsset, and have a canonical 11-character video ID.
+Supported fixed local cache layouts relative to --cache-root:
+
+    <root>/<video-id>/editing_video/media.*
+    <root>/original/<video-id>/editing_video/media.*
+    <root>/examples/sources/<video-id>/editing_video/media.*
+
+Each directory requires one full video with a media.info.json whose
+id and Youtube extractor identity match the canonical asset.
+training_audio and editing_video_sections must never substitute
+for a full original: bounded range PTS does not guarantee absolute
+source coordinates. Missing or ambiguous caches, wrong identity,
+unknown assets and linked paths fail closed. No downloads, cleanup,
+SSH or metadata web probes take place.
+
+--approve-local-preview is an explicit local technical-use assertion,
+NOT clipping rights, copyright clearance, or publication approval.
+Source bytes and A/V durations are separately hashed and checked
+by the preexisting RenderPlan compiler/executor. A successful preview
+still retains ready=false and has no upload path.
+
 ## Deterministic technical behavior and safety
 
 - Supports continuous, same-source multi-cut and multiple-source ordered

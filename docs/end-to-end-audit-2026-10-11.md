@@ -41,6 +41,10 @@ values, non-finite source measurements, unrelated context, stored plan drift,
 and unchanged legacy continuous candidates. No real media or paid service is
 required for these regressions.
 
+## Post-PR #204 local source auto-mapping
+
+The local RenderPlan can now resolve existing canonical YouTube source IDs into complete editing_video cache files. Handwritten source mapping is not required when valid local complete-video caches already exist. Missing/ambiguous audio-only or bounded-section caches are blocked without redownloading. This does not establish clipping rights, real cross-stream semantic coherence, final editorial quality or production readiness.
+
 ## Priority order for subsequent delivery## Post-audit implementation note (PR #203)
 
 A first local, deterministic A/V-only `ClipTimeline` renderer and basic ffprobe
