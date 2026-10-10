@@ -320,3 +320,49 @@ def test_queue_corrupted_row_requires_manual_intervention(tmp_path):
         conn.execute("UPDATE queue_jobs SET reason='RAW_SECRET'")
     with pytest.raises(ValueError, match="LOCAL_RENDER_QUEUE_STATE_UNTRUSTED"):
         queue.inspect_render_queue(queue=state)
+
+
+
+def test_interrupted_worker_requires_full_duration_av_before_recovery(
+    tmp_path, monkeypatch,
+):
+    state, receipt, _, _, root = _enroll(tmp_path)
+    row, token, status = queue._claim(state)
+    for vid in _IDS:
+        _fake_full_video(root, vid)
+    # Even a seemingly complete file with matching identity cannot prove
+    # full video after interrupted yt-dlp without measured duration.
+    preview = queue.reconcile_render_queue(queue=state, job_id=receipt["job_id"])
+    assert preview["media_fully_cached"] is False
+    assert preview["would_be_state"] == "PAUSED"
+    # Add recorded original durations and real measured A/V probe evidence.
+    for vid in _IDS:
+        info = root / vid / "editing_video" / "media.info.json"
+        doc = json.loads(info.read_text())
+        doc["duration"] = 100
+        info.write_text(json.dumps(doc))
+    monkeypatch.setattr(queue, "_probe", lambda path: (100.0, True, True))
+    preview = queue.reconcile_render_queue(queue=state, job_id=receipt["job_id"])
+    assert preview["media_fully_cached"] is True
+    assert preview["would_be_state"] == "COMPLETE"
+    assert preview["changes_applied"] is False
+    applied = queue.reconcile_render_queue(
+        queue=state, job_id=receipt["job_id"], apply=True,
+    )
+    assert applied["would_be_state"] == "COMPLETE"
+    assert queue.inspect_render_queue(queue=state)["counts"]["COMPLETE"] == 1
+
+
+def test_corrupt_partial_video_is_only_manually_paused(tmp_path):
+    state, receipt, _, _, root = _enroll(tmp_path)
+    queue._claim(state)
+    folder = root / _IDS[0] / "editing_video"
+    folder.mkdir(parents=True)
+    (folder / "media.mkv").write_bytes(b"INCOMPLETE")
+    # No identity receipt; old raw bytes remain untouched.
+    result = queue.reconcile_render_queue(
+        queue=state, job_id=receipt["job_id"], apply=True,
+    )
+    assert result["would_be_state"] == "PAUSED"
+    assert (folder / "media.mkv").read_bytes() == b"INCOMPLETE"
+    assert queue.inspect_render_queue(queue=state)["counts"]["PAUSED"] == 1
