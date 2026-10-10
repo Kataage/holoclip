@@ -119,7 +119,8 @@ def acquire_one_missing_render_source(
         raise ValueError("LOCAL_RENDER_EXPLICIT_PREVIEW_APPROVAL_REQUIRED")
     target_id, video_id = missing[0]
     assets = _canonical_assets(database, {target_id})
-    asset = assets[target_id]
+    if assets[target_id].external_id != video_id:
+        raise ValueError("LOCAL_RENDER_CANONICAL_SOURCE_CHANGED")
     url = f"https://www.youtube.com/watch?v={video_id}"
     # No real network before verifying trusted shared-IP coordination.
     provider = provider if provider is not None else YtDlpSourceProvider()
