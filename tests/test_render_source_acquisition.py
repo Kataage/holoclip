@@ -304,3 +304,30 @@ def test_cli_no_download_by_default_and_requires_execute_permission(tmp_path):
     blocked = CliRunner().invoke(cli.app, [*args, "--execute"])
     assert blocked.exit_code == 6
     assert json.loads(blocked.stdout)["reason"] == "LOCAL_RENDER_EXPLICIT_PREVIEW_APPROVAL_REQUIRED"
+
+
+
+def test_cli_hides_yt_dlp_raw_stderr_and_returns_fixed_status(tmp_path, monkeypatch):
+    from holoclip.providers.source.yt_dlp import YtDlpError
+
+    db, root, timeline, _ = _case(tmp_path)
+    t = tmp_path / "timeline.json"
+    t.write_text(timeline.model_dump_json())
+    monkeypatch.setattr(
+        cli, "acquire_one_missing_render_source",
+        lambda *a, **kw: (_ for _ in ()).throw(
+            YtDlpError("SECRET_AUTH_TOKEN and private source URL")
+        ),
+    )
+    result = CliRunner().invoke(cli.app, [
+        "render-local-source-acquire", "--timeline", str(t),
+        "--database", str(db), "--cache-root", str(root),
+        "--execute", "--approve-local-preview",
+    ])
+    assert result.exit_code == 6
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "LOCAL_RENDER_SOURCE_ACQUISITION_BLOCKED"
+    assert payload["reason"] == "LOCAL_RENDER_SOURCE_ACQUISITION_FAILED"
+    assert payload["ready"] is False
+    assert "SECRET" not in result.stdout
+    assert "private source URL" not in result.stdout
