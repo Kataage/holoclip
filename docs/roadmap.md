@@ -114,7 +114,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [ ] Historical entity/topic/relationship graph
 - [ ] Stage-level persistent resume/cache
 
-## Phase 4 - edit plan## Phase 3.9 - local deterministic A/V baseline (2026-10-11)
+## Phase 3.9 - local deterministic A/V baseline (2026-10-11)
 
 - [x] Compile measured multi-source ClipTimeline into bounded local FFmpeg A/V render plan
 - [x] Preview-only missing full-video inventory; opt-in one-at-a-time paced source acquisition with metadata/policy checks and file/duration budgets
@@ -135,7 +135,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 
 This baseline renders **only local A/V previews**; it is not production-ready or policy-certified. See [local renderer guide](local-render-plan.md).
 
-
+## Phase 4 - edit plan
 
 - [ ] NarrativePlan from EditorialIdea
 - [ ] Multi-source deterministic TimelinePlan
