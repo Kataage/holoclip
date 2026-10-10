@@ -238,3 +238,18 @@ def test_cli_default_preview_and_apply_requires_windows(tmp_path):
         info = json.loads(applied.stdout)
         assert info["reason"] == "LAN_BOOTSTRAP_WINDOWS_APPLY_REQUIRED"
         assert not secret.exists()
+
+
+@pytest.mark.parametrize("environment", [
+    "HOLOCLIP_YTDLP_COORDINATOR_URL",
+    "HOLOCLIP_YTDLP_COORDINATOR_SECRET_FILE",
+    "HOLOCLIP_YTDLP_COORDINATOR_CONFIG",
+])
+def test_environment_override_blocks_partial_or_misleading_setup(
+    tmp_path, monkeypatch, environment,
+):
+    secret, config = _paths(tmp_path)
+    monkeypatch.setenv(environment, "http://192.168.1.20:8878")
+    with pytest.raises(ValueError, match="ENV_OVERRIDE_PRESENT"):
+        _go(secret, config, apply=False)
+    assert not secret.exists() and not config.exists()
