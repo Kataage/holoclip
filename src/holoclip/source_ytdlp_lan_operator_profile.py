@@ -23,7 +23,7 @@ from holoclip.source_ytdlp_lan_evidence_history import (
 from holoclip.source_ytdlp_lan_local_bootstrap import _safe_local_storage
 from holoclip.source_ytdlp_lan_monitor import (
     DEFAULT_MONITOR_ALERT, _alert_path, prepare_lan_monitor_task,
-    read_lan_monitor_alert, run_lan_monitor_once,
+    read_lan_monitor_alert,
 )
 from holoclip.source_ytdlp_lan_pair_collect import (
     _pinned_ssh_command, _windows_remote_repo,
