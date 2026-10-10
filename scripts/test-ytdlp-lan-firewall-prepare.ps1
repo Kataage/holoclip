@@ -1,13 +1,13 @@
 # Windows PowerShell 5.1 synthetic tests; NEVER edit the real Windows Firewall.
 $ErrorActionPreference = 'Stop'
 $prepare = Join-Path $PSScriptRoot 'prepare-ytdlp-lan-firewall.ps1'
-$script:mockRules = @()
-$script:created = @()
-$script:category = 'Private'
-$script:profileEnabled = $true
-$script:failCreation = $false
-$script:scopeChecks = 0
-$script:raceBroad = $false
+$global:mockRules = @()
+$global:created = @()
+$global:category = 'Private'
+$global:profileEnabled = $true
+$global:failCreation = $false
+$global:scopeChecks = 0
+$global:raceBroad = $false
 
 function Assert-Prepare([bool]$ok, [string]$description) {
     if (-not $ok) { throw $description }
@@ -16,13 +16,13 @@ function New-MockRule([string]$name, [string]$remote, [string]$port = '8878') {
     [pscustomobject]@{ Name = $name; Protocol = 'TCP'; Port = $port; Remote = $remote }
 }
 function Reset-Prepare {
-    $script:mockRules = @()
-    $script:created = @()
-    $script:category = 'Private'
-    $script:profileEnabled = $true
-    $script:failCreation = $false
-    $script:scopeChecks = 0
-    $script:raceBroad = $false
+    $global:mockRules = @()
+    $global:created = @()
+    $global:category = 'Private'
+    $global:profileEnabled = $true
+    $global:failCreation = $false
+    $global:scopeChecks = 0
+    $global:raceBroad = $false
 }
 function Get-NetIPAddress {
     param([string]$AddressFamily, [string]$IPAddress, [string]$ErrorAction)
@@ -31,22 +31,22 @@ function Get-NetIPAddress {
 }
 function Get-NetConnectionProfile {
     param([int]$InterfaceIndex, [string]$ErrorAction)
-    [pscustomobject]@{ NetworkCategory = $script:category }
+    [pscustomobject]@{ NetworkCategory = $global:category }
 }
 function Get-NetFirewallProfile {
     param([string]$PolicyStore, [string]$Name, [string]$ErrorAction)
-    [pscustomobject]@{ Enabled = $script:profileEnabled }
+    [pscustomobject]@{ Enabled = $global:profileEnabled }
 }
 function Get-NetFirewallRule {
     param([string]$PolicyStore, [string]$Enabled, [string]$Direction,
           [string]$Action, [string]$ErrorAction)
     if ($Enabled -eq 'True' -and $Direction -eq 'Inbound' -and $Action -eq 'Allow') {
-        $script:scopeChecks++
-        if ($script:raceBroad -and $script:scopeChecks -eq 2) {
-            $script:mockRules += (New-MockRule 'other-broad' 'Any')
+        $global:scopeChecks++
+        if ($global:raceBroad -and $global:scopeChecks -eq 2) {
+            $global:mockRules += (New-MockRule 'other-broad' 'Any')
         }
     }
-    foreach ($item in $script:mockRules) { $item }
+    foreach ($item in $global:mockRules) { $item }
 }
 function Get-NetFirewallPortFilter {
     param($AssociatedNetFirewallRule, [string]$ErrorAction)
@@ -77,18 +77,18 @@ function New-NetFirewallRule {
           [string]$Profile, [string]$Protocol, [int]$LocalPort,
           [string]$LocalAddress, [string]$RemoteAddress,
           [string]$EdgeTraversalPolicy, [string]$ErrorAction)
-    if ($script:failCreation) { throw 'Synthetic secret path or identity error' }
-    if (@($script:mockRules | Where-Object { $_.Name -eq $Name }).Count -gt 0) {
+    if ($global:failCreation) { throw 'Synthetic secret path or identity error' }
+    if (@($global:mockRules | Where-Object { $_.Name -eq $Name }).Count -gt 0) {
         throw 'Duplicate name rejected'
     }
-    $script:created += [pscustomobject]@{
+    $global:created += [pscustomobject]@{
         Name = $Name; DisplayName = $DisplayName; PolicyStore = $PolicyStore
         Direction = $Direction; Action = $Action; Enabled = $Enabled
         Profile = $Profile; Protocol = $Protocol; LocalPort = $LocalPort
         LocalAddress = $LocalAddress; RemoteAddress = $RemoteAddress
         EdgeTraversalPolicy = $EdgeTraversalPolicy
     }
-    $script:mockRules += (New-MockRule $Name $RemoteAddress ([string]$LocalPort))
+    $global:mockRules += (New-MockRule $Name $RemoteAddress ([string]$LocalPort))
 }
 function Invoke-Prepare([bool]$apply = $false,
                         [string]$bind = '192.168.1.10',
@@ -106,11 +106,11 @@ function Invoke-Prepare([bool]$apply = $false,
 Reset-Prepare
 $preview = Invoke-Prepare
 Assert-Prepare ($preview.status -eq 'LAN_FIREWALL_PREVIEW_ELIGIBLE') ('Default preview not eligible: ' + ($preview | ConvertTo-Json -Compress))
-Assert-Prepare ($script:created.Count -eq 0) 'Preview wrote a firewall rule'
+Assert-Prepare ($global:created.Count -eq 0) 'Preview wrote a firewall rule'
 $applied = Invoke-Prepare $true
 Assert-Prepare ($applied.status -eq 'LAN_FIREWALL_RULE_ADDED') 'Apply did not re-observe exact rule'
-Assert-Prepare ($applied.rule_added -and $script:created.Count -eq 1) 'Expected one guarded creation'
-$rule = $script:created[0]
+Assert-Prepare ($applied.rule_added -and $global:created.Count -eq 1) 'Expected one guarded creation'
+$rule = $global:created[0]
 Assert-Prepare ($rule.Name -eq 'HoloclipYtDlpLanTcp-8878') 'Unstable rule identity'
 Assert-Prepare ($rule.PolicyStore -eq 'PersistentStore' -and $rule.Direction -eq 'Inbound') 'Wrong rule store/direction'
 Assert-Prepare ($rule.Profile -eq 'Private' -and $rule.Action -eq 'Allow') 'Firewall scope/profile mismatch'
@@ -120,33 +120,33 @@ Assert-Prepare ($rule.RemoteAddress -eq '192.168.1.21') 'Remote PC-B not pinned'
 Assert-Prepare ($rule.EdgeTraversalPolicy -eq 'Block') 'Edge traversal enabled'
 $repeated = Invoke-Prepare $true
 Assert-Prepare ($repeated.status -eq 'LAN_FIREWALL_PREVIEW_BLOCKED') 'Name collision was accepted'
-Assert-Prepare ($script:created.Count -eq 1) 'Repeat apply wrote again'
+Assert-Prepare ($global:created.Count -eq 1) 'Repeat apply wrote again'
 
 Reset-Prepare
-$script:mockRules = @(New-MockRule 'existing-exact' '192.168.1.21')
+$global:mockRules = @(New-MockRule 'existing-exact' '192.168.1.21')
 $existing = Invoke-Prepare $true
 Assert-Prepare ($existing.status -eq 'LAN_FIREWALL_ALREADY_SCOPED') 'Exact existing rule not no-op'
-Assert-Prepare ($script:created.Count -eq 0) 'Existing rule was replaced'
+Assert-Prepare ($global:created.Count -eq 0) 'Existing rule was replaced'
 
 Reset-Prepare
-$script:mockRules = @(New-MockRule 'existing-broad' 'Any')
+$global:mockRules = @(New-MockRule 'existing-broad' 'Any')
 $broad = Invoke-Prepare $true
 Assert-Prepare ($broad.status -eq 'LAN_FIREWALL_PREVIEW_BLOCKED') 'Broad rule allowed apply'
-Assert-Prepare ($script:created.Count -eq 0) 'Broad rule permitted new write'
+Assert-Prepare ($global:created.Count -eq 0) 'Broad rule permitted new write'
 
 Reset-Prepare
-$script:mockRules = @(New-MockRule 'HoloclipYtDlpLanTcp-8878' 'Any')
+$global:mockRules = @(New-MockRule 'HoloclipYtDlpLanTcp-8878' 'Any')
 $collision = Invoke-Prepare $true
 Assert-Prepare ($collision.check -eq 'LAN_FIREWALL_RULE_NAME_CONFLICT') 'Reserved name collision not blocked'
 
 Reset-Prepare
-$script:category = 'Public'
+$global:category = 'Public'
 $public = Invoke-Prepare $true
 Assert-Prepare ($public.check -eq 'LAN_FIREWALL_PRIVATE_NETWORK_REQUIRED') 'Public network accepted'
-Assert-Prepare ($script:created.Count -eq 0) 'Public network wrote a rule'
+Assert-Prepare ($global:created.Count -eq 0) 'Public network wrote a rule'
 
 Reset-Prepare
-$script:profileEnabled = $false
+$global:profileEnabled = $false
 $disabled = Invoke-Prepare $true
 Assert-Prepare ($disabled.check -eq 'LAN_FIREWALL_PRIVATE_PROFILE_UNVERIFIED') 'Disabled profile accepted'
 
@@ -155,20 +155,20 @@ foreach ($invalid in @('8.8.8.8', '127.0.0.1', '192.168.001.021', '192.168.1.10'
     $bad = Invoke-Prepare $true '192.168.1.10' $invalid
     Assert-Prepare ($bad.check -eq 'LAN_FIREWALL_UNSAFE_ADDRESS') ('Unsafe IP accepted: ' + $invalid)
 }
-Assert-Prepare ($script:created.Count -eq 0) 'Unsafe addresses wrote a rule'
+Assert-Prepare ($global:created.Count -eq 0) 'Unsafe addresses wrote a rule'
 
 Reset-Prepare
-$script:raceBroad = $true
+$global:raceBroad = $true
 $raced = Invoke-Prepare $true
 Assert-Prepare ($raced.status -eq 'LAN_FIREWALL_APPLY_BLOCKED') 'Race was not checked'
-Assert-Prepare ($script:created.Count -eq 0) 'Race created rule'
+Assert-Prepare ($global:created.Count -eq 0) 'Race created rule'
 
 Reset-Prepare
-$script:failCreation = $true
+$global:failCreation = $true
 $failure = Invoke-Prepare $true
 Assert-Prepare ($failure.status -eq 'LAN_FIREWALL_APPLY_UNCONFIRMED') 'Cmdlet failure claimed success'
 Assert-Prepare ($failure.changes_may_be_partial) 'Uncertain write not reported'
-Assert-Prepare ($script:created.Count -eq 0) 'Failed write changed mock rule'
+Assert-Prepare ($global:created.Count -eq 0) 'Failed write changed mock rule'
 Assert-Prepare (-not (($failure | ConvertTo-Json -Compress) -match 'Synthetic secret')) 'Raw error leaked'
 
 Write-Host 'Windows LAN firewall prepare: preview/apply/mock failure tests passed; zero real rules modified'
