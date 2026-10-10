@@ -25,6 +25,7 @@ from holoclip.source_ytdlp_lan_evidence_history import (
 )
 from holoclip.source_ytdlp_lan_local_bootstrap import _safe_local_storage
 from holoclip.source_ytdlp_lan_pair_collect import _pinned_ssh_command
+from holoclip.source_ytdlp_lan_setup_doctor import _host_pin_state
 from holoclip.source_ytdlp_lan_task_prepare import _TASK_NAME, _task_state, _windows
 
 DEFAULT_MONITOR_ALERT = Path("data/runtime/yt-dlp-lan-monitor-alert.json")
@@ -233,6 +234,10 @@ def prepare_lan_monitor_task(
         host=host, user=user, known_hosts=known_hosts,
         remote_repo=remote_repo, port=ssh_port, remote_probe="onboard",
     )
+    # ssh-keygen -F verifies that this peer has a pinned entry in the
+    # supplied dedicated file. Fingerprint provenance remains out-of-band.
+    if _host_pin_state(peer, known_hosts, ssh_port) != "HOST_PIN_ENTRY_OBSERVED":
+        raise ValueError("LAN_MONITOR_PINNED_HOST_KEY_REQUIRED")
     state = _task_state(task_name) if _windows() else "LAN_MONITOR_WINDOWS_REQUIRED"
     report: dict[str, object] = {
         "status": ("LAN_MONITOR_TASK_PREVIEW_ELIGIBLE"
