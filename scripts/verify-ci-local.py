@@ -120,7 +120,7 @@ def main() -> int:
         "--full-windows-pytest", action="store_true",
         help="On Windows also run Linux-oriented full pytest as an extra diagnostic.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(sys.argv[1:])
     is_windows = platform.system() == "Windows"
     current_head = _git_head()
     expected_valid = (args.expected_head is None or
