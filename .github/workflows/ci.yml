@@ -1,5 +1,11 @@
 name: ci
 
+# Prevent rapid follow-up PR commits from consuming duplicate hosted-runner
+# minutes. The newest commit still requires both Linux and Windows success.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
   push:
