@@ -68,6 +68,15 @@ def bootstrap_local_lan(
     apply: bool = False,
 ) -> dict[str, object]:
     """Prepare only this machine, never claiming real two-host qualification."""
+    # A legacy environment override would take precedence over the new
+    # persisted profile during real yt-dlp access. Refuse to report a
+    # successful bootstrap while a different effective route may be used.
+    if any(os.environ.get(name, "").strip() for name in (
+        "HOLOCLIP_YTDLP_COORDINATOR_URL",
+        "HOLOCLIP_YTDLP_COORDINATOR_SECRET_FILE",
+        "HOLOCLIP_YTDLP_COORDINATOR_CONFIG",
+    )):
+        raise ValueError("LAN_BOOTSTRAP_ENV_OVERRIDE_PRESENT")
     if role not in {"pc-a", "pc-b"}:
         raise ValueError("LAN_BOOTSTRAP_INVALID_ROLE")
     if type(coordinator_port) is not int or not 1024 <= coordinator_port <= 65535:
