@@ -105,7 +105,7 @@ function Invoke-Prepare([bool]$apply = $false,
 
 Reset-Prepare
 $preview = Invoke-Prepare
-Assert-Prepare ($preview.status -eq 'LAN_FIREWALL_PREVIEW_ELIGIBLE') 'Default preview not eligible'
+Assert-Prepare ($preview.status -eq 'LAN_FIREWALL_PREVIEW_ELIGIBLE') ('Default preview not eligible: ' + ($preview | ConvertTo-Json -Compress))
 Assert-Prepare ($script:created.Count -eq 0) 'Preview wrote a firewall rule'
 $applied = Invoke-Prepare $true
 Assert-Prepare ($applied.status -eq 'LAN_FIREWALL_RULE_ADDED') 'Apply did not re-observe exact rule'
