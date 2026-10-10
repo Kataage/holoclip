@@ -156,6 +156,9 @@ from holoclip.render_source_queue import (
     advance_render_queue, reconcile_render_queue,
 )
 from holoclip.render_source_queue_task import prepare_render_queue_task
+from holoclip.render_candidate_autoqueue import (
+    DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
+)
 from holoclip.migration import migrate_legacy_data, report_as_json
 from holoclip.models import ReviewDecision
 from holoclip.providers.embedding.base import EmbeddingProviderError
@@ -406,13 +409,14 @@ def analyze(
             source_stream_id=stream_id or transcript.stem,
         )
 
+        run = build_run(
+            stream_id=stream_id or transcript.stem,
+            transcript_path=str(transcript),
+            candidates=candidates,
+        )
         if save_run_path is not None:
-            run = build_run(
-                stream_id=stream_id or transcript.stem,
-                transcript_path=str(transcript),
-                candidates=candidates,
-            )
             save_run(run, save_run_path)
+        _autoqueue_generated_candidates(run)
 
         return [candidate.model_dump(mode="json") for candidate in candidates]
 
@@ -535,15 +539,14 @@ def discover(
             evaluation_transcript=transcript_path,
             source_stream_id=resolved_stream_id,
         )
-        save_run(
-            build_run(
-                stream_id=resolved_stream_id,
-                transcript_path=str(transcript_path),
-                candidates=candidates,
-                media_path=str(media.resolve()),
-            ),
-            run_path,
+        run = build_run(
+            stream_id=resolved_stream_id,
+            transcript_path=str(transcript_path),
+            candidates=candidates,
+            media_path=str(media.resolve()),
         )
+        save_run(run, run_path)
+        _autoqueue_generated_candidates(run)
         return [candidate.model_dump(mode="json") for candidate in candidates]
 
     try:
@@ -1319,6 +1322,55 @@ def examples_ytdlp_lan_pacing_trial(
         "LAN_PACING_PREVIEW_ONLY", "LAN_PACING_CROSS_SSH_LEASE_GAP_OBSERVED",
     }:
         raise typer.Exit(6)
+
+
+@app.command("render-candidate-autoqueue-setup")
+def render_candidate_autoqueue_setup_command(
+    config: Path = typer.Option(DEFAULT_AUTOQUEUE_CONFIG, "--config"),
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    database: Path = typer.Option(Path("data/holoclip.db"), "--database"),
+    cache_root: Path = typer.Option(Path("data/sources"), "--cache-root"),
+    policy_file: Path = typer.Option(
+        Path("data/policy/clip_rules.jsonl"), "--policy-file"),
+    min_confidence: float = typer.Option(
+        0.85, "--min-confidence", min=0.75, max=1),
+    max_candidates_per_run: int = typer.Option(
+        1, "--max-candidates-per-run", min=1, max=3),
+    apply: bool = typer.Option(False, "--apply"),
+    approve_local_preview: bool = typer.Option(
+        False, "--approve-local-preview",
+        help="One-time permission for qualifying candidate local-source queue enrollment."),
+) -> None:
+    """Configure once, then analyze/discover auto-enroll qualifying candidates."""
+    try:
+        report = setup_candidate_autoqueue(
+            config=config, queue=queue, database=database,
+            cache_root=cache_root, policy_file=policy_file,
+            min_confidence=min_confidence,
+            max_candidates_per_run=max_candidates_per_run,
+            apply=apply, approve_local_preview=approve_local_preview,
+        )
+    except (ValueError, OSError, UnicodeError, TypeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_RENDER_AUTOQUEUE_SETUP_REJECTED",
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True))
+
+
+def _autoqueue_generated_candidates(run) -> None:
+    """Non-fatal acquisition queue hook: no network, no raw source/prose logs."""
+    try:
+        report = enroll_candidate_run(run)
+        if report["status"] != "LOCAL_RENDER_AUTOQUEUE_DISABLED":
+            typer.echo(
+                "Local candidate autoqueue: "
+                f"{report['status']}, enrolled={report['enrolled_count']}, "
+                f"already_enrolled={report['already_enrolled_count']}"
+            )
+    except (ValueError, OSError, UnicodeError, TypeError, sqlite3.Error):
+        typer.echo("Local candidate autoqueue: LOCAL_RENDER_AUTOQUEUE_BLOCKED")
 
 
 @app.command("render-source-queue-task-prepare")
