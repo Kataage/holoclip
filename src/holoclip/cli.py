@@ -35,6 +35,7 @@ from holoclip.source_ytdlp_lan_onboard_check import inspect_lan_onboard_node, ch
 from holoclip.source_ytdlp_lan_local_bootstrap import bootstrap_local_lan
 from holoclip.source_ytdlp_lan_task_prepare import inspect_lan_task_registration
 from holoclip.source_ytdlp_lan_firewall_prepare import prepare_lan_firewall
+from holoclip.source_ytdlp_lan_pc_a_prepare import prepare_pc_a_lan
 from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
 from holoclip.source_ytdlp_lan_setup_doctor import inspect_lan_setup
 from holoclip.source_ytdlp_lan_ssh_transfer import pull_lan_secret_sftp, _secure_windows_path
@@ -1360,6 +1361,41 @@ def examples_ytdlp_lan_pair_verify(
         raise typer.Exit(6) from exc
     typer.echo(json.dumps(report))
     if report["status"] != "LAN_PAIR_OBSERVATIONS_MATCH":
+        raise typer.Exit(6)
+
+
+@app.command("examples-ytdlp-lan-pc-a-prepare")
+def examples_ytdlp_lan_pc_a_prepare(
+    bind_ip: str = typer.Option(..., "--bind-ip", help="PC-A private LAN IPv4."),
+    peer_ip: str = typer.Option(..., "--peer-ip", help="PC-B private LAN IPv4."),
+    port: int = typer.Option(8878, "--port", min=1024, max=65535),
+    task_name: str = typer.Option("Holoclip yt-dlp LAN Coordinator", "--task-name"),
+    secret_file: Path = typer.Option(DEFAULT_SECRET_PATH, "--secret-file"),
+    config_file: Path = typer.Option(DEFAULT_CLIENT_CONFIG, "--config-file"),
+    state_path: Path = typer.Option(DEFAULT_COORDINATOR_STATE, "--state-path"),
+    apply: bool = typer.Option(False, "--apply",
+        help="Prepare local credential, exact-peer firewall and task; never start task."),
+) -> None:
+    """One PC-A command: full no-write preview, or guarded ordered setup."""
+    try:
+        report = prepare_pc_a_lan(
+            bind_ip=bind_ip, peer_ip=peer_ip, port=port,
+            task_name=task_name, secret_file=secret_file,
+            config_file=config_file, state_path=state_path, apply=apply,
+        )
+    except (ValueError, OSError, UnicodeError) as exc:
+        code = str(exc)
+        typer.echo(json.dumps({
+            "status": "LAN_PC_A_PREPARE_REJECTED",
+            "reason": code if code.startswith("LAN_PC_A_") else type(exc).__name__,
+            "changes_may_be_partial": apply,
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True))
+    if report["status"] not in {
+        "LAN_PC_A_PREVIEW_ELIGIBLE", "LAN_PC_A_PREPARED_NOT_STARTED",
+    }:
         raise typer.Exit(6)
 
 
