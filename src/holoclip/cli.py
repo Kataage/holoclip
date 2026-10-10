@@ -29,7 +29,8 @@ from holoclip.source_pattern_diagnostics import diagnose_source_pattern_collecto
 from holoclip.source_pattern_local_health import resolve_local_diagnostic_paths
 from holoclip.source_pattern_local_history import read_launcher_history
 from holoclip.source_ytdlp_lan_onboarding import diagnose_lan_client, import_lan_secret
-from holoclip.source_ytdlp_lan_pair_evidence import export_lan_pair_evidence, compare_lan_pair_evidence
+from holoclip.source_ytdlp_lan_pair_evidence import export_lan_pair_evidence, compare_lan_pair_evidence, observe_lan_pair_evidence
+from holoclip.source_ytdlp_lan_pair_collect import collect_lan_pair_over_ssh
 from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
 from holoclip.source_ytdlp_lan_setup_doctor import inspect_lan_setup
 from holoclip.source_ytdlp_lan_ssh_transfer import pull_lan_secret_sftp, _secure_windows_path
@@ -1209,6 +1210,55 @@ def examples_ytdlp_lan_secret_acl(
     typer.echo(json.dumps({
         "status": "ACL_SECURE", "acl_verified": True, "ready": False,
     }))
+
+
+@app.command("examples-ytdlp-lan-pair-observe")
+def examples_ytdlp_lan_pair_observe(
+    role: str = typer.Option(..., "--role", help="PC label: pc-a or pc-b."),
+) -> None:
+    """Emit fresh signed status to stdout; never create a report file."""
+    _load_env_file()
+    try:
+        report = observe_lan_pair_evidence(role=role)
+    except (ValueError, OSError, UnicodeError, LocalYtDlpDeferred) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_PAIR_OBSERVE_REJECTED",
+            "reason": (str(exc) if str(exc).startswith(("LAN_PAIR_", "LOCAL_YTDLP_"))
+                       else type(exc).__name__),
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True, separators=(",", ":")))
+
+
+@app.command("examples-ytdlp-lan-pair-collect")
+def examples_ytdlp_lan_pair_collect(
+    host: str = typer.Option(..., "--host", help="PC-B private IPv4."),
+    user: str = typer.Option(..., "--user", help="PC-B SSH username."),
+    known_hosts: Path = typer.Option(..., "--known-hosts",
+        help="Independently preverified known_hosts with PC-B's pinned SSH host key."),
+    remote_repo: str = typer.Option(..., "--remote-repo",
+        help="PC-B Holoclip Windows directory, e.g. D:\\AI\\holoclip."),
+    ssh_port: int = typer.Option(22, "--ssh-port", min=1, max=65535),
+) -> None:
+    """One-command two-PC status collect over pinned SSH, no credential files."""
+    _load_env_file()
+    try:
+        result = collect_lan_pair_over_ssh(
+            host=host, user=user, known_hosts=known_hosts,
+            remote_repo=remote_repo, ssh_port=ssh_port,
+        )
+    except (ValueError, OSError, UnicodeError, LocalYtDlpDeferred) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_PAIR_COLLECTION_REJECTED",
+            "reason": (str(exc) if str(exc).startswith(("LAN_PAIR_", "LOCAL_YTDLP_"))
+                       else type(exc).__name__),
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+    if result["status"] != "LAN_PAIR_OBSERVATIONS_MATCH":
+        raise typer.Exit(6)
 
 
 @app.command("examples-ytdlp-lan-pair-export")

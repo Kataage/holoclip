@@ -140,6 +140,58 @@ real two-PC network is exercised in GitHub. Cryptographic host
 identity verification by the operator and physical two-host
 commissioning remain outstanding. Shared-IP pacing remains an
 opt-in feature and `ready=false` remains mandatory.
+## Increment: offline developer CI preflight during hosted-runner budget failure
+
+When private GitHub Actions fails during job allocation with **zero steps
+and no assigned runner**, no test assertions have actually executed.
+Do not infer a bad patch or treat the run as success. The repository
+has exceeded 1,000 GitHub Actions workflow runs across Holoclip and
+Artifex since October 2026 began, making free-usage exhaustion
+plausible; exact billed minutes / account budget require owner access
+to GitHub Billing and are **not confirmed**. Retry loops should stop
+rather than consume additional GitHub Actions quota.
+
+The optional `scripts/verify-ci-local.py` runs Ruff and
+matching Windows offline suites or Linux full Pytest using
+`uv run --offline --no-sync`, without Docker, installing tools
+or visiting media websites. Python 3.12, installed uv, a clean tracked
+worktree and optional exact-SHA proof are required. Explicit local
+results are never misrepresented as Actions results: on success the
+status says `LOCAL_PREFLIGHT_PASSED_NOT_GITHUB_CI`, with
+`github_actions_ci_verified=false`,
+`both_platforms_verified=false` and `ready=false`.
+Only successful GitHub Linux+Windows CI on the exact head can unblock
+PR merge. Separate real-PC and media/editorial qualification remain
+outstanding.
+
+## Increment: one-command pinned SSH LAN observation collection
+
+`examples-ytdlp-lan-pair-collect` uses the installed client
+credential locally for an authenticated status-only PC-A observation,
+then executes PC-B's status-only `pair-observe` command
+over SSH with BatchMode, strict pinned host-key enforcement,
+public-key-only login, disabled credential/agent forwarding, disabled
+proxies/jumps, and bounded execution time. Remote Windows PowerShell
+uses UTF-16LE encoded command arguments (not a user-supplied freeform
+shell script) with a validated absolute project directory, which
+can contain spaces. It does not move credentials, request any lease,
+change Windows tasks/ACLs/firewall, create receipt files or access media.
+
+Both receipts are authenticated with the existing purpose-separated
+shared key, validated through the same exact schema, freshness, nonce,
+role, state-ID and TCP-source tag controls as the manual file verifier.
+SSH status, raw stderr and credentials are never printed. Malformed,
+oversize, unsigned, stale and contradictory reports, unconfigured
+client status, and unreachable SSH/coordinator all fail closed.
+
+Verification is of **consistent network observations**, not proof of
+independent physical hosts, SSH fingerprint provenance, real simultaneous
+two-host process scheduling, or editorial/media readiness. The shared
+credential can sign forged receipts. The command always preserves
+`two_host_verified=false` and `ready=false`.
+GitHub CI mocks the remote SSH subprocess and talks only to a
+loopback coordinator; there is no real user-PC or YouTube access.
+
 ## Increment: authenticated cross-PC LAN observation receipts
 
 The coordinator persists a random instance ID in its existing durable
