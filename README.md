@@ -737,6 +737,60 @@ and task registration still need explicit owner action. Use the existing
 diagnostics and further guidance. A successful local bootstrap alone
 does not prove shared-IP pacing or production qualification.
 
+#### Bounded, safe-code-only LAN evidence history and repeated-risk checks
+
+PC-A can now keep a local, small, Git-ignored audit of actual LAN
+diagnostic observations, without saving PC IPs, SSH usernames,
+known_hosts, shared credentials, SSH stderr, file paths, raw remote
+reports, coordinator identities, or media metadata. The default command
+performs **only the existing read-only paired diagnosis**, and does not
+write a file or acquire a media/coordination lease:
+
+    uv run holoclip examples-ytdlp-lan-evidence-capture --host 192.168.1.21 --user pc_b_account --known-hosts "D:\AI\holoclip\data\runtime\pc-b-known-hosts" --remote-repo "D:\AI\holoclip"
+
+Add **--record** to explicitly save one sanitized, fixed-code observation:
+
+    uv run holoclip examples-ytdlp-lan-evidence-capture --host 192.168.1.21 --user pc_b_account --known-hosts "D:\AI\holoclip\data\runtime\pc-b-known-hosts" --remote-repo "D:\AI\holoclip" --record
+
+Replace the examples with actual private-LAN settings. The default
+history lives in data/runtime/yt-dlp-lan-evidence.sqlite3, separate
+from the coordinator lease/cooldown SQLite store. An optional
+--evidence-db selects another safe local .sqlite3/.db file; it never
+writes over a LAN secret, profile, required marker or lease state.
+Saved values are restricted to a timestamp, fixed diagnostic/trial
+status codes, observation scope and a bounded set of known check names.
+Consecutive observations retain at most 90 snapshots.
+
+To additionally exercise the **real live lease and 20-second gap**
+from PR #197, specify BOTH --record and --include-pacing-trial.
+This second flag is never implied by routine evidence capture.
+The extra trial only runs after matching paired onboarding evidence;
+otherwise a negative diagnosis is saved without taking a lease.
+Do not include the trial while source collection is in progress.
+An interrupted trial may leave a bounded lease until expiry.
+
+Read the history offline, without SSH, YouTube, or an active broker:
+
+    uv run holoclip examples-ytdlp-lan-evidence-history
+
+Reports identify repeated identical check failures over the latest
+three **recorded observations**, a trailing incomplete-observation
+count, and the latest change compared to the previous observation.
+Comparisons across different observation scopes (for example,
+PC-A-only vs both PCs) are deliberately INCOMPARABLE, not
+improvements. These are per-run observations, **not continuous
+uptime measurements** or calendar-time guarantees. Captures do not
+automatically install Task Scheduler monitoring or rerun themselves.
+
+An existing corrupted or untrusted history is rejected; the tool
+never silently erases the file or overwrites the central broker DB.
+All stored reports and summaries preserve ready=false,
+production_ready=false and real_two_host_pacing_qualified=false.
+Even a successful signed observation and no-media pacing trial do
+not independently attest physical PC identity, Windows Firewall
+effective-policy filtering, YouTube behavior or clip quality.
+CI uses mock SSH and disposable local files only.
+
 #### Explicit no-media two-PC shared-pacing live trial
 
 After configuring both PCs and passing the existing strict paired
