@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 import os
 from pathlib import Path
 
@@ -34,6 +35,9 @@ from holoclip.source_ytdlp_lan_pair_collect import collect_lan_pair_over_ssh
 from holoclip.source_ytdlp_lan_onboard_check import inspect_lan_onboard_node, check_lan_onboarding
 from holoclip.source_ytdlp_lan_deployment_diagnosis import diagnose_lan_deployment
 from holoclip.source_ytdlp_lan_pacing_trial import trial_lan_pacing, witness_lan_pacing
+from holoclip.source_ytdlp_lan_evidence_history import (
+    DEFAULT_EVIDENCE_DB, capture_lan_evidence, read_lan_evidence_history,
+)
 from holoclip.source_ytdlp_lan_local_bootstrap import bootstrap_local_lan
 from holoclip.source_ytdlp_lan_task_prepare import inspect_lan_task_registration
 from holoclip.source_ytdlp_lan_firewall_prepare import prepare_lan_firewall
@@ -1298,6 +1302,69 @@ def examples_ytdlp_lan_pacing_trial(
         "LAN_PACING_PREVIEW_ONLY", "LAN_PACING_CROSS_SSH_LEASE_GAP_OBSERVED",
     }:
         raise typer.Exit(6)
+
+
+@app.command("examples-ytdlp-lan-evidence-capture")
+def examples_ytdlp_lan_evidence_capture(
+    host: str = typer.Option(..., "--host", help="PC-B private IPv4."),
+    user: str = typer.Option(..., "--user", help="PC-B SSH key-only login."),
+    known_hosts: Path = typer.Option(..., "--known-hosts",
+        help="Independently pinned PC-B known_hosts file."),
+    remote_repo: str = typer.Option(..., "--remote-repo",
+        help="Absolute PC-B Windows Holoclip repository directory."),
+    evidence_db: Path = typer.Option(DEFAULT_EVIDENCE_DB, "--evidence-db",
+        help="Local, Git-ignored, code-only SQLite evidence history."),
+    ssh_port: int = typer.Option(22, "--ssh-port", min=1, max=65535),
+    coordinator_port: int = typer.Option(8878, "--coordinator-port",
+        min=1024, max=65535),
+    task_name: str = typer.Option("Holoclip yt-dlp LAN Coordinator", "--task-name"),
+    record: bool = typer.Option(False, "--record",
+        help="Opt in to writing one sanitized local observation."),
+    include_pacing_trial: bool = typer.Option(False, "--include-pacing-trial",
+        help="With --record only: opt in to a live lease/gap trial; no media."),
+) -> None:
+    """Capture safe LAN evidence; default has no persistence or media lease."""
+    _load_env_file()
+    try:
+        result = capture_lan_evidence(
+            host=host, user=user, known_hosts=known_hosts,
+            remote_repo=remote_repo, evidence_db=evidence_db,
+            ssh_port=ssh_port, coordinator_port=coordinator_port,
+            task_name=task_name, record=record,
+            include_pacing_trial=include_pacing_trial,
+        )
+    except (ValueError, OSError, UnicodeError, sqlite3.Error,
+            LocalYtDlpDeferred) as exc:
+        code = str(exc)
+        typer.echo(json.dumps({
+            "status": "LAN_EVIDENCE_CAPTURE_REJECTED",
+            "reason": code if code.startswith("LAN_EVIDENCE_") else type(exc).__name__,
+            "recording_unverified": bool(record),
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    if result["diagnosis"] != "LAN_DEPLOYMENT_OBSERVATIONS_MATCH" or (
+        include_pacing_trial
+        and result["pacing_trial"] != "LAN_PACING_CROSS_SSH_LEASE_GAP_OBSERVED"
+    ):
+        raise typer.Exit(6)
+
+
+@app.command("examples-ytdlp-lan-evidence-history")
+def examples_ytdlp_lan_evidence_history(
+    evidence_db: Path = typer.Option(DEFAULT_EVIDENCE_DB, "--evidence-db"),
+) -> None:
+    """Offline code-only LAN evidence history; no SSH or coordinator calls."""
+    try:
+        report = read_lan_evidence_history(evidence_db)
+    except (ValueError, OSError, sqlite3.Error) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_EVIDENCE_HISTORY_REJECTED",
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
 
 @app.command("examples-ytdlp-lan-deployment-diagnose")
