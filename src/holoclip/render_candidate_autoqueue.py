@@ -168,6 +168,15 @@ def enroll_candidate_run(
             or len(run.candidates) == 0):
         report["status"] = "LOCAL_RENDER_AUTOQUEUE_SOURCE_UNVERIFIED"
         return report
+    # A malformed EvaluationRun is not a safe origin for any unattended
+    # acquisition, even when later candidates in it look plausible.
+    if (sorted(item.rank for item in run.candidates)
+            != list(range(1, len(run.candidates) + 1))
+            or len({item.id for item in run.candidates}) != len(run.candidates)
+            or any(item.id != make_candidate_id(run.stream_id, item.candidate)
+                   for item in run.candidates)):
+        report["status"] = "LOCAL_RENDER_AUTOQUEUE_RUN_UNTRUSTED"
+        return report
     asset_id = make_source_asset_id("youtube", run.stream_id)
     try:
         asset = _canonical_assets(Path(configured["database"]), {asset_id})[asset_id]
