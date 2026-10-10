@@ -1,5 +1,7 @@
 # holoclip
 
+**Candidate-to-queue bridge:** `render-candidate-autoqueue-setup --apply --approve-local-preview` enables one-time local authorization so subsequent `analyze`/`discover` runs can enqueue eligible measured candidate timelines automatically. It never downloads media during analysis. [Details](docs/local-render-plan.md).
+
 **Durable acquisition queue:** use `render-source-queue-enqueue` to preview/approve a saved timeline once, `render-source-queue-status` for offline state, and `render-source-queue-task-prepare --apply` to install a guarded current-user Windows periodic worker. Crashed/blocked jobs are not auto-retried. See [render queue guide](docs/local-render-plan.md).
 
 **Guarded missing-video acquisition:** `uv run holoclip render-local-source-acquire --timeline <file>` previews missing complete sources without network. With explicit `--execute --approve-local-preview`, at most one missing video is acquired through the existing authenticated LAN/local yt-dlp pacing and source-policy checks. See [renderer instructions](docs/local-render-plan.md). No automatic retries or mass downloads.
