@@ -121,6 +121,54 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Automatic source-queue enrollment after candidate analysis (PR #207)
+
+After creating the PR #206 durable queue, the next manual step—the
+per-candidate ClipTimeline file and enqueue command—can be removed with
+**one-time** operator opt-in. Preview the settings with no file writes:
+
+    uv run holoclip render-candidate-autoqueue-setup
+
+Then explicitly enable *local technical preview acquisition only*:
+
+    uv run holoclip render-candidate-autoqueue-setup --apply --approve-local-preview
+
+Settings are saved to data/runtime/render-candidate-autoqueue.json; the
+file is never overwritten by setup. --config, --queue, --database,
+--cache-root and --policy-file are configurable. Configure before
+analysis; there is no need to repeat flags for each stream.
+
+Subsequent normal `holoclip analyze` and `holoclip discover` calls
+automatically offer their in-process evaluated candidate runs to the
+existing SQLite source queue. No separate timeline JSON or sources.json
+is written. If autoqueue is disabled, existing analysis output stays
+unchanged; if it is configured but blocked, candidate results remain
+available and a fixed nonsecret warning code is printed.
+
+Enrolled candidates must have an exact canonical YouTube source asset ID
+(their --stream-id, or derived ID, must match its 11-character YouTube ID),
+an existing available public/authorized source of type stream/video,
+confidence >= 0.85 by default, no candidate warnings, consistent
+candidate IDs and measured cut boundaries, and <= 600 seconds of
+selected video. Default max enrollment is one candidate per analysis run,
+configurable up to three. This is only a conservative prefilter;
+confidence or a low warning count is **not** ground-truth editorial
+quality proof. Unknown/mismatched stream IDs, private/unavailable
+source assets and malformed model plans are skipped, not guessed.
+
+Only local SQLite queue writes happen during analyze/discover: yt-dlp,
+media downloads, FFmpeg, external APIs beyond the existing analysis,
+or actual Windows Task Scheduler operations are not performed by
+this bridge. The previously approved queue worker still independently
+checks metadata, restrictions, LAN-wide access pacing and cooldown
+before requesting at most one archive per scheduled iteration.
+
+A normal `discover` run already saves its evaluation run to disk;
+`analyze` enrolls from the current candidate run without requiring
+`--save-run`. No automatic publication occurs. This stage does not yet
+perform post-download FFmpeg rendering or completed-clip editorial QA;
+`ready=false` remains mandatory.
+
 ## Durable unattended missing-source queue (Windows, preview-first)
 
 The approved missing-video acquisition can now be enrolled in a local
