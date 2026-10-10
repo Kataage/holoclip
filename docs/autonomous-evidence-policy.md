@@ -164,6 +164,40 @@ Only successful GitHub Linux+Windows CI on the exact head can unblock
 PR merge. Separate real-PC and media/editorial qualification remain
 outstanding.
 
+## Increment: opt-in exact-peer Windows Firewall rule creation
+
+PC-A may call examples-ytdlp-lan-firewall-prepare in dry-run mode, and
+only an explicit --apply requests *one new* local persistent inbound
+Windows Firewall rule: TCP on the coordinator port, exact local RFC1918
+bind IP, exact remote PC-B RFC1918 peer IP, Private profile only, edge
+traversal blocked. Rule identity is deterministic per port. The
+implementation never disables the firewall, overwrites/deletes an
+existing rule, changes SSH trust, launches the coordinator, or contacts
+YouTube. Apply ordinarily requires administrator privileges.
+
+The preparer checks that the bind IP actually belongs to a unique local
+Windows IPv4 interface in Private category, the active Private firewall
+profile is enabled, the reserved rule name has no collision, and the
+existing ActiveStore scope inspector can conclusively report no narrow
+rule and no broader/matching ambiguous allow rule. This conservative
+inventory is repeated immediately before creation. Another exact-peer
+allow rule is treated as a no-op observation, not automatically replaced.
+Public interfaces, unknown rules, broad allow scopes, name collisions,
+unreadable native cmdlets and races fail closed. A failed/ambiguous
+native apply may have partially changed the machine: diagnostics do
+not assert rollback or absence of a new rule.
+
+The added rule is probed after insertion, but **a syntactic exact-peer
+rule is not effective-policy proof**: Windows Firewall GPO, local blocks,
+route/profile changes, per-application policies and real peer packet
+access are not attested. The same result can be obtained by a
+misconfigured network despite a narrow rule. Therefore
+firewall_effective_policy_verified=false,
+two_host_verified=false, and ready=false remain unchanged.
+Linux mock tests and Windows PowerShell 5.1 cmdlet mocks never create
+real firewall rules, edit user-PC settings or download media.
+Real PC-A/PC-B validation and editorial qualification are still required.
+
 ## Increment: fail-closed Windows inbound firewall rule-scope inventory
 
 The read-only Windows inspector now enumerates **every** enabled inbound
