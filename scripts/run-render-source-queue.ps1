@@ -1,4 +1,5 @@
-# Scheduled worker: one source maximum per invocation, persisted crash fail-closed.
+# Scheduled worker: at most one source acquisition, or (if all sources
+# complete on a subsequent tick) one offline A/V preview with technical QA.
 param(
   [Parameter(Mandatory=$true)][string]$UvExecutable,
   [Parameter(Mandatory=$true)][string]$QueuePath
@@ -8,8 +9,23 @@ $repo=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if (-not (Test-Path -LiteralPath $UvExecutable -PathType Leaf)) { exit 6 }
 if (-not (Test-Path -LiteralPath $QueuePath -PathType Leaf)) { exit 6 }
 Set-Location -LiteralPath $repo
-# Offline here refers to uv's Python dependency sync, NOT to the explicitly
-# authorized yt-dlp source request inside the queue worker.
-$null = & $UvExecutable run --offline --no-sync holoclip render-source-queue-run --queue $QueuePath --execute 2>&1
+# --offline only disables uv dependency fetching. The acquisition worker
+# still uses the authenticated shared-LAN and local yt-dlp pacing gates.
+$sourceLines = @( & $UvExecutable run --offline --no-sync holoclip render-source-queue-run --queue $QueuePath --execute 2>&1 )
 if ($LASTEXITCODE -ne 0) { exit 6 }
+try {
+  $sourceReport = ($sourceLines | Select-Object -Last 1 | ConvertFrom-Json -ErrorAction Stop)
+} catch { exit 6 }
+# Rendering is local-only; do not run immediately after a media acquisition:
+# preserve this scheduled task's 55-minute deadline and avoid two heavy stages
+# in the same run. A next scheduled tick will render after acquisition settles.
+if ($sourceReport.status -ne 'LOCAL_RENDER_QUEUE_ALL_COMPLETE' -or
+    $sourceReport.acquired_count -ne 0) { exit 0 }
+$renderLines = @( & $UvExecutable run --offline --no-sync holoclip render-ready-preview --queue $QueuePath --execute 2>&1 )
+if ($LASTEXITCODE -ne 0) { exit 6 }
+try {
+  $renderReport = ($renderLines | Select-Object -Last 1 | ConvertFrom-Json -ErrorAction Stop)
+} catch { exit 6 }
+if ($renderReport.status -notin @('LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY',
+                                'LOCAL_RENDER_AUTO_QA_NO_READY_JOBS')) { exit 6 }
 exit 0
