@@ -142,6 +142,7 @@ def test_forged_candidate_id_does_not_enqueue(tmp_path):
     run = _run()
     run.candidates[0].id = "forged"
     result = enroll_candidate_run(run, config=config)
+    assert result["status"] == "LOCAL_RENDER_AUTOQUEUE_RUN_UNTRUSTED"
     assert result["enrolled_count"] == 0
     assert not q.exists()
 
@@ -149,7 +150,7 @@ def test_forged_candidate_id_does_not_enqueue(tmp_path):
 def test_candidate_beyond_measured_stream_duration_not_queued(tmp_path):
     db, root, q, config = _case(tmp_path)
     _setup(db, root, q, config)
-    run = _run()
+    run = _run(scores=(0.94,))
     run.candidates[0].candidate.end = 4000
     from holoclip.evaluation import make_candidate_id
     run.candidates[0].id = make_candidate_id(ID, run.candidates[0].candidate)
