@@ -445,7 +445,7 @@ specified exact PR commit.
 
 ```powershell
 # Example only: replace the SHA with the current PR head from GitHub
-uv run --offline --no-sync python scripts/verify-ci-local.py --expected-head 386e8eba5df2eec1573c8fc2a39ec61901ddcea0
+uv run --offline --no-sync python scripts/verify-ci-local.py
 ```
 
 The script always runs Ruff. On Windows, it runs the same focused
