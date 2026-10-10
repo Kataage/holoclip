@@ -42,6 +42,9 @@ from holoclip.source_ytdlp_lan_monitor import (
     DEFAULT_MONITOR_ALERT, run_lan_monitor_once, prepare_lan_monitor_task,
     read_lan_monitor_alert,
 )
+from holoclip.source_ytdlp_lan_operator_profile import (
+    DEFAULT_OPERATOR_PROFILE, prepare_operator_profile, operator_status,
+)
 from holoclip.source_ytdlp_lan_local_bootstrap import bootstrap_local_lan
 from holoclip.source_ytdlp_lan_task_prepare import inspect_lan_task_registration
 from holoclip.source_ytdlp_lan_firewall_prepare import prepare_lan_firewall
@@ -1304,6 +1307,84 @@ def examples_ytdlp_lan_pacing_trial(
     typer.echo(json.dumps(report, sort_keys=True, separators=(",", ":")))
     if report["status"] not in {
         "LAN_PACING_PREVIEW_ONLY", "LAN_PACING_CROSS_SSH_LEASE_GAP_OBSERVED",
+    }:
+        raise typer.Exit(6)
+
+
+@app.command("examples-ytdlp-lan-operator-setup")
+def examples_ytdlp_lan_operator_setup(
+    host: str = typer.Option(..., "--host", help="PC-B private IPv4."),
+    user: str = typer.Option(..., "--user", help="Existing PC-B SSH account."),
+    known_hosts: Path = typer.Option(..., "--known-hosts",
+        help="Independently pinned PC-B known_hosts file."),
+    remote_repo: str = typer.Option(..., "--remote-repo",
+        help="Absolute PC-B Windows Holoclip repository directory."),
+    profile_file: Path = typer.Option(DEFAULT_OPERATOR_PROFILE, "--profile-file"),
+    ssh_port: int = typer.Option(22, "--ssh-port", min=1, max=65535),
+    coordinator_port: int = typer.Option(8878, "--coordinator-port",
+        min=1024, max=65535),
+    interval_minutes: int = typer.Option(60, "--interval-minutes", min=15, max=1440),
+    task_name: str = typer.Option("Holoclip yt-dlp LAN Monitor", "--task-name"),
+    evidence_db: Path = typer.Option(DEFAULT_EVIDENCE_DB, "--evidence-db"),
+    alert_file: Path = typer.Option(DEFAULT_MONITOR_ALERT, "--alert-file"),
+    apply: bool = typer.Option(False, "--apply",
+        help="Save a no-secret profile on PC-A, never altering SSH trust."),
+    update: bool = typer.Option(False, "--update",
+        help="With --apply, explicitly replace profile only if both task names absent."),
+    register_monitor: bool = typer.Option(False, "--register-monitor",
+        help="With --apply, also register (never start) the safe Windows monitor task."),
+) -> None:
+    """One-time parameter entry, preview-first reusable Windows operator profile."""
+    _load_env_file()
+    try:
+        report = prepare_operator_profile(
+            host=host, user=user, known_hosts=known_hosts,
+            remote_repo=remote_repo, profile_file=profile_file,
+            ssh_port=ssh_port, coordinator_port=coordinator_port,
+            interval_minutes=interval_minutes, task_name=task_name,
+            evidence_db=evidence_db, alert_file=alert_file,
+            apply=apply, update=update, register_monitor=register_monitor,
+        )
+    except (ValueError, OSError, UnicodeError, TypeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_OPERATOR_SETUP_REJECTED",
+            "reason": (str(exc) if str(exc).startswith("LAN_OPERATOR_")
+                       else "LAN_OPERATOR_PREFLIGHT_UNVERIFIED"),
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True))
+    if report["status"] not in {
+        "LAN_OPERATOR_PREVIEW_ELIGIBLE", "LAN_OPERATOR_PREPARED_NOT_STARTED",
+    }:
+        raise typer.Exit(6)
+
+
+@app.command("examples-ytdlp-lan-operator-status")
+def examples_ytdlp_lan_operator_status(
+    profile_file: Path = typer.Option(DEFAULT_OPERATOR_PROFILE, "--profile-file"),
+    diagnose: bool = typer.Option(False, "--diagnose",
+        help="Opt in to pinned SSH and signed two-PC diagnosis."),
+    register_monitor: bool = typer.Option(False, "--register-monitor",
+        help="Opt in to registering the previously validated monitor task."),
+) -> None:
+    """Default offline local status; optional peer diagnosis or task install."""
+    _load_env_file()
+    try:
+        report = operator_status(
+            profile_file=profile_file, diagnose=diagnose,
+            register_monitor=register_monitor,
+        )
+    except (ValueError, OSError, UnicodeError, TypeError, sqlite3.Error,
+            LocalYtDlpDeferred) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_OPERATOR_STATUS_REJECTED", "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True))
+    if report["status"] not in {
+        "LAN_OPERATOR_LOCAL_STATUS", "LAN_OPERATOR_DIAGNOSIS_OBSERVED",
+        "LAN_OPERATOR_MONITOR_REGISTERED_NOT_STARTED",
     }:
         raise typer.Exit(6)
 
