@@ -80,6 +80,18 @@ source rights or perform output video QA. The remaining connection is
 **completed source queue → technical render → editorial QA**, without
 any automatic publication or readiness promotion (`ready=false`).
 
+## Post-PR #208 local technical preview automation
+
+After full-source acquisition completion, an offline, separately claimed
+FFmpeg worker can render a selected ClipTimeline and persist MP4 checksum,
+plan ID, measured duration and QA_PASSED/PAUSED states in the source queue
+SQLite database. Windows scheduled acquisition ticks invoke it only when
+no acquisition was attempted and the queue is complete. It rechecks real
+full-source A/V, cached source and range policy; ambiguous/crashed renders
+remain blocked rather than auto-retried. This is technical A/V-only QA,
+**not** a trained creative edit pipeline, final quality certification,
+source-rights grant or publisher. Production remains ready=false.
+
 ## Priority order for subsequent delivery## Post-audit implementation note (PR #203)
 
 A first local, deterministic A/V-only `ClipTimeline` renderer and basic ffprobe
