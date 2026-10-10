@@ -737,6 +737,64 @@ and task registration still need explicit owner action. Use the existing
 diagnostics and further guidance. A successful local bootstrap alone
 does not prove shared-IP pacing or production qualification.
 
+#### Windows periodic LAN monitor with repeated-problem notifications
+
+On PC-A, after paired LAN onboarding and preverified SSH trust,
+set up a *non-elevated, current-user* Windows Task Scheduler job
+to record read-only signed deployment diagnostics periodically.
+This job NEVER calls --include-pacing-trial, reserves a broker lease,
+starts yt-dlp, contacts YouTube, changes firewall rules or restarts
+the coordinator. The PC-B SSH key must already have been verified
+independently and be present in a dedicated pinned known_hosts file.
+
+Preview the task registration first (no writes or connections):
+
+    uv run holoclip examples-ytdlp-lan-monitor-task-prepare --host 192.168.1.21 --user pc_b_account --known-hosts "D:\AI\holoclip\data\runtime\pc-b-known-hosts" --remote-repo "D:\AI\holoclip"
+
+Replace example private IP, SSH username, pin file, and repo directory.
+Once inspected, add --apply to explicitly register the current-user
+task. Default frequency is every 60 minutes; --interval-minutes
+accepts 15 through 1440. Use --ssh-port and --coordinator-port for
+nondefault ports. This registers a bounded task without starting it
+immediately; it is configured to run only in an interactive
+current-user session. It never overwrites a similarly named task.
+The Task Scheduler task definition contains the **non-secret** private
+host IP, SSH username and absolute paths; users/admins permitted to
+inspect task definitions can see them. It contains no host-key bytes
+or shared coordinator credential. Existing uv + Windows .venv are
+required. Task deletion and changing its schedule remain explicit
+Windows administrative actions; no silent replacement is attempted.
+
+Every scheduled invocation uses the already implemented
+examples-ytdlp-lan-evidence-capture behavior with record=True,
+include_pacing_trial=False. Diagnosis failures are saved as negative
+observations, not treated as failed background process launches.
+If three recorded observations show the same problem, the monitor
+creates a **durable fixed-code alert marker** at
+data/runtime/yt-dlp-lan-monitor-alert.json. It also makes one
+best-effort msg.exe notification to the current Windows user.
+The popup may be unavailable in locked/disconnected sessions;
+the marker remains readable and notification-delivery status is
+not a guarantee. Identical repeated alerts are suppressed until
+the alert clears or its issue keys change. Recovery clears the
+alert state without sending a popup. Raw SSH stderr, paths, host
+addresses and secret bytes never enter the alert marker.
+
+Inspect the current persisted alert *without network access*:
+
+    uv run holoclip examples-ytdlp-lan-monitor-alert
+
+A single run can also be executed manually with
+examples-ytdlp-lan-monitor-run and the same PC-B arguments.
+Use --evidence-db and --alert-file for distinct safe local files.
+Corrupt/linked markers, untrusted history and unsafe destinations
+are rejected without resetting the coordinator pacing state.
+Scheduled monitoring requires the user to be logged on; observing
+a fixed code over several runs does **not** prove continuous uptime
+or independent physical two-PC identity. Every report remains
+ready=false, and real media/editorial production qualification is
+still outstanding. CI uses mocks only, no real task creation.
+
 #### Bounded, safe-code-only LAN evidence history and repeated-risk checks
 
 PC-A can now keep a local, small, Git-ignored audit of actual LAN
