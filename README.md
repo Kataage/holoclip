@@ -1,5 +1,7 @@
 # holoclip
 
+**Durable acquisition queue:** use `render-source-queue-enqueue` to preview/approve a saved timeline once, `render-source-queue-status` for offline state, and `render-source-queue-task-prepare --apply` to install a guarded current-user Windows periodic worker. Crashed/blocked jobs are not auto-retried. See [render queue guide](docs/local-render-plan.md).
+
 **Guarded missing-video acquisition:** `uv run holoclip render-local-source-acquire --timeline <file>` previews missing complete sources without network. With explicit `--execute --approve-local-preview`, at most one missing video is acquired through the existing authenticated LAN/local yt-dlp pacing and source-policy checks. See [renderer instructions](docs/local-render-plan.md). No automatic retries or mass downloads.
 
 **Full-video cache auto-mapping:** `render-local-preview --auto-sources --approve-local-preview` can use canonical source IDs and existing full yt-dlp editing_video caches without a handwritten sources.json. No YouTube access or publishing rights are inferred; see [mapping rules](docs/local-render-plan.md).
