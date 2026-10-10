@@ -389,3 +389,33 @@ def test_preview_refuses_unpinned_missing_known_hosts(tmp_path, monkeypatch):
             known_hosts=tmp_path / "absent-key-pin",
             remote_repo=r"D:\AI\holoclip",
         )
+
+
+def test_witness_rechecks_expected_gate_after_denial(monkeypatch):
+    from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
+
+    class ChangingBroker:
+        def __init__(self):
+            self.calls = 0
+
+        def status(self):
+            self.calls += 1
+            return {
+                "ok": True, "code": "ACTIVE" if self.calls == 1 else "COOLDOWN",
+                "coordinator_instance_id": "a" * 64,
+            }
+
+        @contextmanager
+        def reserve(self, *, timeout_seconds):
+            raise LocalYtDlpDeferred("LOCAL_YTDLP_COORDINATOR_ACCESS_DEFERRED")
+            yield
+
+    client = ChangingBroker()
+    monkeypatch.setattr(
+        trial.LanCoordinatorClient, "from_env", lambda: client,
+    )
+    outcome = trial.witness_lan_pacing(phase="held")
+    assert client.calls == 2
+    assert outcome["status"] == "LAN_PACING_WITNESS_UNVERIFIED"
+    assert outcome["lease_access_deferred"] is False
+    assert outcome["ready"] is False
