@@ -56,6 +56,17 @@ This is a bounded on-demand integration, not yet a fully unattended collection
 queue, true site-side rate-limit guarantee, production render QA or permission
 to publish; ready=false remains unchanged.
 
+## Post-PR #206 unattended acquisition queue
+
+The missing-source one-shot acquisition now has a SQLite-backed queue,
+explicit one-time timeline enrollment and a preview-first Windows current-user
+scheduled worker. Oldest running/paused jobs block further attempts; transient
+pacing waits can be deferred and unknown/rate-limited failures pause without
+silently bypassing shared-IP controls. Interrupted claims require offline
+reconciliation after a conservative active-worker grace period; no unmeasured
+partial media is considered complete. This still is not verified unattended
+Windows uptime or a complete finished-clip editing pipeline; ready=false.
+
 ## Priority order for subsequent delivery## Post-audit implementation note (PR #203)
 
 A first local, deterministic A/V-only `ClipTimeline` renderer and basic ffprobe
