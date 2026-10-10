@@ -184,6 +184,8 @@ def test_remote_shell_command_never_embeds_untrusted_text_as_shell_code(tmp_path
     ("relative/path", "remote_repo"),
     ("\\\\server\\share", "remote_repo"),
     ("D:\\AI\\..\\outside", "remote_repo"),
+    ("D:\\AI\\.\\unexpected", "remote_repo"),
+    ("D:\\AI\\\\holoclip", "remote_repo"),
     ('D:\\AI\\"; Invoke-Expression "evil"', "remote_repo"),
     ("D:\\AI\\bad\npath", "remote_repo"),
     ("D:\\AI\\bad*name", "remote_repo"),
