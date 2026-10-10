@@ -331,3 +331,15 @@ def test_cli_hides_yt_dlp_raw_stderr_and_returns_fixed_status(tmp_path, monkeypa
     assert payload["ready"] is False
     assert "SECRET" not in result.stdout
     assert "private source URL" not in result.stdout
+
+
+
+def test_human_made_clip_asset_is_not_auto_acquired_as_original(tmp_path):
+    db, root, timeline, assets = _case(tmp_path)
+    with SQLiteCanonicalRepository(db) as repo:
+        repo.upsert_source_asset(assets[1].model_copy(update={"source_type": "clip"}))
+    with pytest.raises(ValueError, match="LOCAL_RENDER_SOURCE_NOT_ELIGIBLE_FOR_ACQUISITION"):
+        acquisition.acquire_one_missing_render_source(
+            timeline, database=db, cache_root=root,
+        )
+    assert not list(root.iterdir())
