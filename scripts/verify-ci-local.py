@@ -35,6 +35,7 @@ WINDOWS_TESTS = (
     "tests/test_source_ytdlp_lan_pc_b_prepare.py",
     "tests/test_source_ytdlp_lan_deployment_diagnosis.py",
     "tests/test_source_ytdlp_lan_pacing_trial.py",
+    "tests/test_source_ytdlp_lan_evidence_history.py",
 )
 WINDOWS_PS_SCRIPTS = (
     "test-source-pattern-windows.ps1",
