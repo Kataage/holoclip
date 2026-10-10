@@ -116,6 +116,7 @@ try {
     $cases = @(
         @{ Body = '[pscustomobject]@{ TaskName = "Unrelated" }'; Expected = 'LAN_TASK_ABSENT_OBSERVED'; Exit = 0 },
         @{ Body = '[pscustomobject]@{ TaskName = "Holoclip yt-dlp LAN Coordinator" }'; Expected = 'LAN_TASK_ALREADY_PRESENT'; Exit = 0 },
+        @{ Body = '[pscustomobject]@{ TaskName = "holoclip yt-dlp lan coordinator" }'; Expected = 'LAN_TASK_ALREADY_PRESENT'; Exit = 0 },
         @{ Body = 'throw "denied"'; Expected = 'LAN_TASK_ENUMERATION_UNAVAILABLE'; Exit = 6 }
     )
     foreach ($case in $cases) {
