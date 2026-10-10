@@ -121,6 +121,54 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Deterministic cut-aligned subtitle sidecar (PR #209)
+
+The completed-source offline renderer now also attempts to create an
+**optional UTF-8 SRT subtitle sidecar** next to the verified technical
+preview MP4. This is a transcript timing aid, not burned-in graphics.
+For example, data/render-previews/renderqueue_....mp4 gains a sibling
+renderqueue_....srt when usable source ASR already exists.
+
+No input preparation is needed when Holoclip's existing discover or
+human-example ingestion has saved timed source ASR under one of:
+
+    data/transcripts/<youtube-video-id>.json
+    data/transcripts/examples/sources/<youtube-video-id>.json
+
+The default root can be changed using `--transcript-root` on
+`uv run holoclip render-ready-preview --execute`. The normal Windows
+scheduled pipeline uses the same default source transcript directory.
+Missing source transcripts cause no network ASR call and no invented
+captions. Ambiguous duplicates, mismatched transcript metadata,
+linked paths, oversized or invalid records fail closed without
+modifying the MP4 or an existing operator-provided SRT.
+
+The compiler maps each canonical source transcript interval to each
+selected original-stream cut, then shifts it into **output clock**
+according to `output_order`, including disjoint cuts and multiple
+sources. A complete utterance must fit inside a selected source cut;
+utterances crossing a cut boundary are dropped instead of assigning
+guessed word-by-word timestamps. Ineligible overly long/malformed
+utterances and ambiguous overlaps are also skipped. No ASR text is
+rewritten or hallucinated. Existing caption text is HTML-escaped
+for safe SRT output.
+
+Rendered sidecars are created using a no-clobber filesystem commit;
+a matching SRT already present is preserved unmodified. The
+optional output SHA-256, cue count, dropped cue count and reason
+code are persisted in render_caption_evidence alongside technical
+MP4 QA, and aggregate counts are visible in the read-only
+`render-ready-preview` status. Neither ASR text nor transcript paths
+are copied into the public worker result.
+
+**Current limitation:** The SRT is a sidecar, not visual captions
+burned into the video. It does not identify speakers, style text,
+accurately align words, or confirm recognition/caption semantics.
+ASR may be inaccurate, and a no-subtitles result does not block
+the independent A/V QA_PASSED state. A production-grade subtitle
+style and editorial QA/burn-in stage remains separate. All reports
+retain ready=false and no publication occurs.
+
 ## Automatic technical MP4 after complete-source acquisition (PR #208)
 
 The existing Windows periodic source queue worker now has a local-only
