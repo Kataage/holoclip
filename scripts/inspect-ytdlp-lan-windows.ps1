@@ -36,49 +36,114 @@ function Get-ObservedListener {
 }
 function Get-ObservedFirewall {
     if ([string]::IsNullOrWhiteSpace($PeerIp)) { return 'PEER_IP_REQUIRED' }
+    # The PowerShell inspector can also be called directly, without Python's
+    # private-IPv4 validation. Reject noncanonical/ambiguous peer addresses.
+    $parsedPeer = $null
+    if (-not [Net.IPAddress]::TryParse($PeerIp, [ref]$parsedPeer) -or
+        $parsedPeer.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or
+        $parsedPeer.ToString() -cne $PeerIp) {
+        return 'INCOMPLETE_RULE_INSPECTION'
+    }
     try {
+        # Conservatively inspect *every* active allow rule. Even a second
+        # rule belonging to another program can make exact-only proof unsafe.
         $rules = @(Get-NetFirewallRule -PolicyStore ActiveStore -Enabled True -Direction Inbound -Action Allow -ErrorAction Stop)
         $broad = $false
         $restricted = $false
         foreach ($rule in $rules) {
+            if ($null -eq $rule) { return 'INCOMPLETE_RULE_INSPECTION' }
             try {
                 $ports = @(Get-NetFirewallPortFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop)
                 $addresses = @(Get-NetFirewallAddressFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop)
             } catch {
                 return 'INCOMPLETE_RULE_INSPECTION'
             }
+            if ($ports.Count -eq 0 -or $addresses.Count -eq 0) {
+                return 'INCOMPLETE_RULE_INSPECTION'
+            }
             foreach ($port in $ports) {
-                if ([string]$port.Protocol -notin @('TCP', '6')) { continue }
+                if ($null -eq $port -or $null -eq $port.LocalPort) {
+                    return 'INCOMPLETE_RULE_INSPECTION'
+                }
+                $protocol = ([string]$port.Protocol).Trim()
+                # These protocols cannot match a TCP listener.
+                if ($protocol -in @('UDP', '17', 'ICMPv4', '1', 'ICMPv6', '58')) {
+                    continue
+                }
+                if ($protocol -notin @('TCP', '6', 'Any', '256')) {
+                    # A new/unrecognized Windows protocol code must never
+                    # allow another exact-IP rule to produce a positive result.
+                    return 'INCOMPLETE_RULE_INSPECTION'
+                }
                 $includesPort = $false
                 $broadPort = $false
-                foreach ($entry in @($port.LocalPort)) {
+                $entries = @($port.LocalPort)
+                if ($entries.Count -eq 0) { return 'INCOMPLETE_RULE_INSPECTION' }
+                foreach ($entry in $entries) {
+                    if ($null -eq $entry) { return 'INCOMPLETE_RULE_INSPECTION' }
                     foreach ($value in (([string]$entry) -split ',')) {
                         $part = $value.Trim()
-                        if ($part -eq 'Any') {
+                        if ($part -in @('Any', '*')) {
                             $includesPort = $true
                             $broadPort = $true
-                        } elseif ($part -eq [string]$CoordinatorPort) {
-                            $includesPort = $true
-                        } elseif ($part -match '^([0-9]{1,5})-([0-9]{1,5})$') {
-                            if ($CoordinatorPort -ge [int]$Matches[1] -and
-                                $CoordinatorPort -le [int]$Matches[2]) {
+                        } elseif ($part -match '^[0-9]{1,5}$') {
+                            $number = [int]$part
+                            if ($number -gt 65535 -or $number -lt 1) {
+                                return 'INCOMPLETE_RULE_INSPECTION'
+                            }
+                            if ($number -eq $CoordinatorPort) {
                                 $includesPort = $true
+                            } else {
+                                # A rule that permits the requested port AND
+                                # an additional TCP port is not exact port
+                                # scoping. Merely having other unrelated rules
+                                # for other ports is fine.
                                 $broadPort = $true
                             }
+                        } elseif ($part -match '^([0-9]{1,5})-([0-9]{1,5})$') {
+                            $startPort = [int]$Matches[1]
+                            $endPort = [int]$Matches[2]
+                            if ($startPort -lt 1 -or $endPort -gt 65535 -or
+                                $startPort -gt $endPort) {
+                                return 'INCOMPLETE_RULE_INSPECTION'
+                            }
+                            if ($CoordinatorPort -ge $startPort -and
+                                $CoordinatorPort -le $endPort) {
+                                $includesPort = $true
+                                if ($startPort -ne $endPort) { $broadPort = $true }
+                            }
+                        } else {
+                            # Dynamic port keywords, RPC, environment tokens,
+                            # and unknown ranges cannot prove non-overlap.
+                            return 'INCOMPLETE_RULE_INSPECTION'
                         }
                     }
                 }
                 if (-not $includesPort) { continue }
+                if ($protocol -in @('Any', '256') -or $broadPort) {
+                    $broad = $true
+                }
                 foreach ($address in $addresses) {
-                    $peers = @()
-                    foreach ($value in @($address.RemoteAddress)) {
-                        $peers += @(([string]$value) -split ',')
+                    if ($null -eq $address -or $null -eq $address.RemoteAddress) {
+                        return 'INCOMPLETE_RULE_INSPECTION'
                     }
-                    if ($peers -contains 'Any' -or $peers -contains 'LocalSubnet' -or
-                        $peers -contains '*' -or $broadPort) {
-                        $broad = $true
-                    } elseif ($peers.Count -eq 1 -and $peers[0] -eq $PeerIp) {
-                        $restricted = $true
+                    $peers = @()
+                    foreach ($entry in @($address.RemoteAddress)) {
+                        if ($null -eq $entry) { return 'INCOMPLETE_RULE_INSPECTION' }
+                        $peers += @(([string]$entry) -split ',')
+                    }
+                    if ($peers.Count -eq 0) { return 'INCOMPLETE_RULE_INSPECTION' }
+                    foreach ($entry in $peers) {
+                        $candidate = $entry.Trim()
+                        if (-not $candidate) { return 'INCOMPLETE_RULE_INSPECTION' }
+                        if ($candidate -cne $PeerIp) {
+                            # Any other IP, address set, CIDR (including /32),
+                            # range, dynamic keyword or IPv6 entry prevents
+                            # exact-literal-PC-B-only certification.
+                            $broad = $true
+                        } elseif ($protocol -in @('TCP', '6') -and -not $broadPort) {
+                            $restricted = $true
+                        }
                     }
                 }
             }
