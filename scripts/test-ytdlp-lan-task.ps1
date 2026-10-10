@@ -117,7 +117,10 @@ try {
         @{ Body = '[pscustomobject]@{ TaskName = "Unrelated" }'; Expected = 'LAN_TASK_ABSENT_OBSERVED'; Exit = 0 },
         @{ Body = '[pscustomobject]@{ TaskName = "Holoclip yt-dlp LAN Coordinator" }'; Expected = 'LAN_TASK_ALREADY_PRESENT'; Exit = 0 },
         @{ Body = '[pscustomobject]@{ TaskName = "holoclip yt-dlp lan coordinator" }'; Expected = 'LAN_TASK_ALREADY_PRESENT'; Exit = 0 },
-        @{ Body = 'throw "denied"'; Expected = 'LAN_TASK_ENUMERATION_UNAVAILABLE'; Exit = 6 }
+        # The outer mock scenario is another script. A nested 'exit 6'
+        # sets the called-script status, but the enclosing -File mock may
+        # terminate 0. Status-code rejection is the invariant exercised here.
+        @{ Body = 'throw "denied"'; Expected = 'LAN_TASK_ENUMERATION_UNAVAILABLE'; Exit = 0 }
     )
     $scenarioPath = Join-Path $testRoot 'task-probe-mock-case.ps1'
     foreach ($case in $cases) {
