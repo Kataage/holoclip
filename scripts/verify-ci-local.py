@@ -52,6 +52,7 @@ WINDOWS_PS_SCRIPTS = (
     "test-source-pattern-windows.ps1",
     "test-source-pattern-install.ps1",
     "test-ytdlp-lan-task.ps1",
+    "test-render-ready-queue-runner.ps1",
     "test-render-source-queue-task.ps1",
     "test-ytdlp-lan-monitor-task.ps1",
     "test-ytdlp-lan-monitor-first-run.ps1",
