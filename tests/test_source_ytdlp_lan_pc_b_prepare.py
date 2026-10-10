@@ -283,3 +283,28 @@ def test_cli_invalid_host_sanitized(tmp_path):
     assert report["status"] == "LAN_PC_B_PREPARE_REJECTED"
     assert report["reason"] == "LAN_PC_B_UNSAFE_COORDINATOR_ADDRESS"
     assert report["ready"] is False
+
+
+def test_cli_signed_status_unverified_has_nonzero_exit(tmp_path, monkeypatch):
+    hosts, secret, config = _paths(tmp_path)
+    monkeypatch.setattr(
+        cli, "prepare_pc_b_lan",
+        lambda **kwargs: {
+            "status": "LAN_PC_B_PREPARED_STATUS_UNVERIFIED",
+            "client_profile_prepared": True,
+            "remote_coordinator_authenticated": False,
+            "ready": False,
+            "two_host_verified": False,
+        },
+    )
+    result = CliRunner().invoke(cli.app, [
+        "examples-ytdlp-lan-pc-b-prepare", "--coordinator-ip", HOST,
+        "--ssh-user", "operator", "--remote-path", REMOTE,
+        "--known-hosts", str(hosts), "--secret-file", str(secret),
+        "--config-file", str(config), "--apply",
+    ])
+    assert result.exit_code == 6
+    report = json.loads(result.stdout)
+    assert report["status"] == "LAN_PC_B_PREPARED_STATUS_UNVERIFIED"
+    assert report["remote_coordinator_authenticated"] is False
+    assert report["ready"] is False
