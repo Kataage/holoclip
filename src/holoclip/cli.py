@@ -157,8 +157,7 @@ from holoclip.render_source_queue import (
 )
 from holoclip.render_source_queue_task import prepare_render_queue_task
 from holoclip.render_ready_queue import (
-    DEFAULT_PREVIEW_ROOT, inspect_completed_source_renders,
-    advance_completed_source_renders,
+    DEFAULT_PREVIEW_ROOT, advance_completed_source_renders,
 )
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
