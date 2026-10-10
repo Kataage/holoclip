@@ -50,9 +50,10 @@ def _read_cues(data: bytes) -> list[Caption]:
         raw = data.decode("utf-8")
     except UnicodeError as exc:
         raise ValueError("LOCAL_SUBTITLE_BURNIN_SRT_UNTRUSTED") from exc
-    if "\r" in raw or "\x00" in raw:
+    # Accept the two standard SRT line endings. A stray CR is untrusted.
+    if "\r" in raw.replace("\r\n", "") or "\x00" in raw:
         raise ValueError("LOCAL_SUBTITLE_BURNIN_SRT_UNTRUSTED")
-    blocks = raw.strip().split("\n\n")
+    blocks = raw.replace("\r\n", "\n").strip().split("\n\n")
     if not 1 <= len(blocks) <= _MAX_CUES:
         raise ValueError("LOCAL_SUBTITLE_BURNIN_CUE_LIMIT")
     result: list[Caption] = []
