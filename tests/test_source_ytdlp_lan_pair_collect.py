@@ -115,6 +115,8 @@ def test_one_command_collects_live_pair_without_report_files(tmp_path, monkeypat
             "BatchMode=yes", "StrictHostKeyChecking=yes",
             "GlobalKnownHostsFile=none", "UpdateHostKeys=no",
             "IdentitiesOnly=yes", "ForwardAgent=no", "ForwardX11=no",
+            "PermitLocalCommand=no", "ClearAllForwardings=yes",
+            "ControlMaster=no", "RequestTTY=no",
             "ProxyCommand=none", "ProxyJump=none",
             "PreferredAuthentications=publickey", "PasswordAuthentication=no",
             "KbdInteractiveAuthentication=no",
