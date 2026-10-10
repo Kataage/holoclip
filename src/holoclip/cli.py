@@ -33,6 +33,7 @@ from holoclip.source_ytdlp_lan_pair_evidence import export_lan_pair_evidence, co
 from holoclip.source_ytdlp_lan_pair_collect import collect_lan_pair_over_ssh
 from holoclip.source_ytdlp_lan_onboard_check import inspect_lan_onboard_node, check_lan_onboarding
 from holoclip.source_ytdlp_lan_local_bootstrap import bootstrap_local_lan
+from holoclip.source_ytdlp_lan_task_prepare import inspect_lan_task_registration
 from holoclip.source_ytdlp_pacing import LocalYtDlpDeferred
 from holoclip.source_ytdlp_lan_setup_doctor import inspect_lan_setup
 from holoclip.source_ytdlp_lan_ssh_transfer import pull_lan_secret_sftp, _secure_windows_path
@@ -1358,6 +1359,36 @@ def examples_ytdlp_lan_pair_verify(
         raise typer.Exit(6) from exc
     typer.echo(json.dumps(report))
     if report["status"] != "LAN_PAIR_OBSERVATIONS_MATCH":
+        raise typer.Exit(6)
+
+
+@app.command("examples-ytdlp-lan-task-prepare")
+def examples_ytdlp_lan_task_prepare(
+    bind_ip: str = typer.Option(..., "--bind-ip", help="PC-A LAN listener IPv4."),
+    peer_ip: str = typer.Option(..., "--peer-ip", help="Only allowed PC-B LAN IPv4."),
+    port: int = typer.Option(8878, "--port", min=1024, max=65535),
+    task_name: str = typer.Option("Holoclip yt-dlp LAN Coordinator", "--task-name"),
+    secret_file: Path = typer.Option(DEFAULT_SECRET_PATH, "--secret-file"),
+    state_path: Path = typer.Option(DEFAULT_COORDINATOR_STATE, "--state-path"),
+    apply: bool = typer.Option(False, "--apply",
+        help="Register only when existing secret ACL, narrow firewall and task absence pass."),
+) -> None:
+    """Preview by default; optionally register PC-A task without starting it."""
+    try:
+        result = inspect_lan_task_registration(
+            bind_ip=bind_ip, peer_ip=peer_ip, port=port, task_name=task_name,
+            secret_file=secret_file, state_path=state_path, apply=apply,
+        )
+    except (OSError, ValueError, UnicodeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LAN_TASK_PREPARE_REJECTED",
+            "reason": str(exc) if str(exc).startswith("LAN_TASK_") else type(exc).__name__,
+            "task_registration_unconfirmed": apply,
+            "ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(result, sort_keys=True))
+    if result["status"] in {"LAN_TASK_APPLY_BLOCKED", "LAN_TASK_PREVIEW_BLOCKED"}:
         raise typer.Exit(6)
 
 
