@@ -174,3 +174,161 @@ def test_insufficient_corpus_is_not_human_quality_gold(tmp_path):
     assert report["human_reference"]["trusted_alignment_examples"] == 0
     assert report["human_reference"]["existing_human_edit_quality_labels"] == 0
     assert report["status"] == "LOCAL_EDIT_PACK_UNLABELLED_REVIEW_READY"
+
+
+
+def test_large_backlog_paginates_without_silently_discarding_reviews(tmp_path):
+    root = tmp_path / "previews"
+    root.mkdir()
+    # 47 distinct, entirely synthetic, hash-verified historical media records.
+    for i in range(47):
+        job = "renderqueue_" + f"{i:032x}"
+        media = root / f"{job}.mp4"
+        media.write_bytes(f"synthetic media bytes {i}".encode())
+        sha = hashlib.sha256(media.read_bytes()).hexdigest()
+        review = {
+            "version": cal.REVIEW_VERSION,
+            "diagnostic_status": "LOCAL_EDIT_DIAGNOSTIC_MEASURED_NO_FLAGS",
+            "base_sha256": sha,
+            "final_sha256": sha,
+            "candidate_count": 0,
+            "candidates": [],
+            "ready": False, "production_ready": False,
+            "human_editorial_qa_completed": False,
+            "publication_performed": False,
+        }
+        (root / f"{job}.review.json").write_text(
+            json.dumps(review), encoding="utf-8",
+        )
+    first = cal.compile_review_calibration_pack(
+        preview_root=root, example_store=tmp_path / "missing",
+    )
+    assert first["window_job_count"] == 40
+    assert first["inventory_job_count"] == 47
+    assert first["reviewed_job_count"] == 40
+    assert first["has_more"] is True
+    assert first["inventory_complete"] is False
+    assert first["next_cursor"] == "renderqueue_" + f"{39:032x}"
+    second = cal.compile_review_calibration_pack(
+        preview_root=root, example_store=tmp_path / "missing",
+        after_job_id=first["next_cursor"],
+    )
+    assert second["window_job_count"] == 7
+    assert second["reviewed_job_count"] == 7
+    assert len(second["unlabelled_controls"]) == 7
+    assert second["has_more"] is False
+    assert second["after_job_id"] == first["next_cursor"]
+    assert second["inventory_complete"] is False
+    assert second["next_cursor"] == "renderqueue_" + f"{46:032x}"
+    assert {
+        item["job_id"] for item in first["unlabelled_controls"]
+    }.isdisjoint({
+        item["job_id"] for item in second["unlabelled_controls"]
+    })
+
+
+def test_invalid_cursor_rejected_without_touching_disk(tmp_path):
+    root = tmp_path / "reviews"
+    for bad in ("..", "", "renderqueue_" + "z" * 32, "renderqueue_" + "a" * 33):
+        with pytest.raises(ValueError, match="LOCAL_EDIT_PACK_CURSOR_UNTRUSTED"):
+            cal.compile_review_calibration_pack(
+                preview_root=root, example_store=tmp_path / "missing",
+                after_job_id=bad,
+            )
+    assert not root.exists()
+
+
+def test_cli_second_page_uses_cursor_without_dangerous_rewrites(tmp_path):
+    root = tmp_path / "previews"
+    _create_review(root, "a", kind="blackout")
+    _create_review(root, "b", kind="freeze")
+    runner = CliRunner()
+    args = [
+        "render-review-calibration-pack", "--preview-root", str(root),
+        "--example-store", str(tmp_path / "missing"),
+        "--max-jobs", "1",
+    ]
+    first = runner.invoke(cli.app, args)
+    assert first.exit_code == 0, first.stdout
+    first_doc = json.loads(first.stdout)
+    assert first_doc["has_more"] is True
+    second = runner.invoke(
+        cli.app, [*args, "--after-job-id", first_doc["next_cursor"]],
+    )
+    assert second.exit_code == 0, second.stdout
+    second_doc = json.loads(second.stdout)
+    assert second_doc["has_more"] is False
+    assert second_doc["candidate_samples"][0]["kind"] == "freeze"
+    assert second_doc["candidate_samples"][0]["job_id"] != (
+        first_doc["candidate_samples"][0]["job_id"]
+    )
+
+
+def test_incremental_archive_creates_independent_immutable_unlabelled_receipt(tmp_path):
+    root = tmp_path / "previews"
+    media, final, ledger = _create_review(root, "a", kind="blackout")
+    ledger_sha = hashlib.sha256(ledger.read_bytes()).hexdigest()
+    base_sha = hashlib.sha256(media.read_bytes()).hexdigest()
+    final_sha = hashlib.sha256(final.read_bytes()).hexdigest()
+    params = dict(
+        mp4_output=media, review_sha256=ledger_sha,
+        video_sha256=base_sha, final_sha256=final_sha,
+    )
+    before = (media.read_bytes(), final.read_bytes(), ledger.read_bytes())
+    first = cal.archive_incremental_review(**params)
+    assert first["status"] == "LOCAL_EDIT_ARCHIVE_CREATED_UNLABELLED"
+    assert first["candidate_count"] == 1
+    archive = root / cal.ARCHIVE_SUBDIR / f"{media.stem}.json"
+    assert archive.is_file()
+    data = archive.read_bytes()
+    assert hashlib.sha256(data).hexdigest() == first["sha256"]
+    snapshot = json.loads(data)
+    assert snapshot["review_sha256"] == ledger_sha
+    assert snapshot["base_sha256"] == base_sha
+    assert snapshot["final_sha256"] == final_sha
+    assert snapshot["anomaly_counts"] == {"blackout": 1}
+    assert snapshot["media_hash_reverified_for_calibration"] is False
+    assert snapshot["human_quality_labels_available"] is False
+    assert snapshot["auto_repair_allowed"] is False
+    assert snapshot["ready"] is False
+    assert (media.read_bytes(), final.read_bytes(), ledger.read_bytes()) == before
+    assert cal.archive_incremental_review(**params)["status"] == (
+        "LOCAL_EDIT_ARCHIVE_UNAVAILABLE"
+    )
+    assert archive.read_bytes() == data
+
+
+def test_incremental_archive_rejects_changed_review_and_wrong_qa_identity(tmp_path):
+    root = tmp_path / "previews"
+    media, final, ledger = _create_review(root, "a", kind="blackout")
+    base_sha = hashlib.sha256(media.read_bytes()).hexdigest()
+    final_sha = hashlib.sha256(final.read_bytes()).hexdigest()
+    params = dict(
+        mp4_output=media, review_sha256="f" * 64,
+        video_sha256=base_sha, final_sha256=final_sha,
+    )
+    assert cal.archive_incremental_review(**params)["status"] == (
+        "LOCAL_EDIT_ARCHIVE_UNAVAILABLE"
+    )
+    params["review_sha256"] = hashlib.sha256(ledger.read_bytes()).hexdigest()
+    params["final_sha256"] = "a" * 64
+    assert cal.archive_incremental_review(**params)["status"] == (
+        "LOCAL_EDIT_ARCHIVE_UNAVAILABLE"
+    )
+    assert not (root / cal.ARCHIVE_SUBDIR).exists()
+
+
+def test_incremental_archive_does_not_mistake_invalid_flags_for_human_gold(tmp_path):
+    root = tmp_path / "previews"
+    media, final, ledger = _create_review(root, "a", kind="blackout")
+    doc = json.loads(ledger.read_text())
+    doc["candidates"][0]["auto_repair_allowed"] = True
+    ledger.write_text(json.dumps(doc), encoding="utf-8")
+    evidence = cal.archive_incremental_review(
+        mp4_output=media,
+        review_sha256=hashlib.sha256(ledger.read_bytes()).hexdigest(),
+        video_sha256=hashlib.sha256(media.read_bytes()).hexdigest(),
+        final_sha256=hashlib.sha256(final.read_bytes()).hexdigest(),
+    )
+    assert evidence["status"] == "LOCAL_EDIT_ARCHIVE_UNAVAILABLE"
+    assert not (root / cal.ARCHIVE_SUBDIR).exists()
