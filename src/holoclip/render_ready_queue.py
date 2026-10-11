@@ -36,6 +36,7 @@ from holoclip.render_review_calibration import archive_incremental_review
 from holoclip.render_source_context import compare_local_source_context
 from holoclip.render_review_triage import store_local_review_triage
 from holoclip.render_audio_ab_preview import create_audio_ab_preview
+from holoclip.render_subtitle_ab_preview import create_subtitle_ab_preview
 
 DEFAULT_PREVIEW_ROOT = Path("data/render-previews")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
@@ -132,6 +133,12 @@ def _db(queue: Path, *, write: bool) -> sqlite3.Connection | None:
             "receipt_sha256 TEXT NOT NULL, sample_count INTEGER NOT NULL,"
             "baseline_recovery_verified INTEGER NOT NULL,"
             "updated_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS render_subtitle_ab_evidence ("
+            "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
+            "receipt_sha256 TEXT NOT NULL, variant_count INTEGER NOT NULL,"
+            "cue_number INTEGER NOT NULL, updated_at REAL NOT NULL)"
         )
         connection.commit()
         return connection
@@ -395,6 +402,29 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                     raise ValueError("LOCAL_RENDER_AUTO_QA_AB_STATE_UNTRUSTED")
                 ab_counts[mapping[item["status"]]] += 1
         report["ab_preview_counts"] = ab_counts
+        subtitle_ab_counts = {
+            "created": 0, "not_applicable": 0, "unavailable": 0,
+        }
+        subtitle_ab_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_subtitle_ab_evidence'"
+        ).fetchone() is not None
+        if subtitle_ab_table:
+            subtitle_ab_rows = conn.execute(
+                "SELECT status FROM render_subtitle_ab_evidence LIMIT 1001"
+            ).fetchall()
+            if len(subtitle_ab_rows) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            mapping = {
+                "LOCAL_SUBTITLE_AB_CREATED_UNVERIFIED_EDITORIAL": "created",
+                "LOCAL_SUBTITLE_AB_NOT_APPLICABLE": "not_applicable",
+                "LOCAL_SUBTITLE_AB_UNAVAILABLE": "unavailable",
+            }
+            for entry in subtitle_ab_rows:
+                if entry["status"] not in mapping:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_SUBTITLE_AB_STATE_UNTRUSTED")
+                subtitle_ab_counts[mapping[entry["status"]]] += 1
+        report["subtitle_ab_counts"] = subtitle_ab_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
@@ -462,6 +492,7 @@ def _finish(
     source_context_evidence: dict | None = None,
     triage_evidence: dict | None = None,
     ab_evidence: dict | None = None,
+    subtitle_ab_evidence: dict | None = None,
 ) -> None:
     if state not in {"PAUSED", "QA_PASSED"} or reason not in {
         "NONE", "LOCAL_RENDER_AUTO_QA_VALIDATION_FAILED",
@@ -599,6 +630,17 @@ def _finish(
                     str(ab_evidence["sha256"]),
                     int(ab_evidence["sample_count"]),
                     int(bool(ab_evidence["baseline_recovery_verified"])),
+                    time.time(),
+                ),
+            )
+        if state == "QA_PASSED" and subtitle_ab_evidence is not None:
+            conn.execute(
+                "INSERT INTO render_subtitle_ab_evidence VALUES (?,?,?,?,?,?)",
+                (
+                    job_id, str(subtitle_ab_evidence["status"]),
+                    str(subtitle_ab_evidence["sha256"]),
+                    int(subtitle_ab_evidence["variant_count"]),
+                    int(subtitle_ab_evidence["cue_number"]),
                     time.time(),
                 ),
             )
@@ -810,6 +852,17 @@ def advance_completed_source_renders(
             triage_sha256=str(triage_evidence["sha256"]),
             scan_allowed=time.monotonic() - started_monotonic < 3000.0,
         )
+        # Sample the first identified fast subtitle in two fixed styles.
+        # This reads the original SRT and an uncaptioned QA-checked MP4;
+        # full-length A/V and subtitle timing are never modified.
+        subtitle_ab_evidence = create_subtitle_ab_preview(
+            mp4_output=output, video_sha256=str(details["output_sha256"]),
+            input_video=burn_input, input_sha256=burn_hash,
+            final_sha256=final_sha,
+            subtitle_sha256=str(caption_evidence["output_sha256"]),
+            triage_sha256=str(triage_evidence["sha256"]),
+            scan_allowed=time.monotonic() - started_monotonic < 3000.0,
+        )
         _finish(
             queue, job_id=job_id, token=token, state="QA_PASSED", reason="NONE",
             output=output, sha256=str(details["output_sha256"]),
@@ -822,7 +875,12 @@ def advance_completed_source_renders(
             source_context_evidence=source_context_evidence,
             triage_evidence=triage_evidence,
             ab_evidence=ab_evidence,
+            subtitle_ab_evidence=subtitle_ab_evidence,
         )
+        report["subtitle_ab_status"] = subtitle_ab_evidence["status"]
+        report["subtitle_ab_sha256"] = subtitle_ab_evidence["sha256"]
+        report["subtitle_ab_variant_count"] = subtitle_ab_evidence["variant_count"]
+        report["subtitle_ab_cue_number"] = subtitle_ab_evidence["cue_number"]
         report["ab_preview_status"] = ab_evidence["status"]
         report["ab_preview_sha256"] = ab_evidence["sha256"]
         report["ab_preview_sample_count"] = ab_evidence["sample_count"]
