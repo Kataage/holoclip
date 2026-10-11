@@ -217,7 +217,7 @@ def _compare(
 
 
 def compare_local_source_context(
-    *, plan: RenderPlan, review_sha256: str,
+    *, plan: RenderPlan, review_sha256: str, video_sha256: str,
     observed: list[dict], scan_allowed: bool,
 ) -> dict[str, object]:
     """Optional create-only context; no context result approves an edit."""
@@ -234,7 +234,9 @@ def compare_local_source_context(
     }
     if not scan_allowed:
         return result
-    if not isinstance(review_sha256, str) or not _HASH.fullmatch(review_sha256):
+    if (not isinstance(review_sha256, str) or not _HASH.fullmatch(review_sha256)
+            or not isinstance(video_sha256, str)
+            or not _HASH.fullmatch(video_sha256)):
         return result
     try:
         plan = RenderPlan.model_validate(plan.model_dump(mode="json"))
@@ -249,10 +251,19 @@ def compare_local_source_context(
         if hashlib.sha256(raw_ledger).hexdigest() != review_sha256:
             raise ValueError("LOCAL_SOURCE_CONTEXT_REVIEW_CHANGED")
         saved = json.loads(raw_ledger)
-        if (saved.get("base_sha256") not in {
-            hash for hash in (saved.get("base_sha256"),) if
-            isinstance(hash, str) and _HASH.fullmatch(hash)
-        } or not isinstance(saved.get("candidates"), list)
+        if (saved.get("base_sha256") != video_sha256
+                or not isinstance(saved.get("candidates"), list)
+                or len(saved["candidates"]) != len(observed)
+                or any(
+                    not isinstance(a, dict)
+                    or not isinstance(b, dict)
+                    or a.get("kind") != b.get("kind")
+                    or not isinstance(b.get("start_seconds"), (int, float))
+                    or not isinstance(a.get("start_seconds"), (int, float))
+                    or not math.isfinite(float(b["start_seconds"]))
+                    or abs(a["start_seconds"] - b["start_seconds"]) > 0.002
+                    for a, b in zip(saved["candidates"], observed, strict=True)
+                )
                 or saved.get("human_editorial_qa_completed") is not False
                 or saved.get("ready") is not False
                 or saved.get("production_ready") is not False
