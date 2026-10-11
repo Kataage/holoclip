@@ -8,7 +8,6 @@ from typer.testing import CliRunner
 
 from holoclip import cli
 from holoclip import render_cut_extension_trials as cut
-from holoclip.corpus_growth import CorpusGrowthState
 from holoclip.models import TranscriptSegment
 from holoclip.transcript import save_transcript
 from test_render_same_source_geometry import _build, _human_example
