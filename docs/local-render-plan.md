@@ -121,6 +121,58 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Same-source generated-vs-human edit geometry (PR #224)
+
+The command \`uv run holoclip render-same-source-geometry\` is **read-only by
+default** and requires no new operator dataset, media download or video decode.
+It uses existing \`data/runtime/render-source-queue.sqlite3\`, the canonical
+source-asset database referenced by those queue jobs,
+\`data/examples/human_clips.jsonl\`, and the persisted
+\`data/examples/corpus_growth.json\` holdout reservations. An optional
+\`--execute --output <new-file>.json\` creates an immutable standalone report.
+Use \`--after-job-id <next_cursor>\` to paginate 40 completed preview jobs at
+a time. The exporter never overwrites a prior result.
+
+Only completed source jobs with \`QA_PASSED\` render evidence are eligible.
+The render timeline's \`source_asset_id\` is dereferenced through the
+read-only canonical SQLite source repository and must identify one unique
+YouTube video ID. The human example must pass the existing trustworthy
+alignment checks **and** have the exact same source-stream ID and canonical
+source YouTube URL. Multiple-source compilation jobs are skipped rather
+than falsely matched to one source. Unknown sources, stale previews,
+misleading URLs, unsupported/ambiguous human identity, and duplicated
+canonical clip IDs never become reference cases.
+
+For same-source pairs, the report describes unique selected source
+durations, intersection seconds, generated-selected overlap fraction,
+human-aligned reference coverage, selected-source Jaccard, intervals unique
+to each side, positive source gaps, and median distance from generated
+gap starts to the nearest human source-gap start. Original-source ranges
+are merged before calculating coverage so repeated segments cannot
+inflate it. These numbers measure **time interval geometry only**.
+Human audio/transcript alignment boundaries can differ from actual
+visual edit frames and cannot independently determine the artistic best
+cut, transition, joke timing or subtitle legibility.
+
+All human examples currently available through this path are **training
+references**, so each match says \`TRAINING_REFERENCE_IN_SAMPLE\`, never
+independent holdout or human gold. Persistent reserved holdout streams are
+excluded; any overlap between reserved and stored training streams blocks
+all comparison results. A missing reservation state is explicitly reported
+as unverified, not silently considered a clean split. Neither this metadata
+pass nor its human alignment references qualify real-world editing quality.
+Original MP4 hashes originate from previous technical QA: this command
+checks the preview file exists but does **not** decode or independently
+rehash large media. It does not edit, repair, publish or contact YouTube.
+
+\`ready=false\`, \`production_ready=false\`,
+\`heldout_qualification_allowed=false\`,
+\`auto_adoption_allowed=false\`, human creative-quality labels missing,
+and precision/recall unavailable remain mandatory. Future work must use
+independently source-grounded held-out real-media cut maps before any
+automated quality gate is considered.
+
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
