@@ -173,7 +173,7 @@ from holoclip.render_same_source_geometry import (
 from holoclip.render_same_source_semantic_review import (
     DEFAULT_OUTPUT as DEFAULT_SEMANTIC_OUTPUT,
     prepare_semantic_evidence, infer_semantic_hypotheses, save_semantic_review,
-    prepared_fingerprint,
+    prepared_fingerprint, validate_semantic_output,
 )
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
@@ -1567,6 +1567,7 @@ def render_same_source_semantic_review_command(
             prepared["evidence_sha256"] = prepared_fingerprint(prepared)
             typer.echo(json.dumps(prepared, ensure_ascii=False, sort_keys=True))
             return
+        validate_semantic_output(output)
         if os.getenv("HOLOCLIP_DATA_CLASS") != "public":
             raise ValueError("LOCAL_SEMANTIC_EXPLICIT_PUBLIC_DATA_REQUIRED")
         if prepared["status"] != "LOCAL_SEMANTIC_EVIDENCE_PREPARED":
