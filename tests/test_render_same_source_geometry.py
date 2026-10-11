@@ -342,3 +342,137 @@ def test_same_source_cli_exposes_diagnostics_without_qualification(tmp_path):
     assert report["selection_difference_is_not_a_human_quality_label"] is True
     assert report["ready"] is False
     assert report["auto_adoption_allowed"] is False
+
+
+
+def test_inspection_queue_prioritizes_distinct_source_windows_per_job(tmp_path):
+    params, receipt, _, _ = _build(tmp_path, clips=[_human_example()])
+    report = geo.compare_same_source_edit_geometry(**params)
+    queue = report["inspection_queue"]
+    assert queue["scope"] == "CURRENT_JOB_PAGE_ONLY"
+    assert queue["source_reservation_metadata_verified"] is True
+    assert queue["matched_jobs_with_observable_differences"] == 1
+    assert queue["listed_jobs"] == 1
+    assert queue["one_reference_example_per_job"] is True
+    entry = queue["results"][0]
+    assert entry["job_id"] == receipt["job_id"]
+    assert entry["evaluation_split"] == "TRAINING_REFERENCE_IN_SAMPLE"
+    assert entry["action"] == "INSPECT_ONLY"
+    assert entry["automatic_edit_recommendation"] is None
+    assert entry["observed_nonshared_source_seconds"] == 3
+    assert "OBSERVED_SOURCE_SELECTION_DIFFERENCE" in entry["inspection_reasons"]
+    assert entry["generated_only_top_source_windows"]
+    assert entry["human_only_top_source_windows"]
+    assert queue["discrepancy_magnitude_is_not_editorial_quality"] is True
+    assert report["ready"] is False
+
+
+def test_identical_source_ranges_with_different_order_require_inspection():
+    geom = geo._geometry(
+        [(30, 32), (10, 12), (20, 22)],
+        [(10, 12), (20, 22), (30, 32)],
+    )
+    assert geom["selected_source_jaccard"] == 1
+    assert geom["selection_difference_diagnostics"][
+        "exact_source_interval_order_differs"
+    ] is True
+    assert geom["generated_only_source_seconds"] == 0
+    item = {
+        "job_id": "renderqueue_" + "a" * 32,
+        "canonical_source_stream_sha256": "s" * 64,
+        "matches": [{
+            "human_clip_identity_sha256": "h" * 64,
+            "human_alignment_confidence": .95,
+            "geometry": geom,
+        }],
+    }
+    result = geo._inspection_queue([item], verified_reservations=True)
+    assert result["listed_jobs"] == 1
+    assert result["results"][0]["observed_nonshared_source_seconds"] == 0
+    assert "EXACT_SPAN_PLAYBACK_ORDER_DIFFERENCE" in result["results"][0][
+        "inspection_reasons"
+    ]
+
+
+def test_nonidentical_source_spans_cannot_claim_exact_order_difference():
+    geom = geo._geometry([(10, 12)], [(10.001, 12)])
+    assert geom["selection_difference_diagnostics"][
+        "exact_source_interval_order_differs"
+    ] is None
+    equal = geo._geometry([(10, 12), (20, 22)], [(10, 12), (20, 22)])
+    assert equal["selection_difference_diagnostics"][
+        "exact_source_interval_order_differs"
+    ] is False
+
+
+def test_inspection_queue_is_bounded_sorted_and_deduplicates_jobs():
+    def mk_match(seconds, identity):
+        geom = geo._geometry([(0, seconds)], [(30, 31)])
+        return {
+            "human_clip_identity_sha256": identity * 64,
+            "human_alignment_confidence": .95,
+            "geometry": geom,
+        }
+    jobs = [
+        {
+            "job_id": "renderqueue_" + f"{i:032x}",
+            "canonical_source_stream_sha256": "s" * 64,
+            "matches": [mk_match(i + 1, "b"), mk_match(1, "a")],
+        }
+        for i in range(14)
+    ]
+    review = geo._inspection_queue(jobs, verified_reservations=True)
+    assert review["matched_jobs_with_observable_differences"] == 14
+    assert review["listed_jobs"] == 10
+    assert review["omitted_jobs_due_to_limit"] == 4
+    assert len({r["job_id"] for r in review["results"]}) == 10
+    assert review["results"][0]["observed_nonshared_source_seconds"] == 15
+    assert review["results"][0]["human_clip_identity_sha256"] == "b" * 64
+    assert review["results"][-1]["observed_nonshared_source_seconds"] == 6
+
+
+def test_empty_or_matching_page_has_no_inspection_items():
+    report = geo._inspection_queue([], verified_reservations=False)
+    assert report["source_reservation_metadata_verified"] is False
+    assert report["listed_jobs"] == 0
+    assert report["ready"] is False
+    geom = geo._geometry([(10, 12)], [(10, 12)])
+    row = {
+        "job_id": "renderqueue_" + "a" * 32,
+        "canonical_source_stream_sha256": "s" * 64,
+        "matches": [{
+            "human_clip_identity_sha256": "h" * 64,
+            "human_alignment_confidence": .95,
+            "geometry": geom,
+        }],
+    }
+    assert geo._inspection_queue(
+        [row], verified_reservations=True
+    )["results"] == []
+
+
+def test_holdout_conflict_clears_derived_inspection_queue(tmp_path):
+    params, *_ = _build(
+        tmp_path, clips=[_human_example()], reserved=[VIDEO],
+    )
+    report = geo.compare_same_source_edit_geometry(**params)
+    assert report["status"] == "LOCAL_SAME_SOURCE_TRAIN_HOLDOUT_CONFLICT"
+    assert report["results"] == []
+    assert report["inspection_queue"]["results"] == []
+    assert report["inspection_queue"]["listed_jobs"] == 0
+
+
+def test_inspection_queue_saved_without_overwriting_or_modifying_media(tmp_path):
+    params, _, _, media = _build(tmp_path, clips=[_human_example()])
+    before = media.read_bytes()
+    output = tmp_path / "review.json"
+    saved = geo.export_same_source_edit_geometry(
+        **params, output=output, execute=True
+    )
+    assert saved["inspection_queue"]["listed_jobs"] == 1
+    assert json.loads(output.read_text(encoding="utf-8")) == saved
+    with pytest.raises(ValueError, match="OUTPUT_UNSAFE"):
+        geo.export_same_source_edit_geometry(
+            **params, output=output, execute=True
+        )
+    assert media.read_bytes() == before
