@@ -282,11 +282,17 @@ async def infer_semantic_hypotheses(prepared: dict, client) -> dict:
     }
 
 
-def save_semantic_review(report: dict, output: Path) -> None:
-    """Opt-in immutable output, no overwrite of queue, MP4, or ASR."""
+def validate_semantic_output(output: Path) -> Path:
+    """Preflight immutable report path before consuming any provider quota."""
     path = _no_links(output)
     if path.suffix.lower() != ".json" or path.exists():
         raise ValueError("LOCAL_SEMANTIC_OUTPUT_UNSAFE")
+    return path
+
+
+def save_semantic_review(report: dict, output: Path) -> None:
+    """Opt-in immutable output, no overwrite of queue, MP4, or ASR."""
+    path = validate_semantic_output(output)
     raw = (json.dumps(report, ensure_ascii=False, sort_keys=True,
                       separators=(",", ":")) + "\n").encode("utf-8")
     if len(raw) > _MAX_RESULT_BYTES:
