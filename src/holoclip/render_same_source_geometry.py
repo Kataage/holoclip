@@ -32,7 +32,7 @@ from holoclip.render_source_resolver import _canonical_assets
 from holoclip.render_same_source_transcript_context import attach_inspection_context
 from holoclip.render_same_source_narrative_reference import attach_narrative_reference
 
-VERSION = "holoclip-same-source-edit-geometry-v6"
+VERSION = "holoclip-same-source-edit-geometry-v7"
 DEFAULT_OUTPUT = Path("data/render-previews/same-source-edit-geometry.json")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
