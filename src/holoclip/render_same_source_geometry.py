@@ -29,9 +29,11 @@ from holoclip.render_human_edit_context import (
 from holoclip.render_plan import _no_links
 from holoclip.render_source_queue import DEFAULT_QUEUE, _connect
 from holoclip.render_source_resolver import _canonical_assets
+from holoclip.render_same_source_transcript_context import attach_inspection_context
 
-VERSION = "holoclip-same-source-edit-geometry-v3"
+VERSION = "holoclip-same-source-edit-geometry-v4"
 DEFAULT_OUTPUT = Path("data/render-previews/same-source-edit-geometry.json")
+DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _JOB = re.compile(r"renderqueue_[0-9a-f]{32}\Z")
 _VIDEO = re.compile(r"[A-Za-z0-9_-]{11}\Z")
@@ -353,6 +355,7 @@ def compare_same_source_edit_geometry(
     example_store: Path = DEFAULT_HUMAN_STORE,
     growth_state: Path = DEFAULT_GROWTH_STATE,
     preview_root: Path = DEFAULT_AB_ROOT,
+    transcript_root: Path = DEFAULT_TRANSCRIPT_ROOT,
     after_job_id: str | None = None,
     max_jobs: int = _MAX_PAGE,
 ) -> dict:
@@ -361,6 +364,7 @@ def compare_same_source_edit_geometry(
             or after_job_id is not None and not _JOB.fullmatch(after_job_id)):
         raise ValueError("LOCAL_SAME_SOURCE_CURSOR_OR_LIMIT_INVALID")
     preview = _no_links(preview_root)
+    transcript_root = _no_links(transcript_root)
     example_store = _no_links(example_store)
     growth_state = _no_links(growth_state)
     reserved, growth_sha, holdout_known = _reserve_state(growth_state)
@@ -385,6 +389,7 @@ def compare_same_source_edit_geometry(
         "human_examples_from_training_not_independent_holdout": True,
         "measured_edit_geometry_not_editorial_quality": True,
         "selection_difference_is_not_a_human_quality_label": True,
+        "local_asr_context_is_not_creative_quality_evidence": True,
         "inspection_queue": _inspection_queue(
             [], verified_reservations=holdout_known
         ),
@@ -393,6 +398,7 @@ def compare_same_source_edit_geometry(
         "ready": False, "production_ready": False,
         "auto_adoption_allowed": False, "publication_performed": False,
     }
+    stream_by_job: dict[str, str] = {}
     conn = _connect(queue, create=False)
     if conn is None:
         return report
@@ -493,6 +499,7 @@ def compare_same_source_edit_geometry(
                     "rendered_media_redecoded": False,
                     "qualified_editorial_benchmark": False,
                 })
+                stream_by_job[job] = stream
                 report["same_source_compared_jobs"] += 1
                 report["same_source_pairs"] += len(pairs)
             except (ValueError, OSError, UnicodeError, TypeError, KeyError):
@@ -511,6 +518,10 @@ def compare_same_source_edit_geometry(
     report["inspection_queue"] = _inspection_queue(
         report["results"], verified_reservations=holdout_known
     )
+    attach_inspection_context(
+        report["inspection_queue"], transcript_root=transcript_root,
+        stream_by_job=stream_by_job,
+    )
     return report
 
 
@@ -520,12 +531,14 @@ def export_same_source_edit_geometry(
     example_store: Path = DEFAULT_HUMAN_STORE,
     growth_state: Path = DEFAULT_GROWTH_STATE,
     preview_root: Path = DEFAULT_AB_ROOT,
+    transcript_root: Path = DEFAULT_TRANSCRIPT_ROOT,
     after_job_id: str | None = None,
     max_jobs: int = _MAX_PAGE,
 ) -> dict:
     report = compare_same_source_edit_geometry(
         queue=queue, example_store=example_store, growth_state=growth_state,
-        preview_root=preview_root, after_job_id=after_job_id, max_jobs=max_jobs,
+        preview_root=preview_root, transcript_root=transcript_root,
+        after_job_id=after_job_id, max_jobs=max_jobs,
     )
     if not execute:
         return report

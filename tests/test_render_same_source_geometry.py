@@ -66,6 +66,7 @@ def _build(tmp_path, *, clips=None, reserved=()):
     kwargs = {
         "queue": queue, "example_store": corpus,
         "growth_state": state, "preview_root": root,
+        "transcript_root": tmp_path / "transcripts",
     }
     return kwargs, receipt, timeline, media
 
@@ -476,3 +477,135 @@ def test_inspection_queue_saved_without_overwriting_or_modifying_media(tmp_path)
             **params, output=output, execute=True
         )
     assert media.read_bytes() == before
+
+
+def test_context_uses_local_timed_asr_for_same_source_only(tmp_path):
+    params, receipt, _, _ = _build(tmp_path, clips=[_human_example()])
+    local = params["transcript_root"] / "sources"
+    local.mkdir(parents=True)
+    path = local / f"{VIDEO}.json"
+    path.write_text(json.dumps({
+        "video_id": VIDEO, "segments": [
+            {"start": 7.0, "end": 9.0, "text": "始まり"},
+            {"start": 12.0, "end": 13.0, "text": "途中"},
+            {"start": 20.0, "end": 21.0, "text": "直前"},
+            {"start": 23.0, "end": 23.7, "text": "オチ"},
+            {"start": 24.0, "end": 25.0, "text": "反応"},
+        ],
+    }, ensure_ascii=False), encoding="utf-8")
+    report = geo.compare_same_source_edit_geometry(**params)
+    entries = report["inspection_queue"]["results"]
+    assert len(entries) == 1 and entries[0]["job_id"] == receipt["job_id"]
+    context = entries[0]["transcript_context"]
+    assert context["status"] == "TRANSCRIPT_CONTEXT_AVAILABLE"
+    assert context["source_identity_basis"] == (
+        "FILENAME_AND_METADATA_ID_MATCH_AUDIO_UNVERIFIED"
+    )
+    assert context["transcript_sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert len(context["windows"]) == 2
+    assert all(not w["human_edit_intent_inferred"] for w in context["windows"])
+    assert "オチ" in json.dumps(context, ensure_ascii=False)
+    assert context["local_asr_audio_independently_verified"] is False
+    assert report["ready"] is False
+
+
+def test_absent_transcript_expressly_unavailable(tmp_path):
+    params, *_ = _build(tmp_path, clips=[_human_example()])
+    result = geo.compare_same_source_edit_geometry(**params)
+    assert result["inspection_queue"]["results"][0]["transcript_context"] == {
+        "status": "TRANSCRIPT_UNAVAILABLE"
+    }
+
+
+def test_filename_only_source_identity_remains_unverified(tmp_path):
+    params, *_ = _build(tmp_path, clips=[_human_example()])
+    root = params["transcript_root"]
+    root.mkdir()
+    (root / f"{VIDEO}.json").write_text(json.dumps({
+        "segments": [{"start": 11, "end": 12, "text": "発話"}]
+    }, ensure_ascii=False), encoding="utf-8")
+    context = geo.compare_same_source_edit_geometry(**params)[
+        "inspection_queue"]["results"][0]["transcript_context"]
+    assert context["source_identity_basis"] == "FILENAME_ONLY_IDENTITY_UNVERIFIED"
+
+
+def test_mismatched_and_duplicate_transcripts_are_never_quoted(tmp_path):
+    params, *_ = _build(tmp_path, clips=[_human_example()])
+    root = params["transcript_root"]
+    root.mkdir()
+    p = root / f"{VIDEO}.json"
+    p.write_text(json.dumps({
+        "video_id": "wrong-video",
+        "segments": [{"start": 11, "end": 12, "text": "not allowed"}]
+    }), encoding="utf-8")
+    assert geo.compare_same_source_edit_geometry(**params)[
+        "inspection_queue"]["results"][0]["transcript_context"] == {
+            "status": "TRANSCRIPT_UNTRUSTED"
+    }
+    p.write_text(json.dumps({"video_id": VIDEO, "segments": []}), encoding="utf-8")
+    (root / "sources").mkdir()
+    (root / "sources" / f"{VIDEO}.json").write_text(
+        json.dumps({"video_id": VIDEO, "segments": []}), encoding="utf-8"
+    )
+    assert geo.compare_same_source_edit_geometry(**params)[
+        "inspection_queue"]["results"][0]["transcript_context"] == {
+            "status": "TRANSCRIPT_UNTRUSTED"
+    }
+
+
+def test_source_speech_context_is_bounded_and_rejects_control_text():
+    from holoclip.models import TranscriptSegment
+    from holoclip.render_same_source_transcript_context import _utterances
+
+    segments = [
+        TranscriptSegment(start=0, end=1, text="A" * 161),
+        TranscriptSegment(start=1, end=2, text="unsafe\u202e"),
+    ] + [
+        TranscriptSegment(start=float(i), end=float(i) + .5, text="発話")
+        for i in range(2, 10)
+    ]
+    texts = _utterances(segments, 0, 10)
+    assert len(texts) == 3
+    assert all(t["unverified_asr_text"] == "発話" for t in texts)
+
+
+def test_holdout_conflict_prevents_transcript_context_from_leaking(tmp_path):
+    params, *_ = _build(tmp_path, clips=[_human_example()], reserved=[VIDEO])
+    root = params["transcript_root"]
+    root.mkdir()
+    (root / f"{VIDEO}.json").write_text(json.dumps({
+        "video_id": VIDEO,
+        "segments": [{"start": 10, "end": 12, "text": "confidential-test"}],
+    }), encoding="utf-8")
+    report = geo.compare_same_source_edit_geometry(**params)
+    assert report["inspection_queue"]["results"] == []
+    assert "confidential-test" not in json.dumps(report)
+
+
+def test_cli_local_asr_context_readonly_create_only(tmp_path):
+    params, *_ = _build(tmp_path, clips=[_human_example()])
+    root = params["transcript_root"]
+    root.mkdir()
+    (root / f"{VIDEO}.json").write_text(json.dumps({
+        "video_id": VIDEO,
+        "segments": [{"start": 10, "end": 12, "text": "日本語発話"}],
+    }, ensure_ascii=False), encoding="utf-8")
+    target = tmp_path / "inspection.json"
+    args = [
+        "render-same-source-geometry", "--queue", str(params["queue"]),
+        "--example-store", str(params["example_store"]),
+        "--growth-state", str(params["growth_state"]),
+        "--preview-root", str(params["preview_root"]),
+        "--transcript-root", str(root), "--output", str(target),
+    ]
+    preview = CliRunner().invoke(cli.app, args)
+    assert preview.exit_code == 0, preview.stdout
+    assert not target.exists()
+    document = json.loads(preview.stdout)
+    assert document["inspection_queue"]["results"][0]["transcript_context"][
+        "status"] == "TRANSCRIPT_CONTEXT_AVAILABLE"
+    saved = CliRunner().invoke(cli.app, [*args, "--execute"])
+    assert saved.exit_code == 0, saved.stdout
+    assert json.loads(target.read_text(encoding="utf-8")) == document
+    again = CliRunner().invoke(cli.app, [*args, "--execute"])
+    assert again.exit_code == 6
