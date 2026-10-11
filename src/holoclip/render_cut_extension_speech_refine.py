@@ -6,7 +6,6 @@ of audible dialogue, punchline quality or permission to render/publish.
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 
 from holoclip.render_cut_extension_mp4_ab import _trial_timeline
