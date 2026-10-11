@@ -609,3 +609,110 @@ def test_cli_local_asr_context_readonly_create_only(tmp_path):
     assert json.loads(target.read_text(encoding="utf-8")) == document
     again = CliRunner().invoke(cli.app, [*args, "--execute"])
     assert again.exit_code == 6
+
+
+
+def test_speech_handoff_observes_discontinuous_cuts_without_quality_claim():
+    from holoclip.models import TranscriptSegment
+    from holoclip.render_same_source_handoff import summarize_playback_handoffs
+
+    asr = [
+        TranscriptSegment(start=9, end=11, text="introduction"),
+        TranscriptSegment(start=12, end=14, text="transition"),
+        TranscriptSegment(start=19, end=21, text="payoff"),
+        TranscriptSegment(start=22, end=24, text="response"),
+    ]
+    report = summarize_playback_handoffs([(10, 13), (20, 23)], asr)
+    assert report["generated_cut_count"] == 2
+    assert report["generated_join_count"] == 1
+    assert report["forward_source_skip_joins"] == 1
+    assert report["asr_boundary_crossing_on_discontinuous_join_count"] == 2 - 1
+    join = report["notable_joins_in_output_order"][0]
+    assert join["source_clock_relation"] == "FORWARD_SOURCE_SKIP"
+    assert join["source_clock_delta_seconds"] == 7
+    assert join["previous_segment_end"]["asr_segment_spans_boundary"] is True
+    assert join["next_segment_start"]["asr_segment_spans_boundary"] is True
+    assert join["actual_audible_speech_interruption_verified"] is False
+    assert report["narrative_setup_development_payoff_reaction_inferred"] is False
+    assert report["editorial_quality_label"] is None
+    assert report["ready"] is False
+
+
+def test_contiguous_cut_is_not_marked_as_audible_interruption():
+    from holoclip.models import TranscriptSegment
+    from holoclip.render_same_source_handoff import summarize_playback_handoffs
+
+    result = summarize_playback_handoffs(
+        [(0, 2), (2, 4)],
+        [TranscriptSegment(start=1, end=3, text="long utterance")],
+    )
+    assert result["forward_source_skip_joins"] == 0
+    assert result["asr_boundary_crossing_on_discontinuous_join_count"] == 0
+    join = result["notable_joins_in_output_order"][0]
+    assert join["previous_segment_end"]["asr_segment_spans_boundary"] is True
+    assert join["asr_boundary_crossing_on_discontinuous_join"] is False
+    assert join["source_clock_relation"] == "CONTIGUOUS_SOURCE_CLOCK"
+
+
+def test_source_replay_and_bounded_handoff_output_are_deterministic():
+    from holoclip.render_same_source_handoff import summarize_playback_handoffs
+
+    cuts = [(float(i), float(i) + .6) for i in range(15)]
+    cuts[8] = (2.0, 2.6)
+    first = summarize_playback_handoffs(cuts, [])
+    again = summarize_playback_handoffs(cuts, [])
+    assert first == again
+    assert first["generated_join_count"] == 14
+    assert first["displayed_join_count"] == 3
+    assert first["omitted_join_count"] == 11
+    assert first["source_overlap_or_replay_joins"] >= 1
+    assert [x["join_output_index"] for x in first["notable_joins_in_output_order"]] == sorted(
+        x["join_output_index"] for x in first["notable_joins_in_output_order"]
+    )
+
+
+def test_same_source_pipeline_joins_source_speech_observations_to_top_job(tmp_path):
+    params, receipt, _, _ = _build(tmp_path, clips=[_human_example()])
+    root = params["transcript_root"]
+    root.mkdir()
+    (root / f"{VIDEO}.json").write_text(json.dumps({
+        "video_id": VIDEO,
+        "segments": [
+            {"start": 12, "end": 14, "text": "文脈の切れ目"},
+            {"start": 19, "end": 21, "text": "会話の続き"},
+        ],
+    }, ensure_ascii=False), encoding="utf-8")
+    report = geo.compare_same_source_edit_geometry(**params)
+    item = report["inspection_queue"]["results"][0]
+    assert item["job_id"] == receipt["job_id"]
+    evidence = item["transcript_context"]["playback_handoff_evidence"]
+    assert evidence["generated_cut_count"] == 2
+    assert evidence["forward_source_skip_joins"] == 1
+    assert evidence["asr_boundary_crossing_on_discontinuous_join_count"] == 1
+    assert evidence["narrative_setup_development_payoff_reaction_inferred"] is False
+    assert report["narrative_roles_not_inferred_from_local_asr"] is True
+    assert report["auto_adoption_allowed"] is False
+
+
+def test_missing_local_asr_does_not_fabricate_handoff_evidence(tmp_path):
+    params, *_ = _build(tmp_path, clips=[_human_example()])
+    report = geo.compare_same_source_edit_geometry(**params)
+    assert report["inspection_queue"]["results"][0]["transcript_context"] == {
+        "status": "TRANSCRIPT_UNAVAILABLE"
+    }
+    assert "playback_handoff_evidence" not in json.dumps(report)
+
+
+def test_holdout_conflict_blocks_all_handoff_analysis(tmp_path):
+    params, *_ = _build(
+        tmp_path, clips=[_human_example()], reserved=[VIDEO]
+    )
+    root = params["transcript_root"]
+    root.mkdir()
+    (root / f"{VIDEO}.json").write_text(json.dumps({
+        "video_id": VIDEO,
+        "segments": [{"start": 12, "end": 14, "text": "blocked"}],
+    }), encoding="utf-8")
+    report = geo.compare_same_source_edit_geometry(**params)
+    assert report["inspection_queue"]["results"] == []
+    assert "blocked" not in json.dumps(report)

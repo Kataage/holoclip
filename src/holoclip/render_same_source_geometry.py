@@ -31,7 +31,7 @@ from holoclip.render_source_queue import DEFAULT_QUEUE, _connect
 from holoclip.render_source_resolver import _canonical_assets
 from holoclip.render_same_source_transcript_context import attach_inspection_context
 
-VERSION = "holoclip-same-source-edit-geometry-v4"
+VERSION = "holoclip-same-source-edit-geometry-v5"
 DEFAULT_OUTPUT = Path("data/render-previews/same-source-edit-geometry.json")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
@@ -390,6 +390,7 @@ def compare_same_source_edit_geometry(
         "measured_edit_geometry_not_editorial_quality": True,
         "selection_difference_is_not_a_human_quality_label": True,
         "local_asr_context_is_not_creative_quality_evidence": True,
+        "narrative_roles_not_inferred_from_local_asr": True,
         "inspection_queue": _inspection_queue(
             [], verified_reservations=holdout_known
         ),
@@ -399,6 +400,7 @@ def compare_same_source_edit_geometry(
         "auto_adoption_allowed": False, "publication_performed": False,
     }
     stream_by_job: dict[str, str] = {}
+    ordered_cuts_by_job: dict[str, list[tuple[float, float]]] = {}
     conn = _connect(queue, create=False)
     if conn is None:
         return report
@@ -500,6 +502,7 @@ def compare_same_source_edit_geometry(
                     "qualified_editorial_benchmark": False,
                 })
                 stream_by_job[job] = stream
+                ordered_cuts_by_job[job] = generated
                 report["same_source_compared_jobs"] += 1
                 report["same_source_pairs"] += len(pairs)
             except (ValueError, OSError, UnicodeError, TypeError, KeyError):
@@ -520,7 +523,7 @@ def compare_same_source_edit_geometry(
     )
     attach_inspection_context(
         report["inspection_queue"], transcript_root=transcript_root,
-        stream_by_job=stream_by_job,
+        stream_by_job=stream_by_job, ordered_cuts_by_job=ordered_cuts_by_job,
     )
     return report
 
