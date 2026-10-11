@@ -168,7 +168,12 @@ from holoclip.render_human_edit_context import (
 )
 from holoclip.render_same_source_geometry import (
     DEFAULT_OUTPUT as DEFAULT_SAME_SOURCE_OUTPUT,
-    export_same_source_edit_geometry,
+    export_same_source_edit_geometry, compare_same_source_edit_geometry,
+)
+from holoclip.render_same_source_semantic_review import (
+    DEFAULT_OUTPUT as DEFAULT_SEMANTIC_OUTPUT,
+    prepare_semantic_evidence, infer_semantic_hypotheses, save_semantic_review,
+    prepared_fingerprint,
 )
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
@@ -1531,6 +1536,55 @@ def render_same_source_geometry_command(
         }))
         raise typer.Exit(6) from exc
     typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+
+
+
+@app.command("render-same-source-semantic-review")
+def render_same_source_semantic_review_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    after_job_id: str | None = typer.Option(None, "--after-job-id"),
+    max_jobs: int = typer.Option(40, "--max-jobs", min=1, max=40),
+    output: Path = typer.Option(DEFAULT_SEMANTIC_OUTPUT, "--output"),
+    execute: bool = typer.Option(
+        False, "--execute",
+        help="Explicitly send public local ASR/story excerpts to a qualified AI route and save a create-only report."),
+) -> None:
+    """Inspect source-cited story hypotheses; dry-run never calls a provider."""
+    try:
+        base = compare_same_source_edit_geometry(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, after_job_id=after_job_id,
+            max_jobs=max_jobs,
+        )
+        prepared = prepare_semantic_evidence(base)
+        if not execute:
+            prepared["evidence_sha256"] = prepared_fingerprint(prepared)
+            typer.echo(json.dumps(prepared, ensure_ascii=False, sort_keys=True))
+            return
+        if os.getenv("HOLOCLIP_DATA_CLASS") != "public":
+            raise ValueError("LOCAL_SEMANTIC_EXPLICIT_PUBLIC_DATA_REQUIRED")
+        if prepared["status"] != "LOCAL_SEMANTIC_EVIDENCE_PREPARED":
+            raise ValueError("LOCAL_SEMANTIC_NO_QUALIFIED_EVIDENCE")
+        async def _infer():
+            async with MeshLLMClient() as client:
+                return await infer_semantic_hypotheses(prepared, client)
+        reviewed = asyncio.run(_infer())
+        reviewed["evidence_sha256"] = prepared_fingerprint(prepared)
+        save_semantic_review(reviewed, output)
+    except Exception as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_SEMANTIC_REVIEW_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(reviewed, ensure_ascii=False, sort_keys=True))
 
 
 @app.command("render-source-queue-enqueue")

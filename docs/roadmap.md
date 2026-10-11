@@ -132,6 +132,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Optional bounded before/within/after local ASR source-time context for ranked discrepancies with explicit source provenance limitations and missing evidence status
 - [x] Source-clock handoff + ASR speech-boundary observations for actual generated output join order (bounded, provenance-qualified, not creative narrative roles or a quality score)
 - [x] Source-grounded human-aligned first/middle/last positional coverage and bounded clip-level setup/development/payoff reference annotations (NOT role-time anchors or creative quality labels)
+- [x] Opt-in, qualified-provider semantic textual-reference hypotheses with strict exact-ASR-citation validator, bounded dry-run evidence and immutable fail-closed receipt (never editorial gold or auto-edit)
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion

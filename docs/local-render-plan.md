@@ -306,6 +306,49 @@ No new operator data, download, ASR, LLM request, paid service, Docker,
 FFmpeg, media rewrites, automatic cut adjustment or publishing are needed.
 The unchanged \`ready=false\` and create-only opt-in report gate apply.
 
+
+### Evidence-cited semantic role hypotheses (PR #230)
+
+New command (default **strictly local dry-run**, no provider requests):
+\`uv run holoclip render-same-source-semantic-review\`.
+
+It reuses the same source-ID, holdout, trusted human alignment, QA-passed
+render and source-time ASR gates as \`render-same-source-geometry\`. Only the
+top **three** inspected jobs with matching in-file source metadata and
+complete clip-level setup/development/payoff descriptions can qualify.
+The bounded request includes up to twelve actual source-time ASR excerpts
+per job, with unique evidence IDs and each excerpt's original source
+clock and whether its context window is \`generated_only\` or
+\`human_only\`. Excerpts before/after a selected difference window may
+still fall outside the generated output; **none** of these context windows
+alone certify presence in the finished clip.
+
+To explicitly request semantic hypotheses from the existing *qualified*
+capability router and immutably persist a report, use
+\`HOLOCLIP_DATA_CLASS=public\` plus
+\`uv run holoclip render-same-source-semantic-review --execute --output <new-report>.json\`.
+The operator must verify that the human descriptions and ASR are lawful
+public data **before setting this flag**. No new paid service, Docker,
+model install, external dataset or API key is added. It uses existing
+provider credentials, cost/quota policy, and the production qualification
+router; unavailable routes defer, not bypass qualification. At most three
+qualified JSON requests are made. This opt-in is **not** used by ordinary
+offline rendering/CI, and must not be confused with automatic publishing.
+
+The model may report only \`POSSIBLE_TEXTUAL_REFERENCE\` citing an **exact
+verbatim substring** of a supplied ASR snippet, or
+\`INSUFFICIENT_EVIDENCE\` with no citation. A missing role, duplicated role,
+invented evidence ID, fabricated quote or malformed schema rejects the
+result and writes no report. For each cited hypothesis, independently
+supplied source timestamps and window provenance are retained. These
+are **unverified model hypotheses** about local ASR and in-sample clip-level
+annotations, not source-truth, verified semantic matches, exact narrative
+role-time anchors, or evidence of edit quality, completeness, humor or
+human preference. The report and its model provenance remain
+\`ready=false\`, \`quality_qualification_allowed=false\`, and have no
+auto-edit/publication effect. Only a new JSON output is created, never
+overwriting an existing report or video.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
