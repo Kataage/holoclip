@@ -114,7 +114,6 @@ def _source_evidence(prepared: dict) -> dict:
     # B's intermediate hashes were not persisted in #241; never call
     # them earlier signed evidence. Snapshot the bytes here and recheck
     # them after actual decoding.
-    stage_a = _stage_paths(base_a)
     stage_b = _stage_paths(base_b)
     stage_b2 = _stage_paths(base_b2)
     sibling_hashes = {}
