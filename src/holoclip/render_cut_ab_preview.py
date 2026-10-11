@@ -78,7 +78,6 @@ def _pick_seam(plan: RenderPlan, triage_sha: str, media_sha: str) -> dict | None
     windows = _boundaries(plan.timeline)
     if len(windows) < 2:
         return None
-    cuts = sorted(plan.timeline.segments, key=lambda s: s.output_order)
     styles = select_cut_styles(plan.timeline)
     feasible = []
     for i in range(len(windows) - 1):
