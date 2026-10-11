@@ -766,6 +766,48 @@ There are **no external API, yt-dlp, download, new ASR or Docker
 requirements**. The additional candidate is in-sample training
 reference, never independently rated human gold. Keep \`ready=false\`.
 
+### Matched optional audio and caption finishing for extension MP4s (PR #241)
+
+\`uv run holoclip render-cut-extension-finished-ab\` re-derives the
+original QA-passed A and bounded ASR-grounded B extension candidate,
+then reads the **original queue's recorded audio leveling, source-SRT
+and burned-caption evidence** (read-only SQLite). The default command
+only previews the stage-presence plan and does not start FFmpeg or
+create files.
+
+Use \`--execute --approve-local-preview\` for a **single local-only
+flow**: first create PR #240's separate trial MP4 if it does not yet
+exist (or rehash and verify its original PR #240 JSON receipt), then
+apply exactly the optional finishing stages recorded for baseline A.
+Every successful A artifact must exist at the canonical sibling path
+with its original SHA-256; undocumented orphan outputs or untrusted
+queue evidence are rejected rather than silently substituted. The
+baseline full A/V final is probed before running any trial finishing.
+Trial captions come from the *current canonical source* and revised
+trial edit clock; audio uses the established cut-aware bounded dBFS
+gain/limiter; subtitles burn into the leveled or base trial following
+A's recorded choice. Stage processing uses existing no-overwrite
+and rehash checks. A sidecar named \`*.matched.json\` records original
+and trial finishing checksums, stage outcomes and duration evidence.
+
+This produces more **technically comparable finishing pipelines**, not
+identical captions (B contains extra source time), equal narrative
+content, or the same codec artifacts. Trial stage failure creates a
+clearly marked **NOT COMPARABLE** receipt rather than claiming success;
+missing/ambiguous baseline stage records fail closed. The original
+MP4, finished A files and original queue remain unchanged. Existing B
+media/receipt are only accepted after exact hash and provenance checks;
+existing finishing output/receipt names cannot be overwritten.
+No new ASR, external model, YouTube/yt-dlp access or Docker required.
+
+Crucially, matching processing stages is **not** a blind listening
+or audience-preference comparison. This does not score comedy,
+setup/payoff, subtitle linguistic correctness, audio perceptual quality,
+or editor preference; no editing is auto-adopted or published and all
+\`ready=false\` protections remain. A later A/B evaluation can measure
+time-localized audio and caption characteristics on both final outputs
+while treating the extra clip content as a confounder.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
