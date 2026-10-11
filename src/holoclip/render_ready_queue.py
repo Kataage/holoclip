@@ -34,6 +34,7 @@ from holoclip.render_quality_diagnostics import evaluate_local_edit_quality
 from holoclip.render_quality_review import store_review_ledger
 from holoclip.render_review_calibration import archive_incremental_review
 from holoclip.render_source_context import compare_local_source_context
+from holoclip.render_review_triage import store_local_review_triage
 
 DEFAULT_PREVIEW_ROOT = Path("data/render-previews")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
@@ -117,6 +118,12 @@ def _db(queue: Path, *, write: bool) -> sqlite3.Connection | None:
             "output_sha256 TEXT NOT NULL, sampled_event_count INTEGER NOT NULL,"
             "matched_count INTEGER NOT NULL, no_match_count INTEGER NOT NULL,"
             "updated_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS render_review_triage_evidence ("
+            "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
+            "output_sha256 TEXT NOT NULL, candidate_count INTEGER NOT NULL,"
+            "review_first_count INTEGER NOT NULL, updated_at REAL NOT NULL)"
         )
         connection.commit()
         return connection
@@ -340,6 +347,25 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                     raise ValueError("LOCAL_RENDER_AUTO_QA_SOURCE_CONTEXT_STATE_UNTRUSTED")
                 source_context_counts[mapping[item["status"]]] += 1
         report["source_context_counts"] = source_context_counts
+        triage_counts = {"created": 0, "unavailable": 0}
+        triage_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_review_triage_evidence'"
+        ).fetchone() is not None
+        if triage_table:
+            triage_rows = conn.execute(
+                "SELECT status FROM render_review_triage_evidence LIMIT 1001"
+            ).fetchall()
+            if len(triage_rows) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            for item in triage_rows:
+                if item["status"] == "LOCAL_EDIT_TRIAGE_CREATED_UNVERIFIED_EDITORIAL":
+                    triage_counts["created"] += 1
+                elif item["status"] == "LOCAL_EDIT_TRIAGE_UNAVAILABLE":
+                    triage_counts["unavailable"] += 1
+                else:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_TRIAGE_STATE_UNTRUSTED")
+        report["triage_counts"] = triage_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
@@ -405,6 +431,7 @@ def _finish(
     review_evidence: dict | None = None,
     archive_evidence: dict | None = None,
     source_context_evidence: dict | None = None,
+    triage_evidence: dict | None = None,
 ) -> None:
     if state not in {"PAUSED", "QA_PASSED"} or reason not in {
         "NONE", "LOCAL_RENDER_AUTO_QA_VALIDATION_FAILED",
@@ -520,6 +547,17 @@ def _finish(
                     int(source_context_evidence["sampled_event_count"]),
                     int(source_context_evidence["matched_count"]),
                     int(source_context_evidence["no_match_count"]),
+                    time.time(),
+                ),
+            )
+        if state == "QA_PASSED" and triage_evidence is not None:
+            conn.execute(
+                "INSERT INTO render_review_triage_evidence VALUES (?,?,?,?,?,?)",
+                (
+                    job_id, str(triage_evidence["status"]),
+                    str(triage_evidence["sha256"]),
+                    int(triage_evidence["candidate_count"]),
+                    int(triage_evidence["review_first_count"]),
                     time.time(),
                 ),
             )
@@ -715,6 +753,13 @@ def advance_completed_source_renders(
             observed=quality_evidence.get("review_observations", []),
             scan_allowed=time.monotonic() - started_monotonic < 3000.0,
         )
+        # The new triage step only reads small immutable event sidecars;
+        # it sorts review work and issues non-executable inspection advice.
+        triage_evidence = store_local_review_triage(
+            mp4_output=output,
+            review_sha256=str(review_evidence["sha256"]),
+            source_context_sha256=str(source_context_evidence["sha256"]),
+        )
         _finish(
             queue, job_id=job_id, token=token, state="QA_PASSED", reason="NONE",
             output=output, sha256=str(details["output_sha256"]),
@@ -725,7 +770,12 @@ def advance_completed_source_renders(
             review_evidence=review_evidence,
             archive_evidence=archive_evidence,
             source_context_evidence=source_context_evidence,
+            triage_evidence=triage_evidence,
         )
+        report["triage_status"] = triage_evidence["status"]
+        report["triage_sha256"] = triage_evidence["sha256"]
+        report["triage_candidate_count"] = triage_evidence["candidate_count"]
+        report["triage_review_first_count"] = triage_evidence["review_first_count"]
         report["source_context_status"] = source_context_evidence["status"]
         report["source_context_sha256"] = source_context_evidence["sha256"]
         report["source_context_sampled_event_count"] = (

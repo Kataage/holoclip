@@ -919,3 +919,71 @@ def test_source_context_without_review_is_optional_not_render_failure(
         "sampled": 0, "no_video_events": 0, "unavailable": 1,
     }
     assert counts["counts"]["QA_PASSED"] == 1
+
+
+
+def test_nonexecuting_triage_receipt_has_independent_sqlite_provenance(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    captured = []
+
+    def triage(**kwargs):
+        captured.append(kwargs)
+        return {
+            "status": "LOCAL_EDIT_TRIAGE_CREATED_UNVERIFIED_EDITORIAL",
+            "sha256": "d" * 64,
+            "candidate_count": 2,
+            "review_first_count": 1,
+        }
+
+    monkeypatch.setattr(ready, "store_local_review_triage", triage)
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["triage_status"] == "LOCAL_EDIT_TRIAGE_CREATED_UNVERIFIED_EDITORIAL"
+    assert result["triage_candidate_count"] == 2
+    assert result["triage_review_first_count"] == 1
+    assert result["triage_sha256"] == "d" * 64
+    assert captured == [{
+        "mp4_output": root / f"{receipt['job_id']}.mp4",
+        "review_sha256": result["review_sha256"],
+        "source_context_sha256": result["source_context_sha256"],
+    }]
+    with sqlite3.connect(queue) as connection:
+        row = connection.execute(
+            "SELECT status,output_sha256,candidate_count,review_first_count "
+            "FROM render_review_triage_evidence WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()
+        state = connection.execute(
+            "SELECT state FROM render_jobs WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()[0]
+    assert row == ("LOCAL_EDIT_TRIAGE_CREATED_UNVERIFIED_EDITORIAL", "d" * 64, 2, 1)
+    assert state == "QA_PASSED"
+    overview = ready.inspect_completed_source_renders(queue=queue)
+    assert overview["triage_counts"] == {"created": 1, "unavailable": 0}
+    assert overview["source_complete_count"] == 1
+    assert result["ready"] is False
+
+
+def test_missing_triage_evidence_cannot_invalidate_render_qa(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["triage_status"] == "LOCAL_EDIT_TRIAGE_UNAVAILABLE"
+    assert result["triage_candidate_count"] == 0
+    assert (root / f"{receipt['job_id']}.mp4").exists()
+    stats = ready.inspect_completed_source_renders(queue=queue)
+    assert stats["triage_counts"] == {"created": 0, "unavailable": 1}
+    assert stats["counts"]["QA_PASSED"] == 1
