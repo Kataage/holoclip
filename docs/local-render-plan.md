@@ -198,6 +198,32 @@ are approximate, never a frame-accurate edit gold; all report-level
 \`ready\`, \`auto_adoption_allowed\` and held-out qualification guards remain
 false. No network, yt-dlp, FFmpeg, re-encode or automatic publication.
 
+### Page-local inspection queue (PR #226)
+
+The same \`render-same-source-geometry\` read-only command now returns
+\`inspection_queue\` automatically. It lists **at most ten render jobs**
+from the current \`--after-job-id\` / \`--max-jobs\` page. Each job contributes
+only its largest observable discrepancy against one trusted human example,
+so many human clips for a single original cannot multiply inspection votes.
+The ordering first uses the sum of source seconds selected by only one side.
+Ties are resolved by verified exact-span playback-order differences, source
+clock backtrack-count differences and stable anonymized identifiers.
+
+The queue includes source-clock intervals and reason codes for manual or
+subsequent independent **inspection only**. Exact playback-order difference
+can be stated only if both ordered lists contain precisely the same source
+interval multiset; otherwise its value is null, not a guessed result.
+Training examples are never independent validation, absence of a gap is not
+a creative-quality pass, and high disagreement is not an editing error.
+The original \`QA_PASSED\` means A/V technical QA, not human editorial QA.
+If training examples overlap reserved holdout sources, no inspection entries
+survive. Missing holdout state remains \`source_reservation_metadata_verified=false\`.
+
+No extra command, manual datasets, source download or FFmpeg process is
+required. Opt-in \`--execute --output <new>.json\` saves a create-only immutable
+report, including the queue. \`ready=false\` and \`auto_adoption_allowed=false\`
+are unchanged. This is bounded per page, **not a global all-stream ranking**.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
