@@ -196,12 +196,14 @@ def _produce(*, base: Path, base_sha: str,
         if len(encoded) > _MAX_RECEIPT:
             raise ValueError("LOCAL_AB_RECEIPT_TOO_LARGE")
         (temp / "receipt.json").write_bytes(encoded)
-        # Create-only publish of this *new directory* on the same volume.
-        # Original MP4 and any generated full-length video are never moved.
-        if destination.exists():
-            raise ValueError("LOCAL_AB_PREVIEW_ALREADY_EXISTS")
+        # Reserve a fresh directory using mkdir(exist_ok=False), then
+        # hardlink only our own temporary samples. Existing directories
+        # cannot be clobbered on POSIX or Windows even under a race.
+        # Receipt is linked LAST: absent receipt means incomplete/unqualified.
         try:
-            os.rename(temp, destination)
+            destination.mkdir()
+            for name in ("before.mp4", "after.mp4", "receipt.json"):
+                os.link(temp / name, destination / name)
         except OSError as exc:
             raise ValueError("LOCAL_AB_COMMIT_UNAVAILABLE") from exc
         return {
