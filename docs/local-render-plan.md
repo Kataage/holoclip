@@ -419,6 +419,47 @@ using the earlier evidence schema are not promoted to the new v2 status;
 regenerate fresh opt-in evidence instead of silently reusing stale receipts.
 No automatic edit or publication is enabled; \`ready=false\`.
 
+### Real human-aligned omission probes from existing local ASR (PR #233)
+
+\`uv run holoclip render-real-source-omission-probe\` analyzes **existing
+trusted human-made clip alignment segments** and any already-cached
+original-source timed ASR. It does not depend on the output render queue,
+so human-made examples can be evaluated *before* Holoclip has rendered a
+corresponding candidate. Source metadata and the trusted learning-quality
+decision are rechecked against canonical YouTube IDs; training/holdout
+collisions or absent holdout reservations block the experiment globally.
+No source, audio, clip or model files are downloaded.
+
+For each automatically eligible clip, reconstruct the human clip's first,
+intermediate and final aligned source segments. Build virtual
+counterfactual edits removing each positional group, preserving the other
+groups in playback order. Measure exact union-corrected **source seconds
+lost** from the reference selection, even when the original alignment
+replays a source interval. At most three local-ASR utterances per group
+are hashed and clock-checked to record how much of their source-time
+coverage survives each removal. Original human clip text, ASR speech and
+raw source video IDs are omitted from the report; corpus/transcript/
+holdout evidence digests and hashed references remain available.
+The default is read-only JSON on stdout; \`--output <new>.json\`
+optionally creates a report without overwriting an existing file.
+Use \`--max-examples\` (maximum 20) to bound the scan output.
+
+**Interpretation is intentionally limited:** \`opening_aligned\` is the
+first aligned part of a human clip, NOT a verified story setup.
+\`closing_aligned\` is NOT a guaranteed payoff/reaction. Source timing
+from local ASR is unverified audio, and these observations use **in-sample
+training references**, never independent validation gold. Missing,
+ambiguous, mismatched, symlinked or invalid transcripts are excluded
+with explicit counts, not guessed. There is no model inference,
+semantic role accuracy score, precision/recall, autonomous repair,
+new operator labels, yt-dlp, FFmpeg, Docker, paid service or upload.
+The report is always \`ready=false\`.
+
+The next legitimate accuracy step will need independent narrative
+role-time annotations or blind judgments on unseen streams; a high rate
+of agreement with these human selection intervals alone is not evidence
+that Holoclip understands jokes or outputs better videos.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
