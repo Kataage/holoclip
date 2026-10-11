@@ -12,7 +12,7 @@ from pathlib import Path
 
 from holoclip.render_real_semantic_contrast import (
     _PROMPT, _MAX_CASES, _fingerprint, _validate_model_contrasts,
-    prepare_real_semantic_contrasts, preview_real_semantic_contrasts,
+    preview_real_semantic_contrasts,
 )
 from holoclip.render_same_source_semantic_review import _clean
 
