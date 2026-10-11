@@ -35,6 +35,7 @@ from holoclip.render_quality_review import store_review_ledger
 from holoclip.render_review_calibration import archive_incremental_review
 from holoclip.render_source_context import compare_local_source_context
 from holoclip.render_review_triage import store_local_review_triage
+from holoclip.render_audio_ab_preview import create_audio_ab_preview
 
 DEFAULT_PREVIEW_ROOT = Path("data/render-previews")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
@@ -124,6 +125,13 @@ def _db(queue: Path, *, write: bool) -> sqlite3.Connection | None:
             "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
             "output_sha256 TEXT NOT NULL, candidate_count INTEGER NOT NULL,"
             "review_first_count INTEGER NOT NULL, updated_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS render_audio_ab_preview_evidence ("
+            "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
+            "receipt_sha256 TEXT NOT NULL, sample_count INTEGER NOT NULL,"
+            "baseline_recovery_verified INTEGER NOT NULL,"
+            "updated_at REAL NOT NULL)"
         )
         connection.commit()
         return connection
@@ -366,6 +374,27 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                 else:
                     raise ValueError("LOCAL_RENDER_AUTO_QA_TRIAGE_STATE_UNTRUSTED")
         report["triage_counts"] = triage_counts
+        ab_counts = {"created": 0, "not_applicable": 0, "unavailable": 0}
+        ab_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_audio_ab_preview_evidence'"
+        ).fetchone() is not None
+        if ab_table:
+            ab_rows = conn.execute(
+                "SELECT status FROM render_audio_ab_preview_evidence LIMIT 1001"
+            ).fetchall()
+            if len(ab_rows) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            mapping = {
+                "LOCAL_AB_PREVIEW_CREATED_UNVERIFIED_EDITORIAL": "created",
+                "LOCAL_AB_PREVIEW_NOT_APPLICABLE": "not_applicable",
+                "LOCAL_AB_PREVIEW_UNAVAILABLE": "unavailable",
+            }
+            for item in ab_rows:
+                if item["status"] not in mapping:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_AB_STATE_UNTRUSTED")
+                ab_counts[mapping[item["status"]]] += 1
+        report["ab_preview_counts"] = ab_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
@@ -432,6 +461,7 @@ def _finish(
     archive_evidence: dict | None = None,
     source_context_evidence: dict | None = None,
     triage_evidence: dict | None = None,
+    ab_evidence: dict | None = None,
 ) -> None:
     if state not in {"PAUSED", "QA_PASSED"} or reason not in {
         "NONE", "LOCAL_RENDER_AUTO_QA_VALIDATION_FAILED",
@@ -558,6 +588,17 @@ def _finish(
                     str(triage_evidence["sha256"]),
                     int(triage_evidence["candidate_count"]),
                     int(triage_evidence["review_first_count"]),
+                    time.time(),
+                ),
+            )
+        if state == "QA_PASSED" and ab_evidence is not None:
+            conn.execute(
+                "INSERT INTO render_audio_ab_preview_evidence VALUES (?,?,?,?,?,?)",
+                (
+                    job_id, str(ab_evidence["status"]),
+                    str(ab_evidence["sha256"]),
+                    int(ab_evidence["sample_count"]),
+                    int(bool(ab_evidence["baseline_recovery_verified"])),
                     time.time(),
                 ),
             )
@@ -760,6 +801,15 @@ def advance_completed_source_renders(
             review_sha256=str(review_evidence["sha256"]),
             source_context_sha256=str(source_context_evidence["sha256"]),
         )
+        # Only a previously measured audio_peak can yield a bounded
+        # experimental A/B audio snippet. All other warnings stay advisory.
+        # This never replaces an original, leveled or captioned full MP4.
+        ab_evidence = create_audio_ab_preview(
+            mp4_output=output, video_sha256=str(details["output_sha256"]),
+            final_output=final_output, final_sha256=final_sha,
+            triage_sha256=str(triage_evidence["sha256"]),
+            scan_allowed=time.monotonic() - started_monotonic < 3000.0,
+        )
         _finish(
             queue, job_id=job_id, token=token, state="QA_PASSED", reason="NONE",
             output=output, sha256=str(details["output_sha256"]),
@@ -771,6 +821,13 @@ def advance_completed_source_renders(
             archive_evidence=archive_evidence,
             source_context_evidence=source_context_evidence,
             triage_evidence=triage_evidence,
+            ab_evidence=ab_evidence,
+        )
+        report["ab_preview_status"] = ab_evidence["status"]
+        report["ab_preview_sha256"] = ab_evidence["sha256"]
+        report["ab_preview_sample_count"] = ab_evidence["sample_count"]
+        report["ab_preview_baseline_recovery_verified"] = (
+            ab_evidence["baseline_recovery_verified"]
         )
         report["triage_status"] = triage_evidence["status"]
         report["triage_sha256"] = triage_evidence["sha256"]
