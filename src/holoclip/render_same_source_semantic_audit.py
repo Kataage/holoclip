@@ -124,6 +124,17 @@ def audit_semantic_receipt(
     if not isinstance(receipt, dict):
         _reject(output, "RECEIPT_NOT_OBJECT")
         return output
+    receipt_fields = {
+        "version", "status", "cases", "max_cases",
+        "source_comparison_version", "external_inference_performed",
+        "human_training_references_not_holdout_gold",
+        "model_statements_are_hypotheses_not_quality_labels",
+        "publication_performed", "auto_edit_allowed", "ready",
+        "production_ready", "hypotheses", "evidence_sha256",
+    }
+    if set(receipt) != receipt_fields:
+        _reject(output, "RECEIPT_FIELDS_INVALID")
+        return output
     gate_fields = {
         "status": _RECEIPT_STATES,
         "ready": {False},
