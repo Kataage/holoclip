@@ -120,7 +120,7 @@ def test_no_ffmpeg_blocks_no_receipt(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("invalid", [
-    (-20.0, -6.0),
+    (8.0, -6.0),
     (-80.0, -90.0),
     (float("nan"), -6.0),
     (-30.0, float("inf")),
