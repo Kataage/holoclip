@@ -590,6 +590,52 @@ humor, completion, human preference or actual precision/recall. Neither
 dry-run nor model hypothesis can automatically edit, qualify, accept or
 publish a clip. \`real_semantic_accuracy=null\`, no gold, \`ready=false\`.
 
+### Real-ASR omission hypothesis ordering-sensitivity probe (PR #237)
+
+\`uv run holoclip render-real-semantic-order-sensitivity\` performs
+an **offline, ASR-text-redacted default preview** of the existing,
+source-diverse real human-vs-omission comparison cases (PR #236).
+It reports no arbitrary fabricated role-time labels or quality scores.
+By default only one existing source is selected to avoid consuming quota.
+This command does not download media, transcribe, render, or call models
+unless explicitly opted in.
+
+With \`HOLOCLIP_DATA_CLASS=public\` and
+\`--execute --output <new-filename>.json\`, the existing qualified
+\`MeshLLMClient\` is asked **twice per selected source**, at most three
+sources / **six total requests**. The second prompt reverses the
+presentational order of both source-timed ASR excerpts and omission
+variants, leaving the evidence IDs, text, original timestamps,
+source-clock LOST/RETAINED/PARTIAL/UNSELECTED classifications and
+in-sample content otherwise unchanged. Both answers are independently
+validated using PR #236's strict verbatim lost-and-retained quotation,
+variant completeness, correct source-clock effect and no approval
+field checks. If either response is malformed, there is **no partial
+report**, preserving the create-only safety boundary.
+
+The result compares statuses and cited evidence IDs plus SHA-256 hashes
+of exact accepted quotes for each original positional omission.
+Provider and model identity are captured from the existing route
+provenance on **both** calls; when missing or different, the item is
+\`MODEL_ROUTE_NOT_COMPARABLE\` and excluded from comparable counts.
+Comparable pairs are classified as
+\`ORDER_INVARIANT_WITHIN_TWO_RUNS\`,
+\`ORDER_SENSITIVE_CITATION_CHANGE\`, or
+\`ORDER_SENSITIVE_STATUS_CHANGE\`. Source ASR excerpts, literal
+validated quotations, raw YouTube IDs, original file paths and the
+model's unconstrained output are **not** copied into the report.
+Existing report paths are preflighted **before provider calls** and
+output files are immutable/create-only.
+
+These are at most two order-dependent samples of an **unverified model
+hypothesis**. Agreement does not establish semantic correctness,
+narrative comprehension, ASR accuracy, human edit preference, funny
+videos, reliability under other prompts, or production fitness.
+Disagreement is useful diagnostic evidence; model-route changes are
+not counted as valid consistency comparisons. The gate always keeps
+\`semantic_accuracy=null\`, \`independent_gold_available=false\`,
+\`ready=false\`, and does not edit or publish any video.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
