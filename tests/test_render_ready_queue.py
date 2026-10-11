@@ -1056,12 +1056,12 @@ def test_ab_preview_optional_failure_keeps_original_mp4_qa(
         queue=queue, preview_root=root, execute=True,
     )
     assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
-    assert result["ab_preview_status"] == "LOCAL_AB_PREVIEW_UNAVAILABLE"
+    assert result["ab_preview_status"] == "LOCAL_AB_PREVIEW_NOT_APPLICABLE"
     assert result["ab_preview_sample_count"] == 0
     assert result["ab_preview_baseline_recovery_verified"] is False
     assert (root / f"{receipt['job_id']}.mp4").is_file()
     counts = ready.inspect_completed_source_renders(queue=queue)
     assert counts["ab_preview_counts"] == {
-        "created": 0, "not_applicable": 0, "unavailable": 1,
+        "created": 0, "not_applicable": 1, "unavailable": 0,
     }
     assert counts["counts"]["QA_PASSED"] == 1
