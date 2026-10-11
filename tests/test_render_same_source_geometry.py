@@ -711,8 +711,8 @@ def test_holdout_conflict_blocks_all_handoff_analysis(tmp_path):
     root.mkdir()
     (root / f"{VIDEO}.json").write_text(json.dumps({
         "video_id": VIDEO,
-        "segments": [{"start": 12, "end": 14, "text": "blocked"}],
+        "segments": [{"start": 12, "end": 14, "text": "ASR_CANARY_DO_NOT_EXPOSE_9274"}],
     }), encoding="utf-8")
     report = geo.compare_same_source_edit_geometry(**params)
     assert report["inspection_queue"]["results"] == []
-    assert "blocked" not in json.dumps(report)
+    assert "ASR_CANARY_DO_NOT_EXPOSE_9274" not in json.dumps(report)
