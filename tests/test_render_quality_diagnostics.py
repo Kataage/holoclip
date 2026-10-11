@@ -103,7 +103,7 @@ def test_missing_subtitle_does_not_claim_verified_readability(tmp_path, monkeypa
     source, final, _ = _case(tmp_path, transcript=False)
     monkeypatch.setattr(diag, "_probe", lambda p: (4.0, True, True))
     monkeypatch.setattr(diag.shutil, "which", lambda p: p)
-    monkeypatch.setattr(diag, "_video_events", lambda *args: (0, 0))
+    monkeypatch.setattr(diag, "_video_events", lambda *args, **kwargs: (0, 0, []))
     monkeypatch.setattr(diag, "_measure", lambda *args: (-23.0, -3.0))
     report = _invoke(source, final, None)
     assert report["status"] == "LOCAL_EDIT_DIAGNOSTIC_MEASURED_PARTIAL"
@@ -116,7 +116,7 @@ def test_measured_flags_not_automatically_fixed(tmp_path, monkeypatch):
     source, final, srt_sha = _case(tmp_path)
     monkeypatch.setattr(diag, "_probe", lambda p: (4.0, True, True))
     monkeypatch.setattr(diag.shutil, "which", lambda p: p)
-    monkeypatch.setattr(diag, "_video_events", lambda *args: (2, 1))
+    monkeypatch.setattr(diag, "_video_events", lambda *args, **kwargs: (2, 1, []))
     monkeypatch.setattr(diag, "_measure", lambda *args: (-42.0, -0.2))
     before = (source.read_bytes(), final.read_bytes())
     report = _invoke(source, final, srt_sha)
@@ -135,7 +135,7 @@ def test_no_flags_still_unqualified_editorially(tmp_path, monkeypatch):
     source, final, srt_sha = _case(tmp_path)
     monkeypatch.setattr(diag, "_probe", lambda p: (4.0, True, True))
     monkeypatch.setattr(diag.shutil, "which", lambda p: p)
-    monkeypatch.setattr(diag, "_video_events", lambda *args: (0, 0))
+    monkeypatch.setattr(diag, "_video_events", lambda *args, **kwargs: (0, 0, []))
     monkeypatch.setattr(diag, "_measure", lambda *args: (-22.0, -2.5))
     report = _invoke(source, final, srt_sha)
     assert report["status"] == "LOCAL_EDIT_DIAGNOSTIC_MEASURED_NO_FLAGS"
@@ -177,7 +177,7 @@ def test_subtitle_change_after_receipt_never_treated_as_valid(tmp_path, monkeypa
     source.with_suffix(".srt").write_text("altered operator text", encoding="utf-8")
     monkeypatch.setattr(diag, "_probe", lambda p: (4.0, True, True))
     monkeypatch.setattr(diag.shutil, "which", lambda p: p)
-    monkeypatch.setattr(diag, "_video_events", lambda *args: (0, 0))
+    monkeypatch.setattr(diag, "_video_events", lambda *args, **kwargs: (0, 0, []))
     monkeypatch.setattr(diag, "_measure", lambda *args: (-22.0, -2.0))
     assert _invoke(source, final, srt_sha)["status"] == "LOCAL_EDIT_DIAGNOSTIC_UNAVAILABLE"
 
@@ -229,3 +229,41 @@ def test_scheduler_deadline_skips_diagnostics_without_touching_media(
     assert report["status"] == "LOCAL_EDIT_DIAGNOSTIC_UNAVAILABLE"
     assert report["ready"] is False and report["publication_performed"] is False
     assert source.read_bytes() == b"mock local MP4 bytes"
+
+
+def test_video_detail_retains_positions_without_media_text(tmp_path, monkeypatch):
+    stderr = (
+        b"[blackdetect] black_start:0.5 black_end:1.7 black_duration:1.2\n"
+        b"[freezedetect] lavfi.freezedetect.freeze_start:2.5\n"
+    )
+    monkeypatch.setattr(diag.subprocess, "run", lambda *args, **kwargs:
+                        SimpleNamespace(returncode=0, stderr=stderr))
+    black, freeze, issues = diag._video_events(
+        "ffmpeg", tmp_path / "base.mp4", 4.0, detailed=True,
+    )
+    assert black == freeze == 1
+    assert issues == [
+        {"kind": "blackout", "start_seconds": 0.5, "end_seconds": 1.7},
+        {"kind": "freeze", "start_seconds": 2.5, "end_seconds": None},
+    ]
+
+
+def test_caption_details_have_timestamps_and_numbers_without_transcript(tmp_path):
+    source, final, sha = _case(tmp_path)
+    subtitle = source.with_suffix(".srt")
+    subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:00,500\n" + "ありがとう" * 20 + "\n",
+        encoding="utf-8",
+    )
+    checked, fast, overflow, speed, issues = diag._subtitle_flags(
+        base=source, caption_sha256=_hash(subtitle),
+        duration=4.0, detailed=True,
+    )
+    assert checked and fast == 1 and overflow == 1 and speed > 20
+    assert issues == [
+        {"kind": "fast_subtitle", "start_seconds": 0.0,
+         "end_seconds": 0.5, "cue_number": 1},
+        {"kind": "wide_subtitle", "start_seconds": 0.0,
+         "end_seconds": 0.5, "cue_number": 1},
+    ]
+    assert "ありがとう" not in str(issues)
