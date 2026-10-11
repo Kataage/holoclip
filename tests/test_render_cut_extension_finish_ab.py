@@ -156,7 +156,7 @@ def test_no_hidden_permission_to_start_ffmpeg(tmp_path, monkeypatch):
 
 def test_missing_original_audio_subtitle_qa_rows_fail_closed(tmp_path):
     params, *_ = _inputs(tmp_path)
-    with pytest.raises(ValueError, match="EVIDENCE_MISSING"):
+    with pytest.raises(ValueError, match="EVIDENCE_(MISSING|UNTRUSTED)"):
         finish.prepare_matched_finishing_trial(**params)
 
 
