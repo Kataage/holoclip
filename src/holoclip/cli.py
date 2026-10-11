@@ -166,6 +166,10 @@ from holoclip.render_human_edit_context import (
     DEFAULT_GROWTH_STATE, DEFAULT_OUTPUT as DEFAULT_HUMAN_CONTEXT_OUTPUT,
     export_human_edit_context,
 )
+from holoclip.render_same_source_geometry import (
+    DEFAULT_OUTPUT as DEFAULT_SAME_SOURCE_OUTPUT,
+    export_same_source_edit_geometry,
+)
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
 )
@@ -1495,6 +1499,36 @@ def render_ab_human_context_command(
         }))
         raise typer.Exit(6) from exc
     typer.echo(json.dumps(report, sort_keys=True, ensure_ascii=False))
+
+
+@app.command("render-same-source-geometry")
+def render_same_source_geometry_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    output: Path = typer.Option(DEFAULT_SAME_SOURCE_OUTPUT, "--output"),
+    after_job_id: str | None = typer.Option(
+        None, "--after-job-id", help="Continue after a prior page's next_cursor."),
+    max_jobs: int = typer.Option(40, "--max-jobs", min=1, max=40),
+    execute: bool = typer.Option(
+        False, "--execute", help="Save only an immutable offline comparison report."),
+) -> None:
+    """Compare same original-source edit selections without human quality claims."""
+    try:
+        report = export_same_source_edit_geometry(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            output=output, after_job_id=after_job_id, max_jobs=max_jobs,
+            execute=execute,
+        )
+    except (OSError, ValueError, UnicodeError, TypeError, sqlite3.Error) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_SAME_SOURCE_GEOMETRY_BLOCKED",
+            "ready": False, "production_ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
 
 @app.command("render-source-queue-enqueue")

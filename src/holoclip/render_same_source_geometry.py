@@ -1,0 +1,390 @@
+"""Source-ID-grounded edit geometry comparison, not subjective quality gold.
+
+Read only the existing completed local render queue, canonical source metadata,
+trusted human alignment records and holdout reservation metadata. Compare
+interval geometry only for the EXACT same independently identified YouTube
+source stream. Training examples remain in-sample references, never holdout gold.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import os
+import re
+import sqlite3
+import statistics
+import tempfile
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+from holoclip.corpus_growth import CorpusGrowthState
+from holoclip.domain import ClipTimeline, SourcePlatform
+from holoclip.example_quality import LearningQuality, evaluate_human_example_learning_quality
+from holoclip.examples import human_clip_identity, load_human_clip_store
+from holoclip.render_human_edit_context import (
+    DEFAULT_GROWTH_STATE, DEFAULT_HUMAN_STORE, DEFAULT_AB_ROOT,
+    _read_bounded,
+)
+from holoclip.render_plan import _no_links
+from holoclip.render_source_queue import DEFAULT_QUEUE, _connect
+from holoclip.render_source_resolver import _canonical_assets
+
+VERSION = "holoclip-same-source-edit-geometry-v1"
+DEFAULT_OUTPUT = Path("data/render-previews/same-source-edit-geometry.json")
+_SHA = re.compile(r"[0-9a-f]{64}\Z")
+_JOB = re.compile(r"renderqueue_[0-9a-f]{32}\Z")
+_VIDEO = re.compile(r"[A-Za-z0-9_-]{11}\Z")
+_MAX_PAGE = 40
+_MAX_EXAMPLES = 1000
+_MAX_STORE_BYTES = 8 * 1024 * 1024
+_MAX_STATE_BYTES = 4 * 1024 * 1024
+_MAX_TIMELINE = 1_048_576
+_MAX_RESULTS = 65536
+_MAX_MATCHES = 20
+_MAX_INVENTORY = 1000
+
+
+def _source_video_id(url: str | None) -> str | None:
+    if not isinstance(url, str) or len(url) > 2048:
+        return None
+    value = urlparse(url)
+    if value.scheme != "https" or value.username or value.password or value.port:
+        return None
+    host = (value.hostname or "").lower()
+    identifier = None
+    if host in {"www.youtube.com", "youtube.com", "m.youtube.com"}:
+        if value.path == "/watch":
+            qs = parse_qs(value.query)
+            if len(qs.get("v", [])) == 1:
+                identifier = qs["v"][0]
+        elif value.path.startswith(("/live/", "/shorts/")):
+            parts = value.path.strip("/").split("/")
+            if len(parts) == 2:
+                identifier = parts[1]
+    elif host in {"youtu.be", "www.youtu.be"}:
+        parts = value.path.strip("/").split("/")
+        if len(parts) == 1:
+            identifier = parts[0]
+    return identifier if identifier and _VIDEO.fullmatch(identifier) else None
+
+
+def _ranges_union(spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    out: list[tuple[float, float]] = []
+    for start, end in sorted(spans):
+        if (not math.isfinite(start) or not math.isfinite(end)
+                or not 0 <= start < end <= 24 * 3600):
+            raise ValueError("LOCAL_SAME_SOURCE_INTERVAL_INVALID")
+        if out and start <= out[-1][1]:
+            out[-1] = (out[-1][0], max(end, out[-1][1]))
+        else:
+            out.append((start, end))
+    return out
+
+
+def _seconds(spans: list[tuple[float, float]]) -> float:
+    return sum(e - s for s, e in spans)
+
+
+def _intersection(left: list[tuple[float, float]],
+                  right: list[tuple[float, float]]) -> float:
+    i = j = 0
+    total = 0.0
+    while i < len(left) and j < len(right):
+        a, b = left[i]
+        c, d = right[j]
+        total += max(0.0, min(b, d) - max(a, c))
+        if b <= d:
+            i += 1
+        else:
+            j += 1
+    return total
+
+
+def _source_seams(spans: list[tuple[float, float]]) -> list[float]:
+    # A gap in aligned *source* ranges can indicate an omitted source section.
+    # It is NOT ground truth for the exact human cut frame or its intent.
+    ordered = sorted(spans)
+    return [
+        nxt[0] for prev, nxt in zip(ordered, ordered[1:])
+        if nxt[0] - prev[1] > 0.5
+    ]
+
+
+def _geometry(generated: list[tuple[float, float]],
+              human: list[tuple[float, float]]) -> dict:
+    gen, ref = _ranges_union(generated), _ranges_union(human)
+    gsec, rsec = _seconds(gen), _seconds(ref)
+    if gsec <= 0 or rsec <= 0:
+        raise ValueError("LOCAL_SAME_SOURCE_EMPTY_INTERVALS")
+    both = _intersection(gen, ref)
+    gen_seams, ref_seams = _source_seams(generated), _source_seams(human)
+    diffs = [min(abs(g - h) for h in ref_seams) for g in gen_seams] if ref_seams else []
+    return {
+        "generated_unique_source_seconds": round(gsec, 3),
+        "human_aligned_unique_source_seconds": round(rsec, 3),
+        "shared_source_seconds": round(both, 3),
+        "generated_selection_overlap_fraction": round(both / gsec, 6),
+        "human_aligned_coverage_fraction": round(both / rsec, 6),
+        "selected_source_jaccard": round(both / (gsec + rsec - both), 6),
+        "generated_only_source_seconds": round(max(0.0, gsec - both), 3),
+        "human_only_source_seconds": round(max(0.0, rsec - both), 3),
+        "generated_observed_source_gaps": len(gen_seams),
+        "human_observed_source_gaps": len(ref_seams),
+        "nearest_human_gap_start_distance_seconds": (
+            round(statistics.median(diffs), 3) if diffs else None
+        ),
+        "alignment_is_approximate_not_frame_accurate": True,
+        "creative_quality_label": None,
+    }
+
+
+def _human_by_source(store: Path, reserved: set[str]) -> tuple[dict, dict]:
+    available = store.exists()
+    if available:
+        raw = _read_bounded(store, _MAX_STORE_BYTES)
+        examples = load_human_clip_store(store)
+    else:
+        raw = b""
+        examples = []
+    if len(examples) > _MAX_EXAMPLES:
+        raise ValueError("LOCAL_SAME_SOURCE_CORPUS_TOO_LARGE")
+    grouped: dict[str, list] = {}
+    seen: set[str] = set()
+    counts = {
+        "available": available,
+        "corpus_sha256": hashlib.sha256(raw).hexdigest() if available else None,
+        "total_examples": len(examples),
+        "trusted_same_source_eligible": 0,
+        "excluded_alignment_untrusted": 0,
+        "excluded_unverified_source_identity": 0,
+        "excluded_reserved": 0,
+        "holdout_training_conflicts": 0,
+    }
+    all_streams = {x.stream_id for x in examples if x.stream_id}
+    counts["holdout_training_conflicts"] = len(all_streams & reserved)
+    for e in examples:
+        if evaluate_human_example_learning_quality(e).decision is not LearningQuality.TRUSTED:
+            counts["excluded_alignment_untrusted"] += 1
+            continue
+        identity = human_clip_identity(e.clip_url)
+        if identity in seen:
+            raise ValueError("LOCAL_SAME_SOURCE_DUPLICATE_TRUSTED_CLIP")
+        seen.add(identity)
+        stream = e.stream_id
+        if (not stream or not _VIDEO.fullmatch(stream)
+                or _source_video_id(e.source_url) != stream
+                or not 1 <= len(e.alignment_segments) <= 200):
+            counts["excluded_unverified_source_identity"] += 1
+            continue
+        if stream in reserved:
+            counts["excluded_reserved"] += 1
+            continue
+        grouped.setdefault(stream, []).append(e)
+        counts["trusted_same_source_eligible"] += 1
+    return grouped, counts
+
+
+def _reserve_state(path: Path) -> tuple[set[str], str | None, bool]:
+    if not path.exists():
+        return set(), None, False
+    data = _read_bounded(path, _MAX_STATE_BYTES)
+    state = CorpusGrowthState.model_validate_json(data)
+    reserved = set(state.holdout_stream_ids)
+    reserved.update(
+        x.source_stream_id for x in state.items.values()
+        if x.source_stream_id and x.status in {"holdout_reserved", "split_conflict"}
+    )
+    return reserved, hashlib.sha256(data).hexdigest(), True
+
+
+def compare_same_source_edit_geometry(
+    *, queue: Path = DEFAULT_QUEUE,
+    example_store: Path = DEFAULT_HUMAN_STORE,
+    growth_state: Path = DEFAULT_GROWTH_STATE,
+    preview_root: Path = DEFAULT_AB_ROOT,
+    after_job_id: str | None = None,
+    max_jobs: int = _MAX_PAGE,
+) -> dict:
+    """Read-only, source-ID-matched, bounded and explicitly in-sample diagnostic."""
+    if (type(max_jobs) is not int or not 1 <= max_jobs <= _MAX_PAGE
+            or after_job_id is not None and not _JOB.fullmatch(after_job_id)):
+        raise ValueError("LOCAL_SAME_SOURCE_CURSOR_OR_LIMIT_INVALID")
+    preview = _no_links(preview_root)
+    example_store = _no_links(example_store)
+    growth_state = _no_links(growth_state)
+    reserved, growth_sha, holdout_known = _reserve_state(growth_state)
+    grouped, corpus = _human_by_source(example_store, reserved)
+    report = {
+        "version": VERSION,
+        "status": "LOCAL_SAME_SOURCE_NO_COMPLETED_RENDER_JOBS",
+        "after_job_id": after_job_id,
+        "next_cursor": None, "has_more": False,
+        "window_job_count": 0, "inventory_job_count": 0,
+        "same_source_compared_jobs": 0, "same_source_pairs": 0,
+        "unmatched_source_jobs": 0, "multi_source_jobs_excluded": 0,
+        "ineligible_or_stale_jobs": 0,
+        "holdout_source_blocked_jobs": 0,
+        "corpus": corpus,
+        "growth_state_sha256": growth_sha,
+        "holdout_reservation_metadata_available": holdout_known,
+        "results": [],
+        "same_source_identity_method": "canonical_repository_youtube_id",
+        "baseline_mp4_independently_rehashed": False,
+        "human_alignment_is_ground_truth_for_exact_cuts": False,
+        "human_examples_from_training_not_independent_holdout": True,
+        "measured_edit_geometry_not_editorial_quality": True,
+        "heldout_qualification_allowed": False,
+        "precision": None, "recall": None,
+        "ready": False, "production_ready": False,
+        "auto_adoption_allowed": False, "publication_performed": False,
+    }
+    conn = _connect(queue, create=False)
+    if conn is None:
+        return report
+    try:
+        conn.execute("PRAGMA query_only=ON")
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='render_jobs'"
+        ).fetchone()
+        if not exists:
+            return report
+        inventory = conn.execute(
+            "SELECT q.job_id,q.timeline_json,q.database_path,"
+            "r.output_path,r.output_sha256,r.render_plan_id "
+            "FROM queue_jobs q INNER JOIN render_jobs r ON q.job_id=r.job_id "
+            "WHERE q.state='COMPLETE' AND r.state='QA_PASSED' "
+            "ORDER BY q.job_id LIMIT 1001"
+        ).fetchall()
+        if len(inventory) > _MAX_INVENTORY:
+            raise ValueError("LOCAL_SAME_SOURCE_QUEUE_TOO_LARGE")
+        report["inventory_job_count"] = len(inventory)
+        remaining = [
+            row for row in inventory
+            if after_job_id is None or row["job_id"] > after_job_id
+        ]
+        selected = remaining[:max_jobs]
+        report["window_job_count"] = len(selected)
+        report["has_more"] = len(remaining) > max_jobs
+        report["next_cursor"] = selected[-1]["job_id"] if selected else None
+        if selected:
+            report["status"] = "LOCAL_SAME_SOURCE_UNQUALIFIED_GEOMETRY"
+        for row in selected:
+            job = row["job_id"]
+            if not _JOB.fullmatch(job):
+                raise ValueError("LOCAL_SAME_SOURCE_JOB_ID_INVALID")
+            try:
+                timeline_json = row["timeline_json"]
+                if (not isinstance(timeline_json, str)
+                        or len(timeline_json) > _MAX_TIMELINE):
+                    raise ValueError("LOCAL_SAME_SOURCE_TIMELINE_INVALID")
+                timeline = ClipTimeline.model_validate_json(timeline_json)
+                media = _no_links(Path(row["output_path"]))
+                if (media.parent != preview
+                        or media.name != f"{job}.mp4"
+                        or not media.is_file()
+                        or not isinstance(row["output_sha256"], str)
+                        or not _SHA.fullmatch(row["output_sha256"])
+                        or not isinstance(row["render_plan_id"], str)
+                        or not row["render_plan_id"]):
+                    raise ValueError("LOCAL_SAME_SOURCE_QA_MEDIA_UNTRUSTED")
+                source_assets = {x.source_asset_id for x in timeline.segments}
+                if len(source_assets) != 1:
+                    report["multi_source_jobs_excluded"] += 1
+                    continue
+                asset_id = next(iter(source_assets))
+                asset = _canonical_assets(Path(row["database_path"]), {asset_id})[asset_id]
+                if (asset.platform is not SourcePlatform.YOUTUBE
+                        or not _VIDEO.fullmatch(asset.external_id)):
+                    raise ValueError("LOCAL_SAME_SOURCE_SOURCE_ID_UNTRUSTED")
+                stream = asset.external_id
+                if stream in reserved:
+                    report["holdout_source_blocked_jobs"] += 1
+                    continue
+                examples = grouped.get(stream, [])[:_MAX_MATCHES + 1]
+                if not examples:
+                    report["unmatched_source_jobs"] += 1
+                    continue
+                if len(examples) > _MAX_MATCHES:
+                    raise ValueError("LOCAL_SAME_SOURCE_TOO_MANY_HUMAN_MATCHES")
+                generated = [(s.source_start, s.source_end)
+                             for s in sorted(timeline.segments,
+                                             key=lambda x: x.output_order)]
+                pairs = []
+                for human in examples:
+                    aligned = sorted(human.alignment_segments,
+                                     key=lambda s: (s.clip_start, s.clip_end))
+                    original_intervals = [(s.source_start, s.source_end) for s in aligned]
+                    score = _geometry(generated, original_intervals)
+                    pairs.append({
+                        "human_example_id": human.id,
+                        "human_clip_identity_sha256": hashlib.sha256(
+                            human_clip_identity(human.clip_url).encode("utf-8")
+                        ).hexdigest(),
+                        "human_alignment_confidence": human.alignment_confidence,
+                        "geometry": score,
+                        "evaluation_split": "TRAINING_REFERENCE_IN_SAMPLE",
+                    })
+                report["results"].append({
+                    "job_id": job,
+                    "canonical_source_stream_sha256": hashlib.sha256(
+                        stream.encode("utf-8")
+                    ).hexdigest(),
+                    "timeline_sha256": hashlib.sha256(
+                        timeline_json.encode("utf-8")
+                    ).hexdigest(),
+                    "base_sha256_from_earlier_technical_qa": row["output_sha256"],
+                    "human_match_count": len(pairs),
+                    "matches": pairs,
+                    "rendered_media_redecoded": False,
+                    "qualified_editorial_benchmark": False,
+                })
+                report["same_source_compared_jobs"] += 1
+                report["same_source_pairs"] += len(pairs)
+            except (ValueError, OSError, UnicodeError, TypeError, KeyError):
+                report["ineligible_or_stale_jobs"] += 1
+                continue
+    except sqlite3.Error as exc:
+        raise ValueError("LOCAL_SAME_SOURCE_QUEUE_READ_FAILED") from exc
+    finally:
+        conn.close()
+    # Any training/holdout collision remains an explicit global blocker.
+    if corpus["holdout_training_conflicts"]:
+        report["status"] = "LOCAL_SAME_SOURCE_TRAIN_HOLDOUT_CONFLICT"
+        report["results"] = []
+        report["same_source_compared_jobs"] = 0
+        report["same_source_pairs"] = 0
+    return report
+
+
+def export_same_source_edit_geometry(
+    *, output: Path = DEFAULT_OUTPUT, execute: bool = False,
+    queue: Path = DEFAULT_QUEUE,
+    example_store: Path = DEFAULT_HUMAN_STORE,
+    growth_state: Path = DEFAULT_GROWTH_STATE,
+    preview_root: Path = DEFAULT_AB_ROOT,
+    after_job_id: str | None = None,
+    max_jobs: int = _MAX_PAGE,
+) -> dict:
+    report = compare_same_source_edit_geometry(
+        queue=queue, example_store=example_store, growth_state=growth_state,
+        preview_root=preview_root, after_job_id=after_job_id, max_jobs=max_jobs,
+    )
+    if not execute:
+        return report
+    target = _no_links(output)
+    if target.suffix.lower() != ".json" or target.exists():
+        raise ValueError("LOCAL_SAME_SOURCE_OUTPUT_UNSAFE")
+    encoded = (json.dumps(report, ensure_ascii=False, sort_keys=True,
+                          separators=(",", ":")) + "\n").encode("utf-8")
+    if len(encoded) > _MAX_RESULTS:
+        raise ValueError("LOCAL_SAME_SOURCE_REPORT_TOO_LARGE")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".holoclip-same-source-", dir=target.parent) as td:
+        staged = Path(td) / "report.json"
+        staged.write_bytes(encoded)
+        try:
+            os.link(staged, target)
+        except OSError as exc:
+            raise ValueError("LOCAL_SAME_SOURCE_OUTPUT_EXISTS") from exc
+    return report
