@@ -7,7 +7,9 @@ downloaded, decoded, edited or published; bytes are hash-verified locally.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import os
 import re
 import tempfile
@@ -25,6 +27,8 @@ PACK_VERSION = "holoclip-unlabelled-edit-review-pack-v1"
 DEFAULT_EXAMPLE_STORE = Path("data/examples/human_clips.jsonl")
 DEFAULT_REVIEW_ROOT = Path("data/render-previews")
 DEFAULT_PACK = Path("data/render-previews/edit-review-calibration.json")
+ARCHIVE_VERSION = "holoclip-incremental-edit-review-v1"
+ARCHIVE_SUBDIR = "edit-review-queue"
 _JOB = re.compile(r"renderqueue_[a-f0-9]{32}\Z")
 _SHA = re.compile(r"[a-f0-9]{64}\Z")
 _KINDS = frozenset({
@@ -42,6 +46,7 @@ _MAX_CANDIDATES = 30
 _MAX_PER_KIND = 6
 _MAX_MANIFEST = 65536
 _MAX_PACK_BYTES = 65536
+_MAX_DISCOVERED_LEDGERS = 10000
 
 
 def _read_json(path: Path) -> dict:
@@ -173,10 +178,13 @@ def compile_review_calibration_pack(
     example_store: Path = DEFAULT_EXAMPLE_STORE,
     max_jobs: int = _MAX_JOBS,
     max_candidates: int = _MAX_CANDIDATES,
+    after_job_id: str | None = None,
 ) -> dict:
     """Return bounded unlabeled candidate/control pack. No writes or network."""
     if not 1 <= max_jobs <= _MAX_JOBS or not 1 <= max_candidates <= _MAX_CANDIDATES:
         raise ValueError("LOCAL_EDIT_PACK_LIMIT_UNTRUSTED")
+    if after_job_id is not None and not _JOB.fullmatch(after_job_id):
+        raise ValueError("LOCAL_EDIT_PACK_CURSOR_UNTRUSTED")
     root = _no_links(preview_root)
     corpus = _corpus_context(example_store)
     report = {
@@ -184,6 +192,12 @@ def compile_review_calibration_pack(
         "status": "LOCAL_EDIT_PACK_NO_VERIFIED_REVIEWS",
         "reviewed_job_count": 0,
         "stale_media_job_count": 0,
+        "inventory_job_count": 0,
+        "window_job_count": 0,
+        "after_job_id": after_job_id,
+        "next_cursor": None,
+        "has_more": False,
+        "inventory_complete": True,
         "candidate_count": 0,
         "unlabelled_controls": [],
         "candidate_samples": [],
@@ -203,17 +217,33 @@ def compile_review_calibration_pack(
     if not root.is_dir():
         raise ValueError("LOCAL_EDIT_PACK_ROOT_UNTRUSTED")
     ledgers = sorted(root.glob("renderqueue_*.review.json"))
-    if len(ledgers) > max_jobs:
-        # A bounded snapshot is preferable to silently reading an arbitrarily
-        # large backlog and misrepresenting it as comprehensive.
-        report["status"] = "LOCAL_EDIT_PACK_TOO_MANY_REVIEWS"
+    if len(ledgers) > _MAX_DISCOVERED_LEDGERS:
+        report["status"] = "LOCAL_EDIT_PACK_INVENTORY_OVER_LIMIT"
+        report["inventory_complete"] = False
         return report
+    # Stable lexicographic cursor. Walk every job eventually, but hash only
+    # the bounded requested window on this run. A partial page never reports
+    # its anomaly counts as full-inventory quality metrics.
+    remaining = [
+        file for file in ledgers
+        if after_job_id is None or file.name[:-12] > after_job_id
+    ]
+    selected_ledgers = remaining[:max_jobs]
+    report["inventory_job_count"] = len(ledgers)
+    report["window_job_count"] = len(selected_ledgers)
+    report["has_more"] = len(remaining) > max_jobs
+    report["inventory_complete"] = (
+        not report["has_more"] and after_job_id is None
+    )
+    report["next_cursor"] = (
+        selected_ledgers[-1].name[:-12] if selected_ledgers else None
+    )
     per_kind: dict[str, list[dict]] = {kind: [] for kind in sorted(_KINDS)}
     controls: list[dict] = []
     all_counts: Counter[str] = Counter()
     stale = 0
     verified = 0
-    for ledger in ledgers:
+    for ledger in selected_ledgers:
         record = _validate_ledger(root, _no_links(ledger))
         if record is None:
             stale += 1
@@ -269,9 +299,14 @@ def export_review_calibration_pack(
     example_store: Path = DEFAULT_EXAMPLE_STORE,
     output: Path = DEFAULT_PACK,
     execute: bool = False,
+    max_jobs: int = _MAX_JOBS,
+    max_candidates: int = _MAX_CANDIDATES,
+    after_job_id: str | None = None,
 ) -> dict:
     report = compile_review_calibration_pack(
         preview_root=preview_root, example_store=example_store,
+        max_jobs=max_jobs, max_candidates=max_candidates,
+        after_job_id=after_job_id,
     )
     if not execute:
         return report
