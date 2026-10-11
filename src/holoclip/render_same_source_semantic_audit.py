@@ -20,7 +20,7 @@ from holoclip.render_same_source_semantic_review import (
     prepared_fingerprint, validate_semantic_output,
 )
 
-VERSION = "holoclip-semantic-citation-audit-v1"
+VERSION = "holoclip-semantic-citation-audit-v2"
 _MAX_RECEIPT_BYTES = 256 * 1024
 _MAX_AUDIT_BYTES = 16 * 1024
 _MAX_ERRORS = 12
@@ -38,6 +38,8 @@ _REPORT_ITEMS = {
 _CITATION_ITEMS = _REPORT_ITEMS | {
     "source_start_seconds", "source_end_seconds",
     "source_window_selection_side",
+    "source_clock_selection_status", "source_clock_selected_seconds",
+    "actual_audible_speech_or_story_role_verified",
 }
 
 

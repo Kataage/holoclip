@@ -32,7 +32,7 @@ from holoclip.render_source_resolver import _canonical_assets
 from holoclip.render_same_source_transcript_context import attach_inspection_context
 from holoclip.render_same_source_narrative_reference import attach_narrative_reference
 
-VERSION = "holoclip-same-source-edit-geometry-v6"
+VERSION = "holoclip-same-source-edit-geometry-v7"
 DEFAULT_OUTPUT = Path("data/render-previews/same-source-edit-geometry.json")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
@@ -532,6 +532,16 @@ def compare_same_source_edit_geometry(
         stream_by_job=stream_by_job,
         ordered_cuts_by_job=ordered_cuts_by_job,
     )
+    # Keep the actual ordered generated selection, not just 'generated_only'
+    # difference windows. Difference-window sides alone do not prove which
+    # speech survives into the rendered output.
+    for item in report["inspection_queue"]["results"]:
+        cuts = ordered_cuts_by_job.get(item["job_id"], [])
+        if 1 <= len(cuts) <= 200:
+            item["generated_source_intervals"] = [
+                {"source_start_seconds": start, "source_end_seconds": end}
+                for start, end in cuts
+            ]
     return report
 
 
