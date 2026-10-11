@@ -20,7 +20,7 @@ from holoclip.render_same_source_semantic_review import (
     prepared_fingerprint, validate_semantic_output,
 )
 
-VERSION = "holoclip-semantic-citation-audit-v1"
+VERSION = "holoclip-semantic-citation-audit-v2"
 _MAX_RECEIPT_BYTES = 256 * 1024
 _MAX_AUDIT_BYTES = 16 * 1024
 _MAX_ERRORS = 12
