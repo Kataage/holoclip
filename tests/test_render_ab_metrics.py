@@ -218,7 +218,8 @@ def test_video_ssim_scan_fixed_local_protocol_with_timeout(tmp_path, monkeypatch
         intercepted.append((cmd, kwargs))
         return type("Result", (), {
             "returncode": 0,
-            "stderr": b"[Parsed_ssim_0] SSIM Y:0.90 U:1.0 V:0.90 All:0.937500 (12.0)",
+            "stderr": (b"[Parsed_ssim_0] SSIM Y:0.90 (10.0) U:1.0 (inf) "
+                       b"V:0.90 (10.0) All:0.937500 (12.0)"),
         })()
     monkeypatch.setattr(metrics.subprocess, "run", simulate)
     measured = metrics._ssim("ffmpeg", tmp_path / "before.mp4", tmp_path / "after.mp4")
