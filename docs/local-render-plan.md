@@ -121,6 +121,48 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Rolling review backlog and paged sampling (PR #216)
+
+The existing unattended local render worker now appends a tiny, create-only
+**per-job** evidence snapshot to
+\`data/render-previews/edit-review-queue/renderqueue_<id>.json\` when the
+review sidecar passed the previous stage. This requires **no additional
+per-video operator setup**: the same rendering worker that produces the
+MP4 and review ledger creates the backlog receipt. It rechecks only the
+small review-ledger SHA, does not decode media or rehash gigabytes of video,
+and records the original and selected final MP4 SHA-256 plus anomaly counts.
+Its \`media_hash_reverified_for_calibration=false\` flag is deliberate:
+a staged snapshot is an **unlabelled observation**, not verified media gold.
+The full calibration pack still performs independent hash checks before
+using a sample.
+
+The worker persists the new archive outcome independently in SQLite
+(\`render_review_archive_evidence\`), exposed by read-only
+\`archive_counts\`. A missing, tampered or pre-existing receipt is
+\`LOCAL_EDIT_ARCHIVE_UNAVAILABLE\` and does not revoke successful MP4 QA
+or allow publication. The receipts are immutable, not overwritten, and
+do not contain source paths, transcript text or unbounded video data.
+
+The pack command no longer stalls forever after 40 review sidecars.
+Instead it reads **at most 40 SHA-verified jobs per invocation** and
+returns \`next_cursor\`, \`has_more\`, \`window_job_count\` and
+\`inventory_complete\` separately. Continue using a different output
+filename and \`--after-job-id\`:
+
+\`\`\`powershell
+uv run holoclip render-review-calibration-pack --execute --output data/render-previews/calibration-first.json
+uv run holoclip render-review-calibration-pack --after-job-id renderqueue_<cursor-from-first-pack> --execute --output data/render-previews/calibration-second.json
+\`\`\`
+
+A single pack's \`anomaly_counts\` are **page-local** and must never be
+represented as comprehensive when \`has_more=true\`. A non-null cursor
+represents a resumed page, so \`inventory_complete=false\` even for the
+last resumed page; \`has_more=false\` indicates the cursor reached the end
+of the current inventory. A global safety cap of 10,000 ledger filenames
+prevents unbounded discovery. There is no relabeling of real human-cut
+examples into human edit-quality gold and still no auto-repair or
+production qualification (\`ready=false\`).
+
 ## Offline unlabelled edit-review calibration pack (PR #215)
 
 The new preview-first CLI takes **already collected** local edit review ledgers
