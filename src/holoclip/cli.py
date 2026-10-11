@@ -177,6 +177,9 @@ from holoclip.render_cut_extension_mp4_ab import (
 from holoclip.render_cut_extension_finish_ab import (
     prepare_matched_finishing_trial, run_matched_finishing_trial,
 )
+from holoclip.render_cut_extension_speech_audit import (
+    audit_finished_extension,
+)
 from holoclip.render_same_source_semantic_review import (
     DEFAULT_OUTPUT as DEFAULT_SEMANTIC_OUTPUT,
     prepare_semantic_evidence, infer_semantic_hypotheses, save_semantic_review,
@@ -1537,6 +1540,40 @@ def render_ab_human_context_command(
 
 
 
+
+
+@app.command("render-cut-extension-speech-audit")
+def render_cut_extension_speech_audit_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    after_job_id: str | None = typer.Option(None, "--after-job-id"),
+    max_jobs: int = typer.Option(40, "--max-jobs", min=1, max=40),
+    job_id: str | None = typer.Option(None, "--job-id"),
+    proposal_index: int = typer.Option(0, "--proposal-index", min=0, max=1),
+    execute: bool = typer.Option(
+        False, "--execute", help="Measure local A/B audio and store create-only evidence.",
+    ),
+) -> None:
+    """Inspect full-utterance coverage and local audio in matched A/B."""
+    try:
+        prepared = prepare_matched_finishing_trial(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, after_job_id=after_job_id,
+            max_jobs=max_jobs, job_id=job_id, proposal_index=proposal_index,
+        )
+        result = audit_finished_extension(prepared, execute=execute)
+    except (ValueError, OSError, TypeError, UnicodeError, sqlite3.Error):
+        typer.echo(json.dumps({
+            "status": "LOCAL_SPEECH_AB_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6)
+    typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True))
 
 
 @app.command("render-cut-extension-finished-ab")
