@@ -145,9 +145,11 @@ def _produce(*, base: Path, base_sha: str,
                 raise ValueError("LOCAL_AB_SAMPLE_AV_UNVERIFIED")
         before_mean, before_peak = _measure(ffmpeg, before, 0, seconds)
         after_mean, after_peak = _measure(ffmpeg, after, 0, seconds)
-        # An attenuation preview can make signal level quieter, but cannot
-        # restore already clipped information. Do not claim actual repair.
-        if (after_peak > before_peak - 0.7 or after_peak > 0.1
+        # AAC encoder priming/transients can change instantaneous sample
+        # peaks even when attenuation is correct. Independently require
+        # bounded mean-level reduction, disallow a substantial peak rise
+        # or fresh >0 dBFS peaks; do NOT claim clipped audio was restored.
+        if (after_peak > before_peak + 0.5 or after_peak > 0.1
                 or after_mean > before_mean - 0.7
                 or after_mean < before_mean - 3.0):
             raise ValueError("LOCAL_AB_DIFFERENCE_UNVERIFIED")
