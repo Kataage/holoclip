@@ -266,3 +266,79 @@ def test_cli_readonly_then_create_only_with_no_writes_to_master(tmp_path):
     assert repeat.exit_code == 6
     assert media.read_bytes() == before
     assert output.is_file()
+
+
+def test_exact_same_selected_intervals_can_have_nonchronological_playback():
+    human = [(10, 12), (20, 22), (30, 32)]
+    generated = [(30, 32), (10, 12), (20, 22)]
+    score = geo._geometry(generated, human)
+    assert score["selected_source_jaccard"] == 1
+    diag = score["selection_difference_diagnostics"]
+    assert diag["generated_source_time_backtracks"] == 1
+    assert diag["human_alignment_source_time_backtracks"] == 0
+    assert diag["generated_only"]["window_count"] == 0
+    assert diag["human_only"]["window_count"] == 0
+    assert diag["source_backtrack_is_not_an_editing_error"] is True
+
+
+def test_exclusive_source_windows_are_true_subtraction_not_overlap_heuristics():
+    score = geo._geometry(
+        [(10, 12), (30, 32), (33, 34)],
+        [(11, 13), (20, 22), (30, 31)],
+    )
+    diag = score["selection_difference_diagnostics"]
+    assert diag["generated_only"]["window_count"] == 3
+    assert diag["generated_only"]["top_windows_by_duration"] == [
+        {"source_start_seconds": 31, "source_end_seconds": 32,
+         "duration_seconds": 1},
+        {"source_start_seconds": 33, "source_end_seconds": 34,
+         "duration_seconds": 1},
+        {"source_start_seconds": 10, "source_end_seconds": 11,
+         "duration_seconds": 1},
+    ] or diag["generated_only"]["top_windows_by_duration"] == [
+        {"source_start_seconds": 10, "source_end_seconds": 11,
+         "duration_seconds": 1},
+        {"source_start_seconds": 31, "source_end_seconds": 32,
+         "duration_seconds": 1},
+        {"source_start_seconds": 33, "source_end_seconds": 34,
+         "duration_seconds": 1},
+    ]
+    assert diag["human_only"]["top_windows_by_duration"][0] == {
+        "source_start_seconds": 20,
+        "source_end_seconds": 22,
+        "duration_seconds": 2,
+    }
+    assert diag["difference_windows_are_not_edit_instructions"] is True
+
+
+def test_overlapping_repeated_segments_do_not_invent_extra_source_gaps():
+    score = geo._geometry(
+        [(0, 10), (2, 3), (11, 12)],
+        [(0, 10), (11, 12)],
+    )
+    assert score["generated_observed_source_gaps"] == 1
+    assert score["human_observed_source_gaps"] == 1
+    assert score["nearest_human_gap_start_distance_seconds"] == 0
+    assert score["selection_difference_diagnostics"]["generated_only"]["window_count"] == 0
+
+
+def test_top_windows_bounded_and_deterministic_for_many_disagreements():
+    generated = [(i * 10.0, i * 10.0 + 1) for i in range(50)]
+    human = [(i * 10.0 + 2, i * 10.0 + 3) for i in range(50)]
+    score = geo._geometry(generated, human)
+    diag = score["selection_difference_diagnostics"]
+    assert diag["generated_only"]["window_count"] == 50
+    assert len(diag["generated_only"]["top_windows_by_duration"]) == 3
+    assert [x["source_start_seconds"] for x in
+            diag["generated_only"]["top_windows_by_duration"]] == [0, 10, 20]
+    assert score["shared_source_seconds"] == 0
+
+
+def test_same_source_cli_exposes_diagnostics_without_qualification(tmp_path):
+    params, *_ = _build(tmp_path, clips=[_human_example()])
+    report = geo.compare_same_source_edit_geometry(**params)
+    geometry = report["results"][0]["matches"][0]["geometry"]
+    assert geometry["selection_difference_diagnostics"]["generated_only"]["window_count"] >= 0
+    assert report["selection_difference_is_not_a_human_quality_label"] is True
+    assert report["ready"] is False
+    assert report["auto_adoption_allowed"] is False

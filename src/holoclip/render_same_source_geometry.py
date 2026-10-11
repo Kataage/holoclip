@@ -30,7 +30,7 @@ from holoclip.render_plan import _no_links
 from holoclip.render_source_queue import DEFAULT_QUEUE, _connect
 from holoclip.render_source_resolver import _canonical_assets
 
-VERSION = "holoclip-same-source-edit-geometry-v1"
+VERSION = "holoclip-same-source-edit-geometry-v2"
 DEFAULT_OUTPUT = Path("data/render-previews/same-source-edit-geometry.json")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _JOB = re.compile(r"renderqueue_[0-9a-f]{32}\Z")
@@ -40,7 +40,7 @@ _MAX_EXAMPLES = 1000
 _MAX_STORE_BYTES = 8 * 1024 * 1024
 _MAX_STATE_BYTES = 4 * 1024 * 1024
 _MAX_TIMELINE = 1_048_576
-_MAX_RESULTS = 65536
+_MAX_RESULTS = 2 * 1024 * 1024
 _MAX_MATCHES = 20
 _MAX_INVENTORY = 1000
 
@@ -104,11 +104,62 @@ def _intersection(left: list[tuple[float, float]],
 def _source_seams(spans: list[tuple[float, float]]) -> list[float]:
     # A gap in aligned *source* ranges can indicate an omitted source section.
     # It is NOT ground truth for the exact human cut frame or its intent.
-    ordered = sorted(spans)
+    ordered = _ranges_union(spans)
     return [
         nxt[0] for prev, nxt in zip(ordered, ordered[1:])
         if nxt[0] - prev[1] > 0.5
     ]
+
+
+
+def _subtract_source_ranges(
+    selected: list[tuple[float, float]],
+    other: list[tuple[float, float]],
+) -> list[tuple[float, float]]:
+    """Subtract canonical, disjoint source-time intervals; no editorial judgment."""
+    result: list[tuple[float, float]] = []
+    j = 0
+    for start, end in selected:
+        cursor = start
+        while j < len(other) and other[j][1] <= cursor:
+            j += 1
+        k = j
+        while k < len(other) and other[k][0] < end:
+            before, after = other[k]
+            if before > cursor:
+                result.append((cursor, min(before, end)))
+            cursor = max(cursor, after)
+            if cursor >= end:
+                break
+            k += 1
+        if cursor < end:
+            result.append((cursor, end))
+    return result
+
+
+def _difference_window_summary(spans: list[tuple[float, float]]) -> dict:
+    """Three largest source-time disagreements, not proposals to add/remove cuts."""
+    selected = sorted(spans, key=lambda pair: (-(pair[1] - pair[0]), pair[0]))
+    return {
+        "window_count": len(spans),
+        "top_windows_by_duration": [
+            {
+                "source_start_seconds": round(start, 3),
+                "source_end_seconds": round(end, 3),
+                "duration_seconds": round(end - start, 3),
+            }
+            for start, end in selected[:3]
+        ],
+        "windows_not_present_are_not_negative_labels": True,
+    }
+
+
+def _source_time_backtracks(ordered: list[tuple[float, float]]) -> int:
+    """Count source-clock reversals in output order; legitimate replays may do this."""
+    return sum(
+        next_start + 0.5 < start
+        for (start, _), (next_start, _) in zip(ordered, ordered[1:])
+    )
 
 
 def _geometry(generated: list[tuple[float, float]],
@@ -118,8 +169,10 @@ def _geometry(generated: list[tuple[float, float]],
     if gsec <= 0 or rsec <= 0:
         raise ValueError("LOCAL_SAME_SOURCE_EMPTY_INTERVALS")
     both = _intersection(gen, ref)
-    gen_seams, ref_seams = _source_seams(generated), _source_seams(human)
+    gen_seams, ref_seams = _source_seams(gen), _source_seams(ref)
     diffs = [min(abs(g - h) for h in ref_seams) for g in gen_seams] if ref_seams else []
+    generated_only = _subtract_source_ranges(gen, ref)
+    human_only = _subtract_source_ranges(ref, gen)
     return {
         "generated_unique_source_seconds": round(gsec, 3),
         "human_aligned_unique_source_seconds": round(rsec, 3),
@@ -134,6 +187,14 @@ def _geometry(generated: list[tuple[float, float]],
         "nearest_human_gap_start_distance_seconds": (
             round(statistics.median(diffs), 3) if diffs else None
         ),
+        "selection_difference_diagnostics": {
+            "generated_only": _difference_window_summary(generated_only),
+            "human_only": _difference_window_summary(human_only),
+            "generated_source_time_backtracks": _source_time_backtracks(generated),
+            "human_alignment_source_time_backtracks": _source_time_backtracks(human),
+            "source_backtrack_is_not_an_editing_error": True,
+            "difference_windows_are_not_edit_instructions": True,
+        },
         "alignment_is_approximate_not_frame_accurate": True,
         "creative_quality_label": None,
     }
@@ -234,6 +295,7 @@ def compare_same_source_edit_geometry(
         "human_alignment_is_ground_truth_for_exact_cuts": False,
         "human_examples_from_training_not_independent_holdout": True,
         "measured_edit_geometry_not_editorial_quality": True,
+        "selection_difference_is_not_a_human_quality_label": True,
         "heldout_qualification_allowed": False,
         "precision": None, "recall": None,
         "ready": False, "production_ready": False,

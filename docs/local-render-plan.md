@@ -173,6 +173,31 @@ independently source-grounded held-out real-media cut maps before any
 automated quality gate is considered.
 
 
+
+### Source-selection differences and replay-order evidence (v2)
+
+The same read-only command additionally reports
+\`selection_difference_diagnostics\` for each matched human/trial pair:
+bounded top-three **source-clock windows** selected only by the generated
+timeline and only by the human alignment, total difference-window counts,
+and the number of source-time backtracks in the **actual output order** on
+each side. The human-side order follows aligned clip order, not sorted source
+timestamps. A 0.5-second tolerance avoids flagging negligible alignment
+clock jitter as a backtrack.
+
+These data explain why two timelines can have full set overlap but different
+playback sequences; they do not identify the best order. Replayed jokes,
+callbacks, or flashbacks may be intentionally nonchronological. Missing
+human-reference windows are not false-negative classifications or commands
+to insert a cut. Source gaps and comparison windows use unioned source
+ranges to avoid double-counting repeated material. Maximum serialized report
+size is 2 MiB; exceeding the limit fails closed without overwriting output.
+
+As before, this is **in-sample descriptive evidence only**: human alignments
+are approximate, never a frame-accurate edit gold; all report-level
+\`ready\`, \`auto_adoption_allowed\` and held-out qualification guards remain
+false. No network, yt-dlp, FFmpeg, re-encode or automatic publication.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
