@@ -381,6 +381,44 @@ receipt remains \`ready=false\` and
 No additional accounts, tools, datasets or user-supplied labels are
 required. This check is safe to run in CI with synthetic local fixtures.
 
+### Built-in synthetic source-clock story-span evaluation (PR #232)
+
+Run \`uv run holoclip render-semantic-fixture-eval\` without downloads,
+credentials, Docker, NIM or user-created labels. This local deterministic
+harness provides synthetic, explicitly time-anchored ground truth spans for
+**context / setup / development / payoff / reaction**. Nine synthetic
+timelines cover an intact narrative, missing setup, missing development,
+missing payoff, missing reaction, missing preceding context, partly cut
+payoff, repeated clips and non-chronological reordering. Source-time
+intersection is union-corrected; a repeated source interval cannot increase
+coverage. This measures *source-clock selection*, not the semantic content
+or editorial merits of a real video. No human quality precision/recall is
+derived from the synthetic counts.
+
+The main \`render-same-source-geometry\` inspection queue now carries the
+actual **ordered generated selection source intervals** after exact source
+identity and holdout exclusion. The separate opt-in
+\`render-same-source-semantic-review\` evidence request uses these intervals
+to add each ASR excerpt's source-clock coverage status:
+\`SOURCE_CLOCK_FULLY_SELECTED\`, \`SOURCE_CLOCK_PARTIALLY_SELECTED\`, or
+\`SOURCE_CLOCK_NOT_SELECTED\`. This is computed independently of whether the
+excerpt was collected from a \`generated_only\` or \`human_only\` *difference*
+window; the preceding/following context may be outside the final output.
+Model citations and subsequent offline audits retain this grounded status
+and source-clock selected duration. A correct quotation that is not selected
+by the generated edit **cannot** be interpreted as evidence that that
+speech is present in the generated clip.
+
+The harness intentionally includes two honesty controls: a fabricated
+source quote is rejected, but a verbatim quote attributed to the wrong
+semantic role **can still pass citation verification**. The latter is a
+known limit, not a passing creative evaluation. Even fully selected source
+times do not prove the speech is audible after audio processing or that
+the AI's story-role interpretation is correct. Old semantic receipts
+using the earlier evidence schema are not promoted to the new v2 status;
+regenerate fresh opt-in evidence instead of silently reusing stale receipts.
+No automatic edit or publication is enabled; \`ready=false\`.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.

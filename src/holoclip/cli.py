@@ -178,6 +178,9 @@ from holoclip.render_same_source_semantic_review import (
 from holoclip.render_same_source_semantic_audit import (
     audit_receipt_file, write_audit,
 )
+from holoclip.render_semantic_fixture_eval import (
+    evaluate_synthetic_semantic_fixtures,
+)
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
 )
@@ -1591,6 +1594,15 @@ def render_same_source_semantic_review_command(
     typer.echo(json.dumps(reviewed, ensure_ascii=False, sort_keys=True))
 
 
+
+
+@app.command("render-semantic-fixture-eval")
+def render_semantic_fixture_eval_command() -> None:
+    """Run built-in fully offline story span/quote guardrail fixtures."""
+    result = evaluate_synthetic_semantic_fixtures()
+    typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    if result["status"] != "LOCAL_SYNTHETIC_SOURCE_CLOCK_CONTRACT_PASSED":
+        raise typer.Exit(6)
 
 
 @app.command("render-same-source-semantic-audit")

@@ -38,6 +38,8 @@ _REPORT_ITEMS = {
 _CITATION_ITEMS = _REPORT_ITEMS | {
     "source_start_seconds", "source_end_seconds",
     "source_window_selection_side",
+    "source_clock_selection_status", "source_clock_selected_seconds",
+    "actual_audible_speech_or_story_role_verified",
 }
 
 

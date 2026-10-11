@@ -532,6 +532,16 @@ def compare_same_source_edit_geometry(
         stream_by_job=stream_by_job,
         ordered_cuts_by_job=ordered_cuts_by_job,
     )
+    # Keep the actual ordered generated selection, not just 'generated_only'
+    # difference windows. Difference-window sides alone do not prove which
+    # speech survives into the rendered output.
+    for item in report["inspection_queue"]["results"]:
+        cuts = ordered_cuts_by_job.get(item["job_id"], [])
+        if 1 <= len(cuts) <= 200:
+            item["generated_source_intervals"] = [
+                {"source_start_seconds": start, "source_end_seconds": end}
+                for start, end in cuts
+            ]
     return report
 
 
