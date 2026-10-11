@@ -174,6 +174,9 @@ from holoclip.render_cut_extension_trials import preview_cut_extensions
 from holoclip.render_cut_extension_mp4_ab import (
     prepare_cut_extension_mp4_trial, run_cut_extension_mp4_trial,
 )
+from holoclip.render_cut_extension_finish_ab import (
+    prepare_matched_finishing_trial, run_matched_finishing_trial,
+)
 from holoclip.render_same_source_semantic_review import (
     DEFAULT_OUTPUT as DEFAULT_SEMANTIC_OUTPUT,
     prepare_semantic_evidence, infer_semantic_hypotheses, save_semantic_review,
@@ -1533,6 +1536,50 @@ def render_ab_human_context_command(
     typer.echo(json.dumps(report, sort_keys=True, ensure_ascii=False))
 
 
+
+
+
+@app.command("render-cut-extension-finished-ab")
+def render_cut_extension_finished_ab_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    after_job_id: str | None = typer.Option(None, "--after-job-id"),
+    max_jobs: int = typer.Option(40, "--max-jobs", min=1, max=40),
+    job_id: str | None = typer.Option(None, "--job-id"),
+    proposal_index: int = typer.Option(0, "--proposal-index", min=0, max=1),
+    approve_local_preview: bool = typer.Option(
+        False, "--approve-local-preview",
+        help="Explicit permission for offline local MP4 and optional finishing.",
+    ),
+    execute: bool = typer.Option(
+        False, "--execute", help="Render B (if missing) and match A's finishing stages.",
+    ),
+) -> None:
+    """Match original audio/caption processing on the isolated trial MP4."""
+    try:
+        prepared = prepare_matched_finishing_trial(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, after_job_id=after_job_id,
+            max_jobs=max_jobs, job_id=job_id, proposal_index=proposal_index,
+        )
+        result = run_matched_finishing_trial(
+            prepared, execute=execute,
+            approve_local_preview=approve_local_preview,
+        )
+    except (ValueError, OSError, TypeError, UnicodeError, sqlite3.Error) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_MATCHED_AB_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    if result["status"] == "LOCAL_MATCHED_AB_FINISH_INCOMPLETE_NOT_COMPARABLE":
+        raise typer.Exit(6)
 
 
 @app.command("render-cut-extension-mp4-trial")
