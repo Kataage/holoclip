@@ -125,6 +125,8 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] First deterministic Japanese ASS/libass burn-in into a separate create-only captioned MP4, with font detection and optional QA evidence (not editorially qualified)
 - [x] First conservative cut-aware audio leveling baseline: per-cut measured dBFS correction capped at ±6 dB, silence guard, peak limiter, post-encode QA, separate MP4 and durable optional evidence
 - [ ] Complete perceptual LUFS/audio-dialogue qualification, music versus speech balancing and verified near-boundary listening tests
+- [x] Localized review ledgers for measured anomalies: event timestamps mapped to ordered cuts, suggested manual inspection action and immutable SHA-256-bound JSON, no automatic content edits
+- [ ] Measure precision/recall against sufficiently diverse independently human-rated real stream edits before enabling any new automatic correction
 - [x] First bounded, read-only edit diagnostics: black/frozen-frame hints, source audio dBFS peak/mean, caption reading rate and line overflow; persisted QA evidence, never a production pass
 - [ ] Calibrated human-rated thresholds, real footage frame review, safe automatic suggested repairs with preview/rollback, and measured publishing qualification
 - [x] First conservative single-pass guarded visual-style baseline (high-confidence reaction/payoff gentle <=3.5% zoom, explicitly hinted 80ms A/V dip, unchanged cut clock and technical evidence)
