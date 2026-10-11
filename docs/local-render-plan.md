@@ -715,6 +715,57 @@ can perform distinct local MP4 trial renders plus genuine before/after
 blind review, with rollback and independently measured quality.
 \`ready=false\` and no auto-edit/auto-publication remain mandatory.
 
+### Local MP4 A/B renders for ASR-backed cut extensions (PR #240)
+
+Use \`uv run holoclip render-cut-extension-mp4-trial\` to automatically
+select the best source-ASR-grounded edit extension from the current
+page of existing completed jobs (or select a specific \`--job-id\`,
+\`--proposal-index 0|1\`). The default is **read-only**, prints the
+original/source and trial ordered timeline, filenames, baseline SHA
+from earlier QA, reason/evidence source hashes, and explicitly reports
+\`LOCAL_EXTENSION_AB_TRIAL_NOT_RENDERED\`.
+
+To perform a **new local-only trial B**:
+\`uv run holoclip render-cut-extension-mp4-trial --execute --approve-local-preview\`.
+This re-derives the candidate from today's original QA-passed queue,
+trusted in-sample same-source human alignment, current source ASR and
+holdout protection; it **does not ingest a user-supplied trial
+manifest**. It loads the exact original stored \`ClipTimeline\`,
+verifies that every candidate baseline interval matches the stored
+output-ordered segment and changes exactly one existing segment.
+That segment gets a fresh deterministic ID, confidence zero, no
+invented source-segment IDs/narrative role; all other segments stay in
+original output order. The trial remains capped at 180 seconds.
+
+Before FFmpeg, the command checks the **original QA-passed MP4**
+in the exact preview directory, rehashes its bytes against the
+\`render_jobs\` SHA, probes its existing audio/video streams and
+measured duration, resolves only a verified **full original
+editing_video local cache**, re-evaluates the original stream's
+current \`RENDER\` policy against the **extended** source range, and
+compiles a normal safe \`RenderPlan\`. FFmpeg runs through the
+existing local renderer, producing a separate,
+deterministically named \`renderqueue_<id>-extension-<id>.mp4\`
+in the same preview directory. The renderer already checks source
+hash/size/ffprobe before/during generation and uses a no-overwrite
+hardlink commit. The original MP4 is hashed again after the trial;
+a changed original is not reported as a valid comparison.
+A separate create-only JSON receipt records both A and B checksums,
+measured durations, source evidence hashes and technical-only QA.
+An existing trial MP4 or receipt blocks reruns (no replacement or
+automatic retry).
+
+**These are real A/B MP4 files**, but not yet visually/editorially
+equivalent treatments: A may have captions or post-audio processing
+that the basic new B does not. The receipt expressly marks
+**subtitle, audio quality, human quality and creative improvement as
+unmeasured**. Technical audio/video QA is not editing-quality QA.
+The result never becomes the active render or modifies the database,
+original, source cache, user subtitles, or publishing state.
+There are **no external API, yt-dlp, download, new ASR or Docker
+requirements**. The additional candidate is in-sample training
+reference, never independently rated human gold. Keep \`ready=false\`.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
