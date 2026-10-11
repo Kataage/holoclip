@@ -186,6 +186,9 @@ from holoclip.render_cut_extension_speech_refine import (
 from holoclip.render_cut_extension_speech_b2 import (
     prepare_speech_b2_preview, run_speech_b2_preview,
 )
+from holoclip.render_cut_extension_speech_b2_finish import (
+    prepare_speech_b2_finishing, finish_speech_b2,
+)
 from holoclip.render_same_source_semantic_review import (
     DEFAULT_OUTPUT as DEFAULT_SEMANTIC_OUTPUT,
     prepare_semantic_evidence, infer_semantic_hypotheses, save_semantic_review,
@@ -1546,6 +1549,52 @@ def render_ab_human_context_command(
 
 
 
+
+
+@app.command("render-cut-extension-speech-b2-finish")
+def render_cut_extension_speech_b2_finish_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    after_job_id: str | None = typer.Option(None, "--after-job-id"),
+    max_jobs: int = typer.Option(40, "--max-jobs", min=1, max=40),
+    job_id: str | None = typer.Option(None, "--job-id"),
+    proposal_index: int = typer.Option(0, "--proposal-index", min=0, max=1),
+    refinement_index: int = typer.Option(
+        0, "--refinement-index", min=0, max=1,
+    ),
+    execute: bool = typer.Option(
+        False, "--execute", help="Process optional local B2 audio/caption stages.",
+    ),
+    approve_local_preview: bool = typer.Option(
+        False, "--approve-local-preview",
+        help="Explicitly allow new-only B2 finishing (A/B unchanged).",
+    ),
+) -> None:
+    """Match B2 audio/SRT/burn-in stages with existing A/B evidence."""
+    try:
+        prepared = prepare_speech_b2_finishing(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, after_job_id=after_job_id,
+            max_jobs=max_jobs, job_id=job_id,
+            proposal_index=proposal_index, refinement_index=refinement_index,
+        )
+        report = finish_speech_b2(
+            prepared, execute=execute, approve_local_preview=approve_local_preview,
+        )
+    except (ValueError, OSError, TypeError, UnicodeError, sqlite3.Error):
+        typer.echo(json.dumps({
+            "status": "LOCAL_B2_FINISH_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6)
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    if report["status"] == "LOCAL_B2_FINISH_INCOMPLETE_NOT_COMPARABLE":
+        raise typer.Exit(6)
 
 
 @app.command("render-cut-extension-speech-b2")
