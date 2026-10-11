@@ -199,6 +199,9 @@ from holoclip.render_cut_extension_three_way_dialogue import (
     prepare_three_way_dialogue, preview_three_way_dialogue,
     infer_three_way_dialogue, save_three_way_dialogue,
 )
+from holoclip.render_cut_extension_three_way_acoustic import (
+    prepare_three_way_acoustic, run_three_way_acoustic,
+)
 from holoclip.render_same_source_semantic_review import (
     DEFAULT_OUTPUT as DEFAULT_SEMANTIC_OUTPUT,
     prepare_semantic_evidence, infer_semantic_hypotheses, save_semantic_review,
@@ -1559,6 +1562,45 @@ def render_ab_human_context_command(
 
 
 
+
+
+@app.command("render-cut-extension-three-way-acoustic")
+def render_cut_extension_three_way_acoustic_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    after_job_id: str | None = typer.Option(None, "--after-job-id"),
+    max_jobs: int = typer.Option(40, "--max-jobs", min=1, max=40),
+    job_id: str | None = typer.Option(None, "--job-id"),
+    proposal_index: int = typer.Option(0, "--proposal-index", min=0, max=1),
+    refinement_index: int = typer.Option(
+        0, "--refinement-index", min=0, max=1,
+    ),
+    execute: bool = typer.Option(
+        False, "--execute",
+        help="Sample finite windows from local finished A/B/B2 audio and save immutable evidence.",
+    ),
+) -> None:
+    """Measure local acoustic energy at ASR-aligned times, not heard words."""
+    try:
+        prepared = prepare_three_way_acoustic(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, after_job_id=after_job_id,
+            max_jobs=max_jobs, job_id=job_id,
+            proposal_index=proposal_index, refinement_index=refinement_index,
+        )
+        report = run_three_way_acoustic(prepared, execute=execute)
+    except (ValueError, OSError, TypeError, UnicodeError, sqlite3.Error):
+        typer.echo(json.dumps({
+            "status": "LOCAL_THREE_WAY_ACOUSTIC_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6)
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
 
 @app.command("render-cut-extension-three-way-dialogue")

@@ -152,6 +152,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Read-only-first, SHA-verified three-way A/B/B2 local decoded A/V and subtitle technical review hints, immutable sidecar and no creative ranking (real footage evaluation still required)
 - [x] Three-way source-time-matched, review-first operator triage worklist grounded in local measured diagnostics and existing review-ledger cut mapping, without automatic winner/quality claims
 - [x] Bounded local source-ASR context evidence for A/B/B2 and opt-in public-data-only zero-cost model hypotheses with exact quotes and strict no-quality-promotion gates (real hearing/creative validation still pending)
+- [x] Bounded real local audio energy measurements at source-ASR and edit-focus output clocks for finished A/B/B2; SHA rechecks and immutable technical-only receipt, no speech/text or quality promotion
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion

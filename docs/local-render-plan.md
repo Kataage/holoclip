@@ -1076,6 +1076,45 @@ production readiness or publishing authorization. `ready=false`.
 Hosted CI tests use deterministic offline simulated ASR and mock
 model responses only; no actual model or YouTube streams are touched.
 
+### Source-timed local acoustic samples from finished A/B/B2 (PR #250)
+
+`uv run holoclip render-cut-extension-three-way-acoustic` continues
+the SHA-linked PR #247–#249 review work without new downloads, manual
+reference media, external AI services or a GPU. It requires original
+local A/B/B2 rendered MP4s, their finishing and technical receipts,
+current source-ASR provenance, stored three-way decoded video diagnostics
+and an unchanged canonical review plan. Only a *single, consistently
+identified source asset* is supported by this pilot.
+
+The default invocation is decoder-free and read-only. It prints
+the expected *output-clock* acoustic sample windows for each A/B/B2
+variant (the shared changed edit, and up to three source-ASR utterances
+fully included in that version), without transcript text, arbitrary
+file paths or detected content. `--execute` explicitly samples the
+actual **finished** MP4 audio on the local computer using FFmpeg
+`volumedetect` over small bounded windows. There is no upload or
+network activity. Samples report mean dBFS, peak dBFS and a conservative
+near-silent-energy *hint*, together with prior local video blackout/freeze
+counts from PR #247. The current media, optional SRT, ASR, all receipts
+and saved diagnostic evidence are rechecked after audio processing.
+The result is create-only
+`*.three-way-acoustic.json`; missing tools, invalid acoustic values,
+stale evidence or any changed input fails before the receipt is saved.
+Original MP4s, subtitle files, ASR and render queue are unchanged.
+
+This is **acoustic presence evidence, not speech recognition**:
+BGM, sound effects, long pauses and compressed audio can all affect dBFS.
+Non-silent audio does not verify words or a speaker, and near-silence
+does not imply an editorial mistake. The previous video scan similarly
+finds only technical black/frozen frames; no new vision understanding
+is performed here. ASR/source-clock comparisons are approximate, and
+model claims from PR #249 are not treated as audio-verified. No A/B/B2
+"winner", actual narrative completion, payoff success or viewer
+preference is asserted; `ready=false`, no adoption/publishing.
+Hosted CI mocks bounded FFmpeg samples and tests local SHA consistency
+only, not a real Hololive stream. Actual listening/visual inspection
+and creative qualification are still outstanding.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
