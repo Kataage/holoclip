@@ -126,6 +126,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] First conservative cut-aware audio leveling baseline: per-cut measured dBFS correction capped at ±6 dB, silence guard, peak limiter, post-encode QA, separate MP4 and durable optional evidence
 - [ ] Complete perceptual LUFS/audio-dialogue qualification, music versus speech balancing and verified near-boundary listening tests
 - [x] Localized review ledgers for measured anomalies: event timestamps mapped to ordered cuts, suggested manual inspection action and immutable SHA-256-bound JSON, no automatic content edits
+- [x] Create-only, bounded Japanese fast-subtitle A/B typography comparison preserving SRT text/clock and immutable baseline; no claimed timing repair or autonomous adoption
 - [x] Initial reversible offline short audio-peak A/B experiment: unchanged verified original MP4 rollback reference, separately SHA-verified before/after listening samples, no automatic adoption
 - [ ] Calibrate actual before/after outcomes and add genuinely safe repair candidates beyond sample attenuation using independently rated real videos
 - [x] Provenance-bound, deterministic review inspection priority and non-executable repair-checklist drafts, preserving every warning and unverified editorial status
