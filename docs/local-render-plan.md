@@ -140,8 +140,11 @@ All FFmpeg inputs are local SHA-verified source files; no shell execution,
 downloads, model requests, or output path supplied by untrusted text.
 The trial uses file-only FFmpeg, fixed downscaled 15fps diagnostic encodes,
 no video retiming/cutting beyond the **short comparison window**.
-It measures the two results independently; if the expected audible sample
-level reduction is not verified, no valid comparison is published. The
+It measures both results independently and requires a bounded reduction
+in **measured sample mean dBFS** without an unsafe peak increase.
+AAC encoder priming can shift instantaneous peaks despite a lower mean,
+so a strict 1.5 dB peak reduction is not asserted. If measured attenuation
+cannot be verified, no valid comparison is published. The
 large baseline is hashed before and after test generation to ensure the
 original is unchanged.
 
