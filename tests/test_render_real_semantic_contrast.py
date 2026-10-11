@@ -1,7 +1,6 @@
 """Offline source-grounded real omission comparison (no real API in CI)."""
 from __future__ import annotations
 
-import copy
 import json
 
 import pytest
@@ -287,7 +286,9 @@ def test_holdout_collision_and_missing_manifest_remain_blocked(tmp_path):
     missing = contrast.prepare_real_semantic_contrasts(**_paths(params))
     assert missing["status"] == "LOCAL_REAL_CONTRAST_HOLDOUT_BLOCKED"
     assert missing["cases"] == []
-    params, *_ = _native(tmp_path / "another")
+    second = tmp_path / "another"
+    second.mkdir()
+    params, *_ = _native(second)
     params["growth_state"].write_text(
         CorpusGrowthState(holdout_stream_ids=[VIDEO]).model_dump_json(),
         encoding="utf-8",
