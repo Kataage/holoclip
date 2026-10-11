@@ -7,7 +7,6 @@ downloaded, decoded, edited or published; bytes are hash-verified locally.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
