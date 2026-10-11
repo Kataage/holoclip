@@ -8,15 +8,13 @@ or authentication of the original receipt's author.
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 
 from holoclip.render_real_semantic_contrast import (
     _MAX_CASES, _POSITIONS, _STATES, _fingerprint,
-    prepare_real_semantic_contrasts,
 )
 from holoclip.render_real_semantic_order_sensitivity import (
-    VERSION as ORDER_VERSION, _MAX_PROVIDER_CALLS,
+    _MAX_PROVIDER_CALLS,
     preview_real_order_sensitivity,
 )
 from holoclip.render_same_source_semantic_audit import _digest, write_audit
