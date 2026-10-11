@@ -83,7 +83,7 @@ async def test_receipt_tampering_never_passes_offline_reaudit(tmp_path, tamper):
     elif tamper == "ready_flag":
         receipt["ready"] = True
     elif tamper == "max_cases":
-        receipt["max_cases"] = 3
+        receipt["max_cases"] = 99
     elif tamper == "run_count":
         receipt["actual_model_calls"] = 1
     elif tamper == "source_hash":
@@ -208,7 +208,10 @@ async def test_cli_default_read_only_reaudit_and_create_only_sidecar(tmp_path, m
     monkeypatch.setattr(cli, "MeshLLMClient", NoAI)
     args = _args(params, "--receipt", str(receipt_path))
     # Audit reads a previously saved report, without a second model call.
-    audit_args = ["render-real-semantic-order-audit", *args[1:]]
+    audit_args = [
+        "render-real-semantic-order-audit", *args[1:],
+        "--max-cases", "3",  # Match receipt construction, not CLI default 1.
+    ]
     read = CliRunner().invoke(cli.app, audit_args)
     assert read.exit_code == 0, read.stdout
     assert not sidecar.exists()
