@@ -159,7 +159,11 @@ def _burn(
     if (_no_links(video) != video.absolute()
             or video.suffix.lower() != ".mp4"
             or not video.is_file() or target.exists()
-            or subtitle != video.with_suffix(".srt")
+            or subtitle != video.with_suffix(".srt") and not (
+                video.stem.endswith(".leveled")
+                and subtitle == video.with_name(f"{video.stem[:-8]}.srt")
+            )
+            or target != subtitle.with_suffix(".captioned.mp4")
             or not subtitle.is_file()):
         raise ValueError("LOCAL_SUBTITLE_BURNIN_INPUT_UNTRUSTED")
     srt = subtitle.read_bytes()
@@ -239,8 +243,11 @@ def burn_captioned_preview(
         return report
     try:
         video = _no_links(mp4_output)
-        subtitle = _no_links(video.with_suffix(".srt"))
-        target = _no_links(video.with_name(f"{video.stem}.captioned.mp4"))
+        # Accept a verified audio-only remaster of this exact preview,
+        # while retaining the original sibling SRT and captioned filename.
+        base_stem = video.stem[:-8] if video.stem.endswith(".leveled") else video.stem
+        subtitle = _no_links(video.with_name(f"{base_stem}.srt"))
+        target = _no_links(video.with_name(f"{base_stem}.captioned.mp4"))
         digest, _ = _burn(
             video, subtitle, target,
             video_sha=video_sha256, srt_sha=subtitle_sha256,
