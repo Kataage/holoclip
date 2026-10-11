@@ -609,3 +609,100 @@ def test_missing_visual_renderer_proof_never_claims_effects_applied(
     report = ready.inspect_completed_source_renders(queue=queue)
     assert report["counts"]["QA_PASSED"] == 1
     assert report["visual_counts"]["unverified"] == 1
+
+
+def test_edit_diagnostic_uses_final_artifact_and_persists_flags(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+
+    def leveled(*, mp4_output, video_sha256, timeline):
+        mp4_output.with_name(f"{mp4_output.stem}.leveled.mp4").write_bytes(
+            b"verified leveled audio"
+        )
+        return {
+            "status": "LOCAL_AUDIO_LEVELED_AV_QA_UNVERIFIED_EDITORIAL",
+            "output_sha256": "e" * 64, "cut_count": 2,
+            "max_abs_gain_db": 2.0,
+            "before_mean_spread_db": 8.0, "after_mean_spread_db": 3.0,
+        }
+
+    monkeypatch.setattr(ready, "level_preview_audio", leveled)
+    monkeypatch.setattr(ready, "burn_captioned_preview", lambda **kw: {
+        "status": "LOCAL_SUBTITLE_BURNIN_NOT_AVAILABLE",
+        "output_sha256": "", "subtitle_sha256": kw["subtitle_sha256"] or "",
+    })
+    seen = []
+
+    def measured(**kwargs):
+        seen.append(kwargs)
+        return {
+            "status": "LOCAL_EDIT_DIAGNOSTIC_MEASURED_FLAGS",
+            "version": "holoclip-edit-diagnostic-v1",
+            "base_sha256": kwargs["video_sha256"],
+            "final_sha256": kwargs["final_sha256"],
+            "black_interval_count": 2,
+            "freeze_interval_count": 1,
+            "subtitle_checked": False,
+            "subtitle_fast_cue_count": 0,
+            "subtitle_overflow_count": 0,
+            "audio_sample_mean_dbfs": -28.5,
+            "audio_sample_peak_dbfs": -1.0,
+            "flag_count": 3,
+            "ready": False,
+            "production_ready": False,
+        }
+
+    monkeypatch.setattr(ready, "evaluate_local_edit_quality", measured)
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["quality_status"] == "LOCAL_EDIT_DIAGNOSTIC_MEASURED_FLAGS"
+    assert result["quality_flag_count"] == 3
+    assert seen[0]["mp4_output"] == root / f"{receipt['job_id']}.mp4"
+    assert seen[0]["final_output"] == root / f"{receipt['job_id']}.leveled.mp4"
+    assert seen[0]["final_sha256"] == "e" * 64
+    assert result["ready"] is False and result["publication_performed"] is False
+    with sqlite3.connect(queue) as conn:
+        row = conn.execute(
+            "SELECT status,version,base_sha256,final_sha256,"
+            "black_interval_count,freeze_interval_count,"
+            "subtitle_checked,subtitle_fast_cue_count,"
+            "subtitle_overflow_count,audio_sample_mean_dbfs,"
+            "audio_sample_peak_dbfs,flag_count "
+            "FROM render_quality_evidence WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()
+        state = conn.execute("SELECT state FROM render_jobs").fetchone()[0]
+    assert row == (
+        "LOCAL_EDIT_DIAGNOSTIC_MEASURED_FLAGS",
+        "holoclip-edit-diagnostic-v1",
+        "a" * 64, "e" * 64, 2, 1, 0, 0, 0, -28.5, -1.0, 3,
+    )
+    assert state == "QA_PASSED"
+    assert ready.inspect_completed_source_renders(queue=queue)["quality_counts"] == {
+        "flags": 1, "no_flags": 0, "partial": 0, "unavailable": 0,
+    }
+
+
+def test_optional_diagnostic_failure_never_revokes_render_qa(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["quality_status"] == "LOCAL_EDIT_DIAGNOSTIC_UNAVAILABLE"
+    assert result["quality_flag_count"] == 0
+    assert (root / f"{receipt['job_id']}.mp4").exists()
+    assert ready.inspect_completed_source_renders(queue=queue)["quality_counts"][
+        "unavailable"
+    ] == 1
+    with sqlite3.connect(queue) as conn:
+        assert conn.execute("SELECT state FROM render_jobs").fetchone()[0] == "QA_PASSED"
