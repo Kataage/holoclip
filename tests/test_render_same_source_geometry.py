@@ -11,9 +11,8 @@ from typer.testing import CliRunner
 from holoclip import cli
 from holoclip import render_same_source_geometry as geo
 from holoclip import render_ready_queue as ready
-from holoclip import render_source_queue
 from holoclip.corpus_growth import CorpusGrowthState
-from holoclip.domain import ClipTimeline, TimelineSegment
+from holoclip.domain import ClipTimeline
 from holoclip.examples import AlignmentSegmentExample, upsert_human_clip_examples
 from holoclip.example_quality import LearningQuality, evaluate_human_example_learning_quality
 from test_editorial_profile import trusted_example
