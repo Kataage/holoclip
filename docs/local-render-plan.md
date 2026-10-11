@@ -249,6 +249,31 @@ automatic edit, approval, publishing, or manual dataset is required. Local
 reports can contain verbatim speech; review them before sharing. Normal
 \`ready=false\`, holdout exclusion, no overwrite, and in-sample status remain.
 
+### Source-clock handoff and speech-boundary observations (PR #228)
+
+On the same \`render-same-source-geometry\` command, each holdout-screened
+inspection item with an existing local ASR transcript now includes
+\`transcript_context.playback_handoff_evidence\`. The source windows are
+ordered by the actual generated output timeline, **not** by source
+timestamp. The evidence records opening/ending source boundaries,
+forward source-time skips, replay/overlap joins and whether an unverified
+ASR utterance spans either side of a discontinuous join. At most three
+representative joins are included, selected deterministically by evidence
+priority and displayed in playback order. Full join counts remain visible.
+
+A discontinuity or ASR segment crossing a boundary is **not** a verified
+audible speech cut; word-level ASR timing has not been measured, and an
+intentional callback or flashback may benefit from a source-time jump.
+This pass **does not** assign source timestamps to setup, development,
+payoff or reaction. Existing human story-description fields do not provide
+reliable role-time labels. Accordingly \`narrative_setup_development_payoff_reaction_inferred=false\`,
+\`editorial_quality_label=null\`, \`ready=false\`, and no auto-edit
+approval apply. Where the local transcript is absent or not trustworthy,
+there is no handoff speech evidence rather than a fabricated default.
+
+No new ASR, remote inference, video playback or downloads, yt-dlp,
+network calls, new operator data, destructive writes or publishing.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.

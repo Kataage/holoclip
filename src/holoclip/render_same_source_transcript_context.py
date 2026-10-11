@@ -15,6 +15,7 @@ from pathlib import Path
 from holoclip.models import TranscriptSegment
 from holoclip.render_human_edit_context import _read_bounded
 from holoclip.render_plan import _no_links
+from holoclip.render_same_source_handoff import summarize_playback_handoffs
 
 _ID = re.compile(r"[A-Za-z0-9_-]{11}\Z")
 _MAX_BYTES = 8 * 1024 * 1024
@@ -113,10 +114,12 @@ def _context_window(segments: list[TranscriptSegment], selected: dict) -> dict:
 def attach_inspection_context(
     inspection: dict, *, transcript_root: Path,
     stream_by_job: dict[str, str],
+    ordered_cuts_by_job: dict[str, list[tuple[float, float]]] | None = None,
 ) -> None:
     """Attach context only AFTER every same-source and holdout safety gate."""
     root = _no_links(transcript_root)
     cache: dict[str, tuple[list[TranscriptSegment], str, str] | None] = {}
+    ordered_cuts_by_job = ordered_cuts_by_job or {}
     invalid: set[str] = set()
     for item in inspection["results"]:
         stream = stream_by_job.get(item["job_id"])
@@ -145,6 +148,11 @@ def attach_inspection_context(
                 )
                 for sample in item[key][:1]
             ]
+            cuts = ordered_cuts_by_job.get(item["job_id"])
+            playback = (
+                summarize_playback_handoffs(cuts, segments)
+                if cuts is not None else None
+            )
         except (ValueError, TypeError, KeyError):
             item["transcript_context"] = {"status": "TRANSCRIPT_WINDOW_INVALID"}
             continue
@@ -154,6 +162,7 @@ def attach_inspection_context(
             "transcript_sha256": digest,
             "source_identity_basis": basis,
             "windows": windows,
+            "playback_handoff_evidence": playback,
             "local_asr_audio_independently_verified": False,
             "creative_quality_label": None,
         }
