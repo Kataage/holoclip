@@ -8,7 +8,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from pathlib import Path
 
 from holoclip.render_audio_finish import level_preview_audio
 from holoclip.render_cut_extension_finish_ab import (
