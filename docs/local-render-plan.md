@@ -121,6 +121,49 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Offline cut-aware audio leveling (PR #211)
+
+After the existing deterministic original MP4 technical QA, the local worker
+attempts an **optional** new-only audio finishing stage. This is automatic;
+it does not require additional manual files, paid APIs, Docker, yt-dlp or cloud
+providers. The original MP4/SRT and original source cache are never modified.
+
+For each ordered \`ClipTimeline\` cut (up to 32, total no more than 180 seconds)
+the offline FFmpeg \`volumedetect\` filter measures mean and sample-peak dBFS.
+The correction targets approximately -22 dBFS **mean per cut** (not perceived
+LUFS), capped at -6 to +6 dB, with positive gain further bounded so measured
+peaks would not exceed -1.5 dBFS. Quiet/silent cuts are **not amplified**.
+The worker splits the already-rendered local output audio by the recorded
+cut-clock, applies these deterministic numeric gains, concatenates audio,
+then applies a final sample limiter without automatic gain-up.
+Video is stream-copied, audio is re-encoded at 48 kHz / 192 kbps AAC.
+
+Output is \`renderqueue_<id>.leveled.mp4\` only after a fresh ffprobe A/V and
+duration check, per-cut second-pass volume/peak measurements, a bounded
+gain-agreement check (accounting for AAC and frame boundaries), and source
+hash re-validation. The final no-overwrite commit uses a create-only hardlink;
+an existing output, malformed timeline, FFmpeg error, unsupported signal or
+unexpected gain/peak produces optional failure without invalidating the base
+MP4 technical QA. The stage is bounded to a 420-second encode timeout plus
+short bounded per-cut measurements. It never automatically retries failed
+work or replaces an existing file.
+
+If the audio output passes, the existing subtitle burn-in uses the measured
+\`*.leveled.mp4\` audio and original corresponding \`*.srt\`, creating the
+same \`renderqueue_<id>.captioned.mp4\` as before. If not, subtitle burn-in
+falls back to the unmodified technical MP4 as in PR #210. When SRT is missing,
+audio leveling may still produce a standalone audio-leveled MP4.
+
+\`render_audio_evidence\` records status, hash, cut count, maximum applied
+absolute gain and the spread of cut mean levels before and after correction,
+alongside technical and caption evidence in SQLite. The read-only status
+reports aggregate audio successes/failures. These diagnostics are **not**
+listening-quality certification: dBFS isn't LUFS, music/game/audio mixing
+cannot be separated automatically in this baseline, true-peak intersample
+overshoot isn't fully qualified, and output quality on unseen Hololive
+recordings remains unknown. Original \`QA_PASSED\` is unchanged; all routes
+remain \`ready=false\`, with no publication.
+
 ## Optional Japanese subtitle burn-in (after PR #209)
 
 For a newly completed source-acquisition job, the existing offline scheduled
