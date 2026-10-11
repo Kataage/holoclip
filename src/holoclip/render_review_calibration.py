@@ -330,3 +330,125 @@ def export_review_calibration_pack(
         except OSError as exc:
             raise ValueError("LOCAL_EDIT_PACK_OUTPUT_ALREADY_EXISTS") from exc
     return report
+
+
+
+def archive_incremental_review(
+    *, mp4_output: Path, review_sha256: str,
+    video_sha256: str, final_sha256: str,
+) -> dict[str, object]:
+    """Stage one immutable review queue receipt during an existing local render.
+
+    Only re-reads the small, freshly created sidecar, never rehashes a large
+    media file, decodes A/V or loads the whole corpus. Its media provenance
+    is explicitly PENDING verification by compile_review_calibration_pack.
+    """
+    result: dict[str, object] = {
+        "status": "LOCAL_EDIT_ARCHIVE_UNAVAILABLE",
+        "sha256": "",
+        "candidate_count": 0,
+        "publication_performed": False,
+        "ready": False,
+        "production_ready": False,
+    }
+    try:
+        base = _no_links(mp4_output)
+        job = base.stem
+        if (not _JOB.fullmatch(job)
+                or base.suffix.lower() != ".mp4" or not base.is_file()
+                or not isinstance(review_sha256, str)
+                or not _SHA.fullmatch(review_sha256)
+                or not isinstance(video_sha256, str)
+                or not _SHA.fullmatch(video_sha256)
+                or not isinstance(final_sha256, str)
+                or not _SHA.fullmatch(final_sha256)):
+            raise ValueError("LOCAL_EDIT_ARCHIVE_INPUT_UNTRUSTED")
+        path = _no_links(base.with_name(f"{job}.review.json"))
+        if not path.is_file() or path.stat().st_size > _MAX_MANIFEST:
+            raise ValueError("LOCAL_EDIT_ARCHIVE_REVIEW_MISSING")
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != review_sha256:
+            raise ValueError("LOCAL_EDIT_ARCHIVE_REVIEW_CHANGED")
+        doc = _read_json(path)
+        if (
+            doc.get("version") != REVIEW_VERSION
+            or doc.get("diagnostic_status") not in _MEASURED
+            or doc.get("base_sha256") != video_sha256
+            or doc.get("final_sha256") != final_sha256
+            or doc.get("ready") is not False
+            or doc.get("production_ready") is not False
+            or doc.get("human_editorial_qa_completed") is not False
+            or doc.get("publication_performed") is not False
+            or type(doc.get("candidate_count")) is not int
+            or not 0 <= doc["candidate_count"] <= 300
+            or not isinstance(doc.get("candidates"), list)
+            or doc["candidate_count"] != len(doc["candidates"])
+        ):
+            raise ValueError("LOCAL_EDIT_ARCHIVE_REVIEW_UNTRUSTED")
+        signals: Counter[str] = Counter()
+        for candidate in doc["candidates"]:
+            if (not isinstance(candidate, dict)
+                    or candidate.get("kind") not in _KINDS
+                    or candidate.get("auto_repair_allowed") is not False
+                    or candidate.get("human_editorial_qa_completed") is not False
+                    or type(candidate.get("start_seconds")) not in (int, float)
+                    or not math.isfinite(candidate["start_seconds"])
+                    or not 0 <= candidate["start_seconds"] <= 181):
+                raise ValueError("LOCAL_EDIT_ARCHIVE_CANDIDATE_UNTRUSTED")
+            signals[candidate["kind"]] += 1
+        if (
+            doc["diagnostic_status"] == "LOCAL_EDIT_DIAGNOSTIC_MEASURED_FLAGS"
+            and not signals
+            or doc["diagnostic_status"] != "LOCAL_EDIT_DIAGNOSTIC_MEASURED_FLAGS"
+            and signals
+        ):
+            raise ValueError("LOCAL_EDIT_ARCHIVE_REVIEW_MISMATCH")
+        directory = _no_links(base.parent / ARCHIVE_SUBDIR)
+        target = _no_links(directory / f"{job}.json")
+        if target.exists():
+            raise ValueError("LOCAL_EDIT_ARCHIVE_ALREADY_EXISTS")
+        receipt = {
+            "version": ARCHIVE_VERSION,
+            "job_id": job,
+            "review_sha256": review_sha256,
+            "base_sha256": video_sha256,
+            "final_sha256": final_sha256,
+            "diagnostic_status": doc["diagnostic_status"],
+            "candidate_count": doc["candidate_count"],
+            "anomaly_counts": dict(sorted(signals.items())),
+            "ledger_hash_verified": True,
+            "media_hash_reverified_for_calibration": False,
+            "human_quality_labels_available": False,
+            "review_state": "UNLABELLED_NEEDS_INDEPENDENT_ASSESSMENT",
+            "auto_repair_allowed": False,
+            "publication_performed": False,
+            "ready": False,
+            "production_ready": False,
+        }
+        encoded = (json.dumps(
+            receipt, sort_keys=True, ensure_ascii=False,
+            separators=(",", ":"),
+        ) + "\n").encode("utf-8")
+        if len(encoded) > _MAX_PACK_BYTES:
+            raise ValueError("LOCAL_EDIT_ARCHIVE_TOO_LARGE")
+        directory.mkdir(exist_ok=True)
+        _no_links(directory)
+        with tempfile.TemporaryDirectory(
+            prefix=".holoclip-review-queue-", dir=directory,
+        ) as work:
+            stage = Path(work) / "snapshot.json"
+            stage.write_bytes(encoded)
+            if hashlib.sha256(path.read_bytes()).hexdigest() != review_sha256:
+                raise ValueError("LOCAL_EDIT_ARCHIVE_REVIEW_CHANGED")
+            try:
+                os.link(stage, target)
+            except OSError as exc:
+                raise ValueError("LOCAL_EDIT_ARCHIVE_COMMIT_UNAVAILABLE") from exc
+        result.update({
+            "status": "LOCAL_EDIT_ARCHIVE_CREATED_UNLABELLED",
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+            "candidate_count": doc["candidate_count"],
+        })
+    except (OSError, ValueError, TypeError, UnicodeError):
+        pass
+    return result
