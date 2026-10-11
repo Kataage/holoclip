@@ -122,8 +122,8 @@ def preview_real_order_sensitivity(prepared: dict) -> dict:
         ),
         "source_contrast_version": prepared.get("version"),
         "model_call_upper_bound": min(
-            len(prepared.get("cases", [])), _MAX_CASES
-        ) * 2,
+            len(prepared.get("cases", [])) * 2, _MAX_PROVIDER_CALLS
+        ),
         "ordering_variants": list(_ORDERINGS),
         "actual_model_calls": 0,
         "same_model_route_verified": False,
@@ -182,10 +182,7 @@ async def infer_real_order_sensitivity(prepared: dict, client) -> dict:
     rows = [row for case in results for row in case["variants"]]
     result.update({
         "status": "LOCAL_ORDER_SENSITIVITY_TWO_RUNS_UNQUALIFIED",
-        "cases": [
-            {key: value for key, value in entry.items() if key != "cases"}
-            for entry in []  # Do not duplicate original unredacted evidence.
-        ],
+        # Keep the already redacted SHA-256-only cases from the dry run.
         "actual_model_calls": len(cases) * 2,
         "model_comparison_results": results,
         "same_model_route_verified": all(
