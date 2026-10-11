@@ -210,3 +210,22 @@ def test_real_synthetic_static_black_video_and_readable_srt(tmp_path):
     assert report["audio_sample_peak_dbfs"] is not None
     assert report["ready"] is False
     assert not list(tmp_path.glob("*.repaired.mp4"))
+
+
+def test_scheduler_deadline_skips_diagnostics_without_touching_media(
+    tmp_path, monkeypatch,
+):
+    source, final, srt_sha = _case(tmp_path)
+    monkeypatch.setattr(
+        diag, "_validate_media",
+        lambda **kw: pytest.fail("Skipped diagnostics must not probe inputs"),
+    )
+    report = diag.evaluate_local_edit_quality(
+        mp4_output=source, video_sha256=_hash(source),
+        final_output=final, final_sha256=_hash(final),
+        timeline=_timeline(), caption_sha256=srt_sha,
+        scan_allowed=False,
+    )
+    assert report["status"] == "LOCAL_EDIT_DIAGNOSTIC_UNAVAILABLE"
+    assert report["ready"] is False and report["publication_performed"] is False
+    assert source.read_bytes() == b"mock local MP4 bytes"
