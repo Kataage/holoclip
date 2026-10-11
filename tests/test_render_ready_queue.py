@@ -1282,11 +1282,13 @@ def test_unavailable_optional_ab_metrics_cannot_demote_render(
         queue=queue, preview_root=root, execute=True,
     )
     assert report["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
-    assert report["ab_metrics_status"] == "LOCAL_AB_AUDIT_NOT_APPLICABLE"
+    # Fake source media cannot provide a verified triage lineage. The
+    # audit must say unavailable, never "success" or an invented no-op.
+    assert report["ab_metrics_status"] == "LOCAL_AB_AUDIT_UNAVAILABLE"
     assert report["ab_metrics_measured_pair_count"] == 0
     assert (root / f"{receipt['job_id']}.mp4").is_file()
     counts = ready.inspect_completed_source_renders(queue=queue)
     assert counts["ab_metrics_counts"] == {
-        "measured": 0, "not_applicable": 1, "unavailable": 0,
+        "measured": 0, "not_applicable": 0, "unavailable": 1,
     }
     assert counts["counts"]["QA_PASSED"] == 1
