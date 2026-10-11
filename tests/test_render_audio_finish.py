@@ -152,7 +152,7 @@ def test_real_ffmpeg_cut_leveling_on_synthetic_audio(tmp_path):
         "-f", "lavfi", "-i", "color=c=blue:s=320x240:r=30:d=4",
         "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=4",
         "-filter_complex",
-        "[1:a]volume='if(lt(t,2),0.08,0.5)':eval=frame[a]",
+        "[1:a]volume='if(lt(t,2),0.25,1.0)':eval=frame[a]",
         "-map", "0:v:0", "-map", "[a]",
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
         "-shortest", str(video),
