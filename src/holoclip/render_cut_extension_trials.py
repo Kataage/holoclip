@@ -8,7 +8,6 @@ prove that an extension improves editing, speech or narrative quality.
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 from pathlib import Path
 
@@ -21,7 +20,7 @@ from holoclip.render_source_worker import DEFAULT_PREVIEW_ROOT
 from holoclip.render_same_source_selection_presence import (
     parse_generated_intervals, source_span_coverage,
 )
-from holoclip.render_same_source_narrative_reference import _union, _shared
+from holoclip.render_same_source_narrative_reference import _union
 from holoclip.render_same_source_semantic_review import _clean
 from holoclip.render_same_source_semantic_review import save_semantic_review
 
@@ -115,6 +114,8 @@ def _asr_gained(
 
 def propose_cut_extensions(report: dict) -> dict:
     """Create text-free, bounded candidate timelines from read-only geometry."""
+    if not isinstance(report, dict):
+        report = {}
     summary = {
         "version": VERSION,
         "status": "LOCAL_CUT_EXTENSION_GATES_BLOCKED",
