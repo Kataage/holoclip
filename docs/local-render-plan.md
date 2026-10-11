@@ -121,6 +121,56 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Non-destructive audio A/B listening preview and verified fallback (PR #219)
+
+For a previously measured **audio_peak** event in the first ten seconds,
+the normal completed-source renderer can optionally make ONE short, capped
+**A/B listening comparison**. The pair is placed under
+\`data/render-previews/renderqueue_<id>.ab-preview/\`:
+
+- \`before.mp4\`: up to four seconds from the selected final local preview
+  (the original, leveled or captioned version), with no trial audio gain
+- \`after.mp4\`: the **same time range** and video encoder profile with an
+  explicitly fixed **-1.5 dB experimental audio attenuation**
+- \`receipt.json\`: SHA-256 for the review triage and full-length baseline,
+  both short A/B files, before/after measured audio dBFS, the bounded
+  filter parameters and the verified unmodified original-MP4 fallback
+
+All FFmpeg inputs are local SHA-verified source files; no shell execution,
+downloads, model requests, or output path supplied by untrusted text.
+The trial uses file-only FFmpeg, fixed downscaled 15fps diagnostic encodes,
+no video retiming/cutting beyond the **short comparison window**.
+It measures the two results independently; if the expected audible sample
+level reduction is not verified, no valid comparison is published. The
+large baseline is hashed before and after test generation to ensure the
+original is unchanged.
+
+**Fallback/rollback safety:** No full-length MP4, intermediate leveled
+MP4, captioned MP4 or subtitle is replaced, renamed or deleted. The
+rollback destination is always the **unchanged original render path** with
+its verified SHA-256 (not a mutable copy of a repaired output). A/B
+results and their \`receipt.json\` are stored only in a newly reserved
+directory. An existing directory is never overwritten, even with
+concurrent workers. Receipt is committed last: without it, a partially
+created A/B directory must be treated as **unqualified** and never used
+for delivery. There is no automatic promotion of either A/B output.
+
+This is **not automatic audio repair**. Lower volume does not reconstruct
+already clipped dialogue and may impair an intentionally loud reaction.
+The attenuated file is only a proposed before/after listening reference.
+Other anomalies (blackout/freeze/subtitle/low-average-audio) still follow
+the existing non-executable inspection checklist without alternate clips.
+No perceptual listening quality score or human-approved repair judgment is
+asserted.
+
+The optional worker result and separate SQLite
+\`render_audio_ab_preview_evidence\` rows are exposed through read-only
+\`ab_preview_counts\` and individual hashes/rollback-proof flags. A
+missing/failed/skipped A/B stage cannot demote successful technical MP4
+QA. \`ready=false\`, \`production_ready=false\`, no automatic correction,
+and no publication remain unchanged. This step also respects the
+existing Windows worker runtime reserve.
+
 ## Non-executing review priorities and inspection proposals (PR #218)
 
 The completed local renderer now builds a **create-only**
