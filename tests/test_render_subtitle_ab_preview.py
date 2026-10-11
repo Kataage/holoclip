@@ -109,8 +109,8 @@ def test_a_b_visual_trial_pins_original_and_caption_bytes_without_autoedit(
     assert result["cue_number"] == 1
     assert result["baseline_recovery_verified"] is True
     assert calls == [
-        (False, params["input_video"], 0.1, pytest.approx(1.3)),
-        (True, params["input_video"], 0.1, pytest.approx(1.3)),
+        (False, params["input_video"], pytest.approx(0.1), pytest.approx(1.3)),
+        (True, params["input_video"], pytest.approx(0.1), pytest.approx(1.3)),
     ]
     out = params["mp4_output"].with_name(
         f"{params['mp4_output'].stem}.subtitle-ab"
@@ -168,7 +168,9 @@ def test_source_changes_tampering_and_existing_output_fail_closed(
     elif corrupt == "selected_input":
         leveled.write_bytes(b"altered input")
     elif corrupt == "srt":
-        srt.write_text(srt.read_text() + " new content", encoding="utf-8")
+        srt.write_text(
+            srt.read_text(encoding="utf-8") + " new content", encoding="utf-8",
+        )
     elif corrupt == "triage":
         triage.write_text(triage.read_text() + "tamper", encoding="utf-8")
     elif corrupt == "review":
