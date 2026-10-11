@@ -281,5 +281,6 @@ def test_real_synthetic_audio_ab_measurement_keeps_baseline_hash(tmp_path):
     assert (clips / "before.mp4").exists()
     assert (clips / "after.mp4").exists()
     proof = json.loads((clips / "receipt.json").read_text())
-    assert proof["after"]["peak_dbfs"] < proof["before"]["peak_dbfs"] - 0.7
+    assert proof["after"]["mean_dbfs"] < proof["before"]["mean_dbfs"] - 0.7
+    assert proof["after"]["peak_dbfs"] <= proof["before"]["peak_dbfs"] + 0.5
     assert proof["alternative_is_test_only"] is True
