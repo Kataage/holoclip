@@ -195,6 +195,9 @@ from holoclip.render_real_semantic_order_sensitivity import (
     DEFAULT_OUTPUT as DEFAULT_ORDER_SENSITIVITY_OUTPUT,
     preview_real_order_sensitivity, infer_real_order_sensitivity,
 )
+from holoclip.render_real_semantic_order_audit import (
+    audit_real_order_receipt_file, save_real_order_audit,
+)
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
 )
@@ -1612,6 +1615,43 @@ def render_same_source_semantic_review_command(
 
 
 
+
+
+
+@app.command("render-real-semantic-order-audit")
+def render_real_semantic_order_audit_command(
+    receipt: Path = typer.Option(
+        ..., "--receipt", help="Existing PR #237 order-sensitivity report.",
+    ),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    max_streams: int = typer.Option(128, "--max-streams", min=1, max=128),
+    max_cases: int = typer.Option(1, "--max-cases", min=1, max=3),
+    output: Path | None = typer.Option(
+        None, "--output", help="Optional new immutable audit sidecar.",
+    ),
+) -> None:
+    """Offline re-audit two-run source citations against current local files."""
+    try:
+        prepared = prepare_real_semantic_contrasts(
+            example_store=example_store, growth_state=growth_state,
+            transcript_root=transcript_root, max_streams=max_streams,
+            max_cases=max_cases,
+        )
+        report = audit_real_order_receipt_file(receipt, prepared)
+        if output is not None:
+            save_real_order_audit(report, output)
+    except (OSError, ValueError, TypeError, UnicodeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_ORDER_RECEIPT_AUDIT_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    if report["status"] != "LOCAL_ORDER_RECEIPT_AUDIT_CONSISTENT_UNQUALIFIED":
+        raise typer.Exit(6)
 
 
 @app.command("render-real-semantic-order-sensitivity")
