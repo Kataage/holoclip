@@ -25,7 +25,7 @@ from holoclip.render_plan import _no_links
 
 VERSION = "holoclip-human-edit-structural-context-v1"
 DEFAULT_HUMAN_STORE = Path("data/examples/human_clips.jsonl")
-DEFAULT_GROWTH_STATE = Path("data/examples/corpus-growth-state.json")
+DEFAULT_GROWTH_STATE = Path("data/examples/corpus_growth.json")
 DEFAULT_AB_ROOT = Path("data/render-previews")
 DEFAULT_OUTPUT = Path("data/render-previews/human-edit-structural-context.json")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
