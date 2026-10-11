@@ -32,7 +32,9 @@ _MAX_FLAGS = 100
 _SUBTITLE_MAX_CPS = 20.0
 
 
-def _video_events(ffmpeg: str, video: Path, duration: float) -> tuple[int, int]:
+def _video_events(
+    ffmpeg: str, video: Path, duration: float, *, detailed: bool = False,
+) -> tuple:
     """Scan scaled local frames at 2fps for likely blackout/freeze intervals."""
     argv = [
         ffmpeg, "-hide_banner", "-loglevel", "info", "-nostats",
@@ -59,6 +61,7 @@ def _video_events(ffmpeg: str, video: Path, duration: float) -> tuple[int, int]:
     freeze = _FREEZE.findall(proc.stderr)
     if len(black) > _MAX_FLAGS or len(freeze) > _MAX_FLAGS:
         raise ValueError("LOCAL_EDIT_DIAGNOSTIC_EVENT_LIMIT")
+    observations: list[dict[str, object]] = []
     for first, last, span in black:
         start, end, length = float(first), float(last), float(span)
         if not all(math.isfinite(n) for n in (start, end, length)):
@@ -67,20 +70,28 @@ def _video_events(ffmpeg: str, video: Path, duration: float) -> tuple[int, int]:
             raise ValueError("LOCAL_EDIT_DIAGNOSTIC_EVENT_INVALID")
         if abs((end - start) - length) > 0.1:
             raise ValueError("LOCAL_EDIT_DIAGNOSTIC_EVENT_INVALID")
+        observations.append({
+            "kind": "blackout", "start_seconds": start, "end_seconds": end,
+        })
     for moment in freeze:
         when = float(moment)
         if not math.isfinite(when) or when < -0.01 or when > duration + 1.1:
             raise ValueError("LOCAL_EDIT_DIAGNOSTIC_EVENT_INVALID")
+        observations.append({
+            "kind": "freeze", "start_seconds": when, "end_seconds": None,
+        })
+    if detailed:
+        return len(black), len(freeze), observations
     return len(black), len(freeze)
 
 
 def _subtitle_flags(
     *, base: Path, caption_sha256: str | None,
-    duration: float,
-) -> tuple[bool, int, int, float | None]:
+    duration: float, detailed: bool = False,
+) -> tuple:
     """Check only the SRT generated and SHA-verified by our existing stage."""
     if not caption_sha256:
-        return False, 0, 0, None
+        return (False, 0, 0, None, []) if detailed else (False, 0, 0, None)
     if not _SHA.fullmatch(caption_sha256):
         raise ValueError("LOCAL_EDIT_DIAGNOSTIC_CAPTION_HASH_INVALID")
     subtitle = _no_links(base.with_suffix(".srt"))
@@ -93,19 +104,34 @@ def _subtitle_flags(
     fast = 0
     overflow = 0
     max_cps = 0.0
-    for cue in cues:
+    observations: list[dict[str, object]] = []
+    for index, cue in enumerate(cues, start=1):
         if cue.end > duration + 0.1:
             raise ValueError("LOCAL_EDIT_DIAGNOSTIC_CAPTION_CLOCK_INVALID")
         chars = len(cue.text)
         cps = chars / (cue.end - cue.start)
         if cps > _SUBTITLE_MAX_CPS:
             fast += 1
+            observations.append({
+                "kind": "fast_subtitle",
+                "start_seconds": cue.start,
+                "end_seconds": cue.end,
+                "cue_number": index,
+            })
         try:
             _wrap(cue.text)
         except ValueError:
             overflow += 1
+            observations.append({
+                "kind": "wide_subtitle",
+                "start_seconds": cue.start,
+                "end_seconds": cue.end,
+                "cue_number": index,
+            })
         max_cps = max(max_cps, cps)
     # A zero-cue generated SRT must never be claimed as checked evidence.
+    if detailed:
+        return True, fast, overflow, round(max_cps, 2), observations
     return True, fast, overflow, round(max_cps, 2)
 
 
@@ -153,10 +179,13 @@ def _run(
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise ValueError("LOCAL_EDIT_DIAGNOSTIC_FFMPEG_UNAVAILABLE")
-    black, freeze = _video_events(ffmpeg, base, duration)
+    black, freeze, video_observations = _video_events(
+        ffmpeg, base, duration, detailed=True,
+    )
     mean, peak = _measure(ffmpeg, final, 0.0, min(duration, 10.0))
-    checked, fast, overflow, cps = _subtitle_flags(
+    checked, fast, overflow, cps, subtitle_observations = _subtitle_flags(
         base=base, caption_sha256=caption_sha256, duration=duration,
+        detailed=True,
     )
     if (_hash(base)[0] != base_sha256 or _hash(final)[0] != final_sha256):
         raise ValueError("LOCAL_EDIT_DIAGNOSTIC_MEDIA_CHANGED_DURING_SCAN")
@@ -168,6 +197,13 @@ def _run(
     # reactions may all be intentional; never auto-fix or discard the source.
     flags = black + freeze + fast + overflow
     flags += int(peak > -0.5 or mean < -38.0)
+    observations = video_observations + subtitle_observations
+    if peak > -0.5 or mean < -38.0:
+        observations.append({
+            "kind": "audio_peak" if peak > -0.5 else "audio_low_mean",
+            "start_seconds": 0.0,
+            "end_seconds": min(duration, 10.0),
+        })
     status = (
         "LOCAL_EDIT_DIAGNOSTIC_MEASURED_FLAGS" if flags
         else ("LOCAL_EDIT_DIAGNOSTIC_MEASURED_NO_FLAGS" if checked
@@ -187,6 +223,8 @@ def _run(
         "audio_sample_mean_dbfs": mean,
         "audio_sample_peak_dbfs": peak,
         "flag_count": flags,
+        # Time-coded, content-free candidates. Never an actual repair.
+        "review_observations": observations,
     }
 
 
@@ -211,6 +249,7 @@ def evaluate_local_edit_quality(
         "audio_sample_mean_dbfs": None,
         "audio_sample_peak_dbfs": None,
         "flag_count": 0,
+        "review_observations": [],
         "publication_performed": False,
         "human_editorial_qa_completed": False,
         "ready": False,

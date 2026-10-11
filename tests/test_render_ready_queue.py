@@ -706,3 +706,80 @@ def test_optional_diagnostic_failure_never_revokes_render_qa(
     ] == 1
     with sqlite3.connect(queue) as conn:
         assert conn.execute("SELECT state FROM render_jobs").fetchone()[0] == "QA_PASSED"
+
+
+def test_review_ledger_receipt_tracks_candidate_count_and_no_auto_repair(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+
+    monkeypatch.setattr(ready, "evaluate_local_edit_quality", lambda **kw: {
+        "status": "LOCAL_EDIT_DIAGNOSTIC_MEASURED_FLAGS",
+        "version": "holoclip-edit-diagnostic-v1",
+        "base_sha256": kw["video_sha256"],
+        "final_sha256": kw["final_sha256"],
+        "black_interval_count": 1, "freeze_interval_count": 0,
+        "subtitle_checked": False, "subtitle_fast_cue_count": 0,
+        "subtitle_overflow_count": 0,
+        "audio_sample_mean_dbfs": -22.0,
+        "audio_sample_peak_dbfs": -2.0,
+        "flag_count": 1,
+        "review_observations": [
+            {"kind": "blackout", "start_seconds": 0.5, "end_seconds": 1.6}
+        ],
+    })
+    recorded = []
+    def ledger(**kwargs):
+        recorded.append(kwargs)
+        return {
+            "status": "LOCAL_EDIT_REVIEW_LEDGER_CREATED_UNVERIFIED_EDITORIAL",
+            "sha256": "e" * 64,
+            "candidate_count": 1,
+        }
+    monkeypatch.setattr(ready, "store_review_ledger", ledger)
+    report = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert report["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert report["review_status"] == (
+        "LOCAL_EDIT_REVIEW_LEDGER_CREATED_UNVERIFIED_EDITORIAL"
+    )
+    assert report["review_sha256"] == "e" * 64
+    assert report["review_candidate_count"] == 1
+    assert len(recorded) == 1
+    assert len(recorded[0]["observed"]) == 1
+    assert recorded[0]["diagnostic_status"] == "LOCAL_EDIT_DIAGNOSTIC_MEASURED_FLAGS"
+    with sqlite3.connect(queue) as connection:
+        row = connection.execute(
+            "SELECT status,output_sha256,candidate_count "
+            "FROM render_review_evidence WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()
+        state = connection.execute("SELECT state FROM render_jobs").fetchone()[0]
+    assert row == (
+        "LOCAL_EDIT_REVIEW_LEDGER_CREATED_UNVERIFIED_EDITORIAL", "e" * 64, 1
+    )
+    assert state == "QA_PASSED"
+    counts = ready.inspect_completed_source_renders(queue=queue)
+    assert counts["review_counts"] == {"created": 1, "unavailable": 0}
+    assert counts["source_complete_count"] == 1
+    assert report["ready"] is False
+
+
+def test_review_unavailable_retains_original_mp4_and_basic_av_qa(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["review_status"] == "LOCAL_EDIT_REVIEW_LEDGER_UNAVAILABLE"
+    assert result["review_candidate_count"] == 0
+    assert (root / f"{receipt['job_id']}.mp4").exists()
+    counts = ready.inspect_completed_source_renders(queue=queue)
+    assert counts["review_counts"] == {"created": 0, "unavailable": 1}
