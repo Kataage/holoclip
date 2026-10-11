@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import shutil
 import subprocess
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
