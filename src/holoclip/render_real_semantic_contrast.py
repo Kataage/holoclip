@@ -22,7 +22,7 @@ from holoclip.render_same_source_narrative_reference import _union, _shared
 from holoclip.render_same_source_selection_presence import source_span_coverage
 from holoclip.render_same_source_semantic_review import _clean
 from holoclip.render_same_source_transcript_context import (
-    INGESTED_MANIFEST_BASIS, _read_transcript, _utterances,
+    _read_transcript, _utterances,
     trusted_source_manifest_path,
 )
 
