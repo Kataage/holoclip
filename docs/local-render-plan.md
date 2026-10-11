@@ -121,6 +121,53 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Non-executing review priorities and inspection proposals (PR #218)
+
+The completed local renderer now builds a **create-only**
+\`renderqueue_<id>.triage.json\` after its existing review ledger and
+optional source-event comparison. It reads only those *small, SHA-256-verified
+JSON receipts*: **no extra FFmpeg, no video downloads, no user-provided labels,
+no LLM, no transcript parsing and no media re-encode**.
+
+Each existing black/freeze/subtitle/audio warning is preserved and receives
+a stable, deterministic *inspection queue* entry with a small fixed
+\`inspection_action\` and \`followup_action\`. The three buckets are:
+
+- \`REVIEW_FIRST\`: the original-source sample did **not** show the same
+  coarse black/freeze signal. Inspect first, but this is **not evidence
+  that the render introduced an error**.
+- \`REVIEW_NEEDED\`: original comparison was missing, skipped, unavailable
+  or the event is subtitle/audio related. No missing signal is ever
+  interpreted as a safe or defective edit.
+- \`REVIEW_WITH_SOURCE_CONTEXT\`: similar black/freeze was also observed
+  in the original. Review whether the held/dark moment was artistically
+  intended; do not discard or auto-approve it.
+
+The \`repair_draft\` object is **only a non-executable inspection checklist**:
+it requires independent A/V judgment, future before/after previews and
+policy/continuity review *before* any proposed automatic edit. It contains
+no FFmpeg arguments, patches, executable instructions, timing changes,
+copy/move/delete operation or setting that can authorize execution.
+\`repair_execution_performed=false\` and
+\`repair_preview_generated=false\` mean that this PR does not generate
+an alternate or repaired video. Confidence scores, precision, recall and
+subjective edit-success claims are intentionally absent.
+
+The input SHA-256 values, source comparison status and original media
+hashes from the earlier evidence are pinned. The system does **not**
+independently rehash multi-gigabyte MP4s during this lightweight step and
+states \`media_sha256_independently_reverified=false\`. A changed or
+contradictory review/source comparison prevents triage creation, never
+producing fabricated confidence. Existing triage files are not overwritten.
+
+A separate SQLite table, \`render_review_triage_evidence\`, records triage
+status, SHA and candidate counts; read-only queue inspection exposes
+\`triage_counts\`. A skipped or invalid triage leaves prior MP4 technical
+QA unchanged. \`ready=false\`, \`production_ready=false\`,
+\`auto_repair_allowed=false\` and the need for independent human-rated
+real-footage calibration all remain in force.
+
+
 ## Bounded original-stream anomaly context (PR #217)
 
 After the local MP4 render is complete, the existing worker can **optionally**
