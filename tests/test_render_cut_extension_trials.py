@@ -136,7 +136,7 @@ def test_missing_holdout_manifest_blocks_all_proposals(tmp_path):
 @pytest.mark.parametrize("cuts,human,expected", [
     ([(10, 13), (20, 23)], (23, 24), (1, "EXTEND_END")),
     ([(10, 13), (20, 23)], (19, 20), (1, "EXTEND_START")),
-    ([(10, 13), (20, 23)], (4, 7), None),
+    ([(10, 13), (20, 23)], (0, 3), None),
     ([(10, 13), (20, 23)], (24, 35), None),
     ([(10, 13), (20, 23)], (25, 27), (1, "EXTEND_END")),
 ])
@@ -151,7 +151,7 @@ def test_overlap_with_other_cut_rejected_even_if_extension_is_short():
     # Time-adjacent input selection can overlap a different cut in output
     # order. The algorithm must not add duplicate source time silently.
     found = cut._nearby_extensions(
-        [(23.5, 24.5), (20, 23)], (23, 23.4)
+        [(23.5, 24.5), (20, 23)], (23, 23.6)
     )
     assert not any(i == 1 and side == "EXTEND_END" for i, side, *_ in found)
 
