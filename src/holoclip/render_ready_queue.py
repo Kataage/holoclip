@@ -33,6 +33,7 @@ from holoclip.render_visual_style import style_evidence
 from holoclip.render_quality_diagnostics import evaluate_local_edit_quality
 from holoclip.render_quality_review import store_review_ledger
 from holoclip.render_review_calibration import archive_incremental_review
+from holoclip.render_source_context import compare_local_source_context
 
 DEFAULT_PREVIEW_ROOT = Path("data/render-previews")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
@@ -108,6 +109,13 @@ def _db(queue: Path, *, write: bool) -> sqlite3.Connection | None:
             "CREATE TABLE IF NOT EXISTS render_review_archive_evidence ("
             "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
             "output_sha256 TEXT NOT NULL, candidate_count INTEGER NOT NULL,"
+            "updated_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS render_source_context_evidence ("
+            "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
+            "output_sha256 TEXT NOT NULL, sampled_event_count INTEGER NOT NULL,"
+            "matched_count INTEGER NOT NULL, no_match_count INTEGER NOT NULL,"
             "updated_at REAL NOT NULL)"
         )
         connection.commit()
@@ -311,6 +319,27 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                 else:
                     raise ValueError("LOCAL_RENDER_AUTO_QA_ARCHIVE_STATE_UNTRUSTED")
         report["archive_counts"] = archive_counts
+        source_context_counts = {"sampled": 0, "no_video_events": 0, "unavailable": 0}
+        source_context_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_source_context_evidence'"
+        ).fetchone() is not None
+        if source_context_table:
+            rows = conn.execute(
+                "SELECT status FROM render_source_context_evidence LIMIT 1001"
+            ).fetchall()
+            if len(rows) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            mapping = {
+                "LOCAL_SOURCE_CONTEXT_SAMPLED_UNLABELLED": "sampled",
+                "LOCAL_SOURCE_CONTEXT_NO_VIDEO_EVENTS": "no_video_events",
+                "LOCAL_SOURCE_CONTEXT_UNAVAILABLE": "unavailable",
+            }
+            for item in rows:
+                if item["status"] not in mapping:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_SOURCE_CONTEXT_STATE_UNTRUSTED")
+                source_context_counts[mapping[item["status"]]] += 1
+        report["source_context_counts"] = source_context_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
@@ -375,6 +404,7 @@ def _finish(
     quality_evidence: dict | None = None,
     review_evidence: dict | None = None,
     archive_evidence: dict | None = None,
+    source_context_evidence: dict | None = None,
 ) -> None:
     if state not in {"PAUSED", "QA_PASSED"} or reason not in {
         "NONE", "LOCAL_RENDER_AUTO_QA_VALIDATION_FAILED",
@@ -478,6 +508,18 @@ def _finish(
                     job_id, str(archive_evidence["status"]),
                     str(archive_evidence["sha256"]),
                     int(archive_evidence["candidate_count"]),
+                    time.time(),
+                ),
+            )
+        if state == "QA_PASSED" and source_context_evidence is not None:
+            conn.execute(
+                "INSERT INTO render_source_context_evidence VALUES (?,?,?,?,?,?,?)",
+                (
+                    job_id, str(source_context_evidence["status"]),
+                    str(source_context_evidence["sha256"]),
+                    int(source_context_evidence["sampled_event_count"]),
+                    int(source_context_evidence["matched_count"]),
+                    int(source_context_evidence["no_match_count"]),
                     time.time(),
                 ),
             )
@@ -663,6 +705,16 @@ def advance_completed_source_renders(
             video_sha256=str(details["output_sha256"]),
             final_sha256=final_sha,
         )
+        # Sample original *local* source windows for up to three previously
+        # measured black/freeze events. This is independent review evidence:
+        # matching origin signals are not proofs of correctness or defects.
+        # Reserve time for completing the Windows worker transaction.
+        source_context_evidence = compare_local_source_context(
+            plan=plan, review_sha256=str(review_evidence["sha256"]),
+            video_sha256=str(details["output_sha256"]),
+            observed=quality_evidence.get("review_observations", []),
+            scan_allowed=time.monotonic() - started_monotonic < 3000.0,
+        )
         _finish(
             queue, job_id=job_id, token=token, state="QA_PASSED", reason="NONE",
             output=output, sha256=str(details["output_sha256"]),
@@ -672,7 +724,15 @@ def advance_completed_source_renders(
             quality_evidence=quality_evidence,
             review_evidence=review_evidence,
             archive_evidence=archive_evidence,
+            source_context_evidence=source_context_evidence,
         )
+        report["source_context_status"] = source_context_evidence["status"]
+        report["source_context_sha256"] = source_context_evidence["sha256"]
+        report["source_context_sampled_event_count"] = (
+            source_context_evidence["sampled_event_count"]
+        )
+        report["source_context_matched_count"] = source_context_evidence["matched_count"]
+        report["source_context_no_match_count"] = source_context_evidence["no_match_count"]
         report["archive_status"] = archive_evidence["status"]
         report["archive_sha256"] = archive_evidence["sha256"]
         report["archive_candidate_count"] = archive_evidence["candidate_count"]
