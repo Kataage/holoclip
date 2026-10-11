@@ -38,6 +38,7 @@ from holoclip.render_review_triage import store_local_review_triage
 from holoclip.render_audio_ab_preview import create_audio_ab_preview
 from holoclip.render_subtitle_ab_preview import create_subtitle_ab_preview
 from holoclip.render_cut_ab_preview import create_cut_seam_ab_preview
+from holoclip.render_ab_metrics import evaluate_independent_ab_signals
 
 DEFAULT_PREVIEW_ROOT = Path("data/render-previews")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
@@ -146,6 +147,12 @@ def _db(queue: Path, *, write: bool) -> sqlite3.Connection | None:
             "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
             "receipt_sha256 TEXT NOT NULL, variant_count INTEGER NOT NULL,"
             "seam_seconds REAL, baseline_verified INTEGER NOT NULL,"
+            "updated_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS render_ab_metrics_evidence ("
+            "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
+            "receipt_sha256 TEXT NOT NULL, measured_pair_count INTEGER NOT NULL,"
             "updated_at REAL NOT NULL)"
         )
         connection.commit()
@@ -454,6 +461,27 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                     raise ValueError("LOCAL_RENDER_AUTO_QA_CUT_AB_STATE_UNTRUSTED")
                 cut_ab_counts[states[row["status"]]] += 1
         report["cut_ab_counts"] = cut_ab_counts
+        metric_counts = {"measured": 0, "not_applicable": 0, "unavailable": 0}
+        metric_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_ab_metrics_evidence'"
+        ).fetchone() is not None
+        if metric_table:
+            metric_rows = conn.execute(
+                "SELECT status FROM render_ab_metrics_evidence LIMIT 1001"
+            ).fetchall()
+            if len(metric_rows) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            names = {
+                "LOCAL_AB_AUDIT_MEASURED_TECHNICAL_ONLY": "measured",
+                "LOCAL_AB_AUDIT_NOT_APPLICABLE": "not_applicable",
+                "LOCAL_AB_AUDIT_UNAVAILABLE": "unavailable",
+            }
+            for item in metric_rows:
+                if item["status"] not in names:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_AB_METRIC_STATE_UNTRUSTED")
+                metric_counts[names[item["status"]]] += 1
+        report["ab_metrics_counts"] = metric_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
@@ -523,6 +551,7 @@ def _finish(
     ab_evidence: dict | None = None,
     subtitle_ab_evidence: dict | None = None,
     cut_ab_evidence: dict | None = None,
+    ab_metrics_evidence: dict | None = None,
 ) -> None:
     if state not in {"PAUSED", "QA_PASSED"} or reason not in {
         "NONE", "LOCAL_RENDER_AUTO_QA_VALIDATION_FAILED",
@@ -683,6 +712,16 @@ def _finish(
                     int(cut_ab_evidence["variant_count"]),
                     cut_ab_evidence["seam_seconds"],
                     int(bool(cut_ab_evidence["baseline_recovery_verified"])),
+                    time.time(),
+                ),
+            )
+        if state == "QA_PASSED" and ab_metrics_evidence is not None:
+            conn.execute(
+                "INSERT INTO render_ab_metrics_evidence VALUES (?,?,?,?,?)",
+                (
+                    job_id, str(ab_metrics_evidence["status"]),
+                    str(ab_metrics_evidence["sha256"]),
+                    int(ab_metrics_evidence["measured_pair_count"]),
                     time.time(),
                 ),
             )
@@ -914,6 +953,17 @@ def advance_completed_source_renders(
             triage_sha256=str(triage_evidence["sha256"]),
             scan_allowed=time.monotonic() - started_monotonic < 3000.0,
         )
+        # Independent signal measurement of only completed SHA-pinned A/B
+        # snippets. This is never an editorial verdict or an auto-adoption gate.
+        # An unavailable measurement cannot revoke prior successful MP4 QA.
+        ab_metrics_evidence = evaluate_independent_ab_signals(
+            mp4_output=output, video_sha256=str(details["output_sha256"]),
+            triage_sha256=str(triage_evidence["sha256"]),
+            audio_sha256=str(ab_evidence["sha256"]),
+            subtitle_sha256=str(subtitle_ab_evidence["sha256"]),
+            cut_sha256=str(cut_ab_evidence["sha256"]),
+            scan_allowed=time.monotonic() - started_monotonic < 3000.0,
+        )
         _finish(
             queue, job_id=job_id, token=token, state="QA_PASSED", reason="NONE",
             output=output, sha256=str(details["output_sha256"]),
@@ -928,6 +978,12 @@ def advance_completed_source_renders(
             ab_evidence=ab_evidence,
             subtitle_ab_evidence=subtitle_ab_evidence,
             cut_ab_evidence=cut_ab_evidence,
+            ab_metrics_evidence=ab_metrics_evidence,
+        )
+        report["ab_metrics_status"] = ab_metrics_evidence["status"]
+        report["ab_metrics_sha256"] = ab_metrics_evidence["sha256"]
+        report["ab_metrics_measured_pair_count"] = (
+            ab_metrics_evidence["measured_pair_count"]
         )
         report["cut_ab_status"] = cut_ab_evidence["status"]
         report["cut_ab_sha256"] = cut_ab_evidence["sha256"]

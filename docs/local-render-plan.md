@@ -121,6 +121,49 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Independent technical signal audit of local A/B experiments (PR #222)
+
+After the optional audio, subtitle, and cut A/B snippets finish, an additional
+**create-only** read of up to three successful pairs can produce
+\`renderqueue_<id>.ab-metrics.json\`. The worker SHA-verifies each existing
+A/B receipt and both **entire short MP4 samples**, probes A/V playback and
+duration, then independently decodes the actual output to collect:
+
+- **All three A/B kinds:** FFmpeg decoded-frame SSIM (0–1 visual similarity),
+  before/after mean audio dBFS and peak dBFS, measured signal deltas and the
+  original individual sample hashes
+- **Audio-peak A/B:** checks that the previously claimed -1.5 dB trial is
+  reproduced by independent audio analysis, without a substantial peak rise
+- **Subtitle/cut A/B:** checks that video signal differences can be measured;
+  no inference that font changes improve reading speed or that a darker seam
+  improves narrative flow
+
+Every scan is fixed and **local-only**; video SSIM subprocesses have 25-second
+timeouts, sample duration is capped at 3–4 seconds per pair, and media
+content/metadata is never sent to a service. Missing, tampered, incomplete,
+unexpectedly silent or otherwise unmeasurable pairs are **unavailable**,
+never a false quality pass. Absent A/B snippets are **not applicable**.
+No novel A/B movies or full-length modified output are created here.
+
+The audit explicitly states that the original potentially large MP4 is
+**not independently rehashed again** in this bounded step; earlier render,
+review and A/B stages establish its SHA-256 provenance. By contrast, each
+small A/B MP4's full byte hash is independently reverified before and after
+measurement. The output JSON is create-only, tied to the exact prior A/B
+receipts and triage SHA-256. The SQLite
+\`render_ab_metrics_evidence\` table and read-only \`ab_metrics_counts\`
+expose optional status without changing technical video QA.
+
+**SSIM, audio peaks and mean gain are technical signal metrics, not
+independent human labels or creative-quality metrics.** A near-perfect SSIM
+does not mean a good edit, and a large image difference does not mean a
+bad edit. No human-made clipping data has been rated against these variants
+by this stage, and there are no earned precision, recall, preference rates
+or editorial improvement claims. All output keeps
+\`human_quality_qualified=false\`, \`auto_adoption_allowed=false\`,
+\`ready=false\`, \`production_ready=false\` and publication disabled.
+
+
 ## Cut-boundary visual A/B experiments (PR #221)
 
 The completed-source offline renderer can optionally create a **maximum
