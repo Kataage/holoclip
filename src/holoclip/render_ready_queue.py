@@ -325,17 +325,17 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
             "AND name='render_source_context_evidence'"
         ).fetchone() is not None
         if source_context_table:
-            rows = conn.execute(
+            source_context_rows = conn.execute(
                 "SELECT status FROM render_source_context_evidence LIMIT 1001"
             ).fetchall()
-            if len(rows) > 1000:
+            if len(source_context_rows) > 1000:
                 raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
             mapping = {
                 "LOCAL_SOURCE_CONTEXT_SAMPLED_UNLABELLED": "sampled",
                 "LOCAL_SOURCE_CONTEXT_NO_VIDEO_EVENTS": "no_video_events",
                 "LOCAL_SOURCE_CONTEXT_UNAVAILABLE": "unavailable",
             }
-            for item in rows:
+            for item in source_context_rows:
                 if item["status"] not in mapping:
                     raise ValueError("LOCAL_RENDER_AUTO_QA_SOURCE_CONTEXT_STATE_UNTRUSTED")
                 source_context_counts[mapping[item["status"]]] += 1
