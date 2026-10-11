@@ -121,6 +121,54 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Trusted human-edit structural references versus A/B technical evidence (PR #223)
+
+\`uv run holoclip render-ab-human-context\` is **preview-only by default**.
+It automatically reads the existing \`data/examples/human_clips.jsonl\`,
+\`data/examples/corpus_growth.json\`, and the local
+\`data/render-previews/renderqueue_*.ab-metrics.json\` evidence. No new
+datasets, cloud services, FFmpeg runs or YouTube downloads are required.
+Pass \`--execute --output <new-path>.json\` only to save a **create-only**
+offline report, and use \`--after-job-id <next_cursor> --max-jobs 40\`
+to read additional signal-result pages without loading every MP4.
+
+The human-clip reference uses only alignment records passing the existing
+\`evaluate_human_example_learning_quality\` policy. It rejects duplicate
+clip identities, excludes untrusted/no-source-stream examples, checks the
+persistent corpus-growth holdout reservations, and reports any training
+versus reserved-stream conflict as a **blocking provenance error**.
+Multiple clips from one source stream receive just one vote in the
+stream-level clip-duration median.
+
+The statistics are explicitly **structural**: measured aligned clip-span
+durations, positive source gaps between aligned segments (observed source
+material omitted in the human example), and source-stream-level clip
+duration. These are **not** frame-accurate edit points and cannot describe
+humor, timing, overlay quality, cut smoothness, or human preference.
+The corpus and growth-state input bytes are SHA-256 recorded without
+exposing original URLs, transcript excerpts or private local paths.
+
+The other half of the report scans up to 40 already measured and
+SHA-pinned A/B technical result receipts on each page. It independently
+checks the upstream triage and individual A/B receipt byte hashes before
+aggregating decoded SSIM and audio mean delta. Untrusted/stale pairs are
+counted as stale, not negative human feedback. The small MP4 snippets are
+**not decoded or rehashed on this subsequent metadata pass**; PR #222 is
+the stage that does the actual media remeasurement. Report keys explicitly
+state this distinction, including that source overlap between a generated
+clip and the learning examples has **not** been verified by this report.
+
+The human alignment stats and A/B technical metrics use different
+quantities and **must never be subtracted, ranked against one another or
+treated as an editorial preference classifier**. The report keeps
+\`metric_domains_directly_comparable=false\`,
+\`human_editorial_quality_labels_available=false\`,
+\`production_qualification_allowed=false\`,
+\`auto_adoption_allowed=false\`, \`ready=false\` and
+\`production_ready=false\`. Only an independent, source-grounded and
+human-rated holdout validation could permit a future quality gate.
+
+
 ## Independent technical signal audit of local A/B experiments (PR #222)
 
 After the optional audio, subtitle, and cut A/B snippets finish, an additional

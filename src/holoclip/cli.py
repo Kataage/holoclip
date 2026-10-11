@@ -162,6 +162,10 @@ from holoclip.render_ready_queue import (
 from holoclip.render_review_calibration import (
     DEFAULT_EXAMPLE_STORE, DEFAULT_PACK, export_review_calibration_pack,
 )
+from holoclip.render_human_edit_context import (
+    DEFAULT_GROWTH_STATE, DEFAULT_OUTPUT as DEFAULT_HUMAN_CONTEXT_OUTPUT,
+    export_human_edit_context,
+)
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
 )
@@ -1459,6 +1463,35 @@ def render_review_calibration_pack_command(
         typer.echo(json.dumps({
             "status": "LOCAL_EDIT_PACK_BLOCKED", "ready": False,
             "production_ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True, ensure_ascii=False))
+
+
+@app.command("render-ab-human-context")
+def render_ab_human_context_command(
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    output: Path = typer.Option(DEFAULT_HUMAN_CONTEXT_OUTPUT, "--output"),
+    after_job_id: str | None = typer.Option(
+        None, "--after-job-id", help="Advance only the A/B metric inventory cursor."),
+    max_jobs: int = typer.Option(40, "--max-jobs", min=1, max=40),
+    execute: bool = typer.Option(
+        False, "--execute", help="Create-only offline, unqualified context report."),
+) -> None:
+    """Join trusted human structural metadata with unscored A/B technical signals."""
+    try:
+        report = export_human_edit_context(
+            example_store=example_store, growth_state=growth_state,
+            preview_root=preview_root, output=output,
+            after_job_id=after_job_id, max_jobs=max_jobs,
+            execute=execute,
+        )
+    except (OSError, ValueError, TypeError, UnicodeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_HUMAN_EDIT_CONTEXT_BLOCKED",
+            "ready": False, "production_ready": False,
         }))
         raise typer.Exit(6) from exc
     typer.echo(json.dumps(report, sort_keys=True, ensure_ascii=False))
