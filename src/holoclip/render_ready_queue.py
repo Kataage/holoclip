@@ -37,6 +37,7 @@ from holoclip.render_source_context import compare_local_source_context
 from holoclip.render_review_triage import store_local_review_triage
 from holoclip.render_audio_ab_preview import create_audio_ab_preview
 from holoclip.render_subtitle_ab_preview import create_subtitle_ab_preview
+from holoclip.render_cut_ab_preview import create_cut_seam_ab_preview
 
 DEFAULT_PREVIEW_ROOT = Path("data/render-previews")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
@@ -139,6 +140,13 @@ def _db(queue: Path, *, write: bool) -> sqlite3.Connection | None:
             "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
             "receipt_sha256 TEXT NOT NULL, variant_count INTEGER NOT NULL,"
             "cue_number INTEGER NOT NULL, updated_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS render_cut_ab_evidence ("
+            "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
+            "receipt_sha256 TEXT NOT NULL, variant_count INTEGER NOT NULL,"
+            "seam_seconds REAL, baseline_verified INTEGER NOT NULL,"
+            "updated_at REAL NOT NULL)"
         )
         connection.commit()
         return connection
@@ -425,6 +433,27 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                     raise ValueError("LOCAL_RENDER_AUTO_QA_SUBTITLE_AB_STATE_UNTRUSTED")
                 subtitle_ab_counts[mapping[entry["status"]]] += 1
         report["subtitle_ab_counts"] = subtitle_ab_counts
+        cut_ab_counts = {"created": 0, "not_applicable": 0, "unavailable": 0}
+        has_cut_ab = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_cut_ab_evidence'"
+        ).fetchone() is not None
+        if has_cut_ab:
+            cut_ab_rows = conn.execute(
+                "SELECT status FROM render_cut_ab_evidence LIMIT 1001"
+            ).fetchall()
+            if len(cut_ab_rows) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            states = {
+                "LOCAL_CUT_AB_CREATED_UNVERIFIED_EDITORIAL": "created",
+                "LOCAL_CUT_AB_NOT_APPLICABLE": "not_applicable",
+                "LOCAL_CUT_AB_UNAVAILABLE": "unavailable",
+            }
+            for row in cut_ab_rows:
+                if row["status"] not in states:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_CUT_AB_STATE_UNTRUSTED")
+                cut_ab_counts[states[row["status"]]] += 1
+        report["cut_ab_counts"] = cut_ab_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
@@ -493,6 +522,7 @@ def _finish(
     triage_evidence: dict | None = None,
     ab_evidence: dict | None = None,
     subtitle_ab_evidence: dict | None = None,
+    cut_ab_evidence: dict | None = None,
 ) -> None:
     if state not in {"PAUSED", "QA_PASSED"} or reason not in {
         "NONE", "LOCAL_RENDER_AUTO_QA_VALIDATION_FAILED",
@@ -641,6 +671,18 @@ def _finish(
                     str(subtitle_ab_evidence["sha256"]),
                     int(subtitle_ab_evidence["variant_count"]),
                     int(subtitle_ab_evidence["cue_number"]),
+                    time.time(),
+                ),
+            )
+        if state == "QA_PASSED" and cut_ab_evidence is not None:
+            conn.execute(
+                "INSERT INTO render_cut_ab_evidence VALUES (?,?,?,?,?,?,?)",
+                (
+                    job_id, str(cut_ab_evidence["status"]),
+                    str(cut_ab_evidence["sha256"]),
+                    int(cut_ab_evidence["variant_count"]),
+                    cut_ab_evidence["seam_seconds"],
+                    int(bool(cut_ab_evidence["baseline_recovery_verified"])),
                     time.time(),
                 ),
             )
@@ -863,6 +905,15 @@ def advance_completed_source_renders(
             triage_sha256=str(triage_evidence["sha256"]),
             scan_allowed=time.monotonic() - started_monotonic < 3000.0,
         )
+        # Compare an actual join against a tiny experimental visual treatment
+        # using *only* the original QA-checked output, never source downloads,
+        # cut-clock changes or alternate full-length media. Priorite flagged
+        # boundaries; skip existing dip fades; preserve task time for commit.
+        cut_ab_evidence = create_cut_seam_ab_preview(
+            plan=plan, video_sha256=str(details["output_sha256"]),
+            triage_sha256=str(triage_evidence["sha256"]),
+            scan_allowed=time.monotonic() - started_monotonic < 3000.0,
+        )
         _finish(
             queue, job_id=job_id, token=token, state="QA_PASSED", reason="NONE",
             output=output, sha256=str(details["output_sha256"]),
@@ -876,6 +927,14 @@ def advance_completed_source_renders(
             triage_evidence=triage_evidence,
             ab_evidence=ab_evidence,
             subtitle_ab_evidence=subtitle_ab_evidence,
+            cut_ab_evidence=cut_ab_evidence,
+        )
+        report["cut_ab_status"] = cut_ab_evidence["status"]
+        report["cut_ab_sha256"] = cut_ab_evidence["sha256"]
+        report["cut_ab_seam_seconds"] = cut_ab_evidence["seam_seconds"]
+        report["cut_ab_variant_count"] = cut_ab_evidence["variant_count"]
+        report["cut_ab_baseline_recovery_verified"] = (
+            cut_ab_evidence["baseline_recovery_verified"]
         )
         report["subtitle_ab_status"] = subtitle_ab_evidence["status"]
         report["subtitle_ab_sha256"] = subtitle_ab_evidence["sha256"]

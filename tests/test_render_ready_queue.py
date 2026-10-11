@@ -1141,3 +1141,77 @@ def test_unavailable_subtitle_ab_does_not_revoke_video_qa(
         "created": 0, "not_applicable": 0, "unavailable": 1,
     }
     assert count["counts"]["QA_PASSED"] == 1
+
+
+
+def test_cut_ab_preview_proof_is_separately_persisted_and_qa_unchanged(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    calls = []
+
+    def trial(**kwargs):
+        calls.append(kwargs)
+        return {
+            "status": "LOCAL_CUT_AB_CREATED_UNVERIFIED_EDITORIAL",
+            "sha256": "f" * 64,
+            "seam_seconds": 2.0,
+            "variant_count": 2,
+            "baseline_recovery_verified": True,
+        }
+
+    monkeypatch.setattr(ready, "create_cut_seam_ab_preview", trial)
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["cut_ab_status"] == "LOCAL_CUT_AB_CREATED_UNVERIFIED_EDITORIAL"
+    assert result["cut_ab_sha256"] == "f" * 64
+    assert result["cut_ab_seam_seconds"] == 2
+    assert result["cut_ab_variant_count"] == 2
+    assert result["cut_ab_baseline_recovery_verified"] is True
+    assert len(calls) == 1
+    assert calls[0]["plan"].id == result["plan_id"]
+    assert calls[0]["video_sha256"] == result["output_sha256"]
+    assert calls[0]["triage_sha256"] == result["triage_sha256"]
+    assert calls[0]["scan_allowed"] is True
+    with sqlite3.connect(queue) as connection:
+        row = connection.execute(
+            "SELECT status,receipt_sha256,variant_count,seam_seconds,"
+            "baseline_verified FROM render_cut_ab_evidence WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()
+        state = connection.execute(
+            "SELECT state FROM render_jobs WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()[0]
+    assert row == (
+        "LOCAL_CUT_AB_CREATED_UNVERIFIED_EDITORIAL", "f" * 64, 2, 2.0, 1,
+    )
+    assert state == "QA_PASSED"
+    counters = ready.inspect_completed_source_renders(queue=queue)
+    assert counters["cut_ab_counts"] == {
+        "created": 1, "not_applicable": 0, "unavailable": 0,
+    }
+    assert counters["source_complete_count"] == 1
+    assert result["ready"] is False
+
+
+def test_cut_ab_unavailable_never_revokes_base_mp4_qa(tmp_path, monkeypatch):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["cut_ab_status"] == "LOCAL_CUT_AB_UNAVAILABLE"
+    assert result["cut_ab_variant_count"] == 0
+    assert (root / f"{receipt['job_id']}.mp4").is_file()
+    summary = ready.inspect_completed_source_renders(queue=queue)
+    assert summary["cut_ab_counts"] == {
+        "created": 0, "not_applicable": 0, "unavailable": 1,
+    }
+    assert summary["counts"]["QA_PASSED"] == 1

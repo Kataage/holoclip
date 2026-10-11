@@ -121,6 +121,59 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Cut-boundary visual A/B experiments (PR #221)
+
+The completed-source offline renderer can optionally create a **maximum
+three-second visual A/B sample** centered on one already-rendered, verified
+two-cut boundary. This does **not** move cut timestamps or create a new
+full-length sequence. It is a temporary style comparison, not a repair.
+
+The deterministic selector first considers a boundary mentioned by a
+previously SHA-pinned review-ledger \`cut_boundary\` warning; otherwise
+it chooses the earliest eligible hard cut. A seam must have adequate
+sample duration on **both** sides. An existing opt-in fade/dip style
+is excluded instead of adding another dark effect over it. The full
+ClipTimeline and review/triage identity are validated, and nothing
+runs if the bounded evidence is absent or tampered.
+
+The worker creates a new-only
+\`renderqueue_<id>.cut-ab/\` folder containing:
+
+- \`before.mp4\`: the original A/V join as already rendered, shown in a
+  fixed short excerpt
+- \`after.mp4\`: exactly the same excerpt with a mild fixed 160ms, 40%
+  darkening overlay across the seam **on video only**, never a clip recut
+- \`receipt.json\`: SHA-256 of both samples, baseline MP4 and triage
+  evidence; original render-plan ID, adjacent cut IDs, output seam time,
+  fixed trial parameters and original-MP4 rollback evidence
+
+Both samples are independently decoded/probed after local-only FFmpeg
+with hardcoded safe filters and a 35-second subprocess timeout each.
+There are no shell commands, remote media, source downloads, model
+inferences, user-supplied filter expressions or full-length output
+substitutions. Audio is re-encoded equivalently for sample playback
+but no gain, delay, trims *within the sample* or audio transition
+effect is separately applied to the experimental video.
+
+Source media, complete base/leveled/captioned MP4s, SRT and review
+ledgers remain intact. The original MP4 SHA-256 is verified **before
+and after** trial rendering; the baseline file is the recovery reference
+rather than a destructive restore or copy. An output directory is reserved
+create-only with \`mkdir\`, and the receipt is placed last; an interrupted
+or preexisting directory is never overwritten and cannot qualify as
+complete without the receipt. SQLite stores the outcome separately
+in \`render_cut_ab_evidence\`, with read-only \`cut_ab_counts\`.
+
+**Caution:** A cut-dimming experiment can obscure a joke, reaction or
+important visual detail. A successful sample means only that two
+technically valid, different versions can be compared; it cannot
+establish that the edited version is better. The test does NOT apply the
+alternative to the master, shift spoken words, delete any frames from
+the original or allow publishing. The untrusted/absent stage cannot
+revoke successful base A/V QA. \`ready=false\`,
+\`production_ready=false\` and independent actual creative-quality
+qualification remain required.
+
 ## Non-destructive fast-subtitle style A/B samples (PR #220)
 
 For the first **verified fast_subtitle cue** previously identified in the
