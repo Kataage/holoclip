@@ -185,6 +185,12 @@ from holoclip.render_real_source_omission_probe import (
     probe_real_source_omissions,
 )
 from holoclip.render_real_corpus_readiness import inspect_real_corpus_readiness
+from holoclip.render_real_semantic_contrast import (
+    DEFAULT_OUTPUT as DEFAULT_REAL_CONTRAST_OUTPUT,
+    prepare_real_semantic_contrasts,
+    preview_real_semantic_contrasts,
+    infer_real_semantic_contrasts,
+)
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
 )
@@ -1600,6 +1606,55 @@ def render_same_source_semantic_review_command(
 
 
 
+
+
+
+@app.command("render-real-semantic-contrast")
+def render_real_semantic_contrast_command(
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    max_streams: int = typer.Option(128, "--max-streams", min=1, max=128),
+    max_cases: int = typer.Option(3, "--max-cases", min=1, max=3),
+    output: Path = typer.Option(DEFAULT_REAL_CONTRAST_OUTPUT, "--output"),
+    execute: bool = typer.Option(
+        False, "--execute",
+        help="Explicitly send public source ASR to the qualified AI route and save a new receipt.",
+    ),
+) -> None:
+    """Compare virtual first/middle/last omissions without quality promotion."""
+    try:
+        prepared = prepare_real_semantic_contrasts(
+            example_store=example_store, growth_state=growth_state,
+            transcript_root=transcript_root, max_streams=max_streams,
+            max_cases=max_cases,
+        )
+        if not execute:
+            typer.echo(json.dumps(
+                preview_real_semantic_contrasts(prepared),
+                ensure_ascii=False, sort_keys=True,
+            ))
+            return
+        validate_semantic_output(output)
+        if os.getenv("HOLOCLIP_DATA_CLASS") != "public":
+            raise ValueError("LOCAL_REAL_CONTRAST_EXPLICIT_PUBLIC_DATA_REQUIRED")
+        if prepared["status"] != "LOCAL_REAL_CONTRAST_EVIDENCE_PREPARED":
+            raise ValueError("LOCAL_REAL_CONTRAST_NO_QUALIFIED_EVIDENCE")
+
+        async def _infer():
+            async with MeshLLMClient() as client:
+                return await infer_real_semantic_contrasts(prepared, client)
+
+        reviewed = asyncio.run(_infer())
+        save_semantic_review(reviewed, output)
+    except Exception as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_REAL_CONTRAST_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(reviewed, ensure_ascii=False, sort_keys=True))
 
 
 @app.command("render-real-corpus-readiness")
