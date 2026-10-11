@@ -181,6 +181,9 @@ from holoclip.render_same_source_semantic_audit import (
 from holoclip.render_semantic_fixture_eval import (
     evaluate_synthetic_semantic_fixtures,
 )
+from holoclip.render_real_source_omission_probe import (
+    probe_real_source_omissions,
+)
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
 )
@@ -1594,6 +1597,35 @@ def render_same_source_semantic_review_command(
     typer.echo(json.dumps(reviewed, ensure_ascii=False, sort_keys=True))
 
 
+
+
+
+@app.command("render-real-source-omission-probe")
+def render_real_source_omission_probe_command(
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    max_examples: int = typer.Option(12, "--max-examples", min=1, max=20),
+    output: Path | None = typer.Option(
+        None, "--output", help="Optional new immutable JSON report."),
+) -> None:
+    """Offline human-aligned opening/middle/ending omission counterfactuals."""
+    try:
+        report = probe_real_source_omissions(
+            example_store=example_store, growth_state=growth_state,
+            transcript_root=transcript_root, max_examples=max_examples,
+        )
+        if output is not None:
+            save_semantic_review(report, output)
+    except (OSError, ValueError, TypeError, UnicodeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_REAL_PROBE_BLOCKED", "ready": False,
+            "production_ready": False, "publication_performed": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    if report["status"] == "LOCAL_REAL_PROBE_HOLDOUT_GATES_BLOCKED":
+        raise typer.Exit(6)
 
 
 @app.command("render-semantic-fixture-eval")
