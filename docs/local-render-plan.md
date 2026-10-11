@@ -946,6 +946,49 @@ real-world video/creative evaluation was conducted by CI; synthetic
 offline tests are used. Auto-adoption and publication stay disabled;
 `ready=false` even on successful technical matching.
 
+### Real-local three-way technical quality diagnostics for finished A/B/B2 (PR #247)
+
+`uv run holoclip render-cut-extension-three-way-diagnostics` requires
+**all three existing finished local videos** and their SHA-pinned A/B
+matched-stage receipt, B2 technical-render receipt, B2 matched-stage
+receipt, current queue and source-ASR evidence. It reconstructs the
+trusted local three-way context itself; operator-supplied JSON never
+substitutes for a canonical source, permission, holdout or QA record.
+
+Without flags the command is **read-only and decoder-free**, reporting
+the three pinned video identities and source-clock-only hints.
+`--execute` is an explicit read-only FFmpeg inspection of A, B and B2
+plus a new, immutable local JSON report (no modification of input MP4,
+subtitle files, queue, source cache or ASR). Each video is independently
+checked for decoded A/V and bounded duration, with a scan of blackout
+intervals, frozen visuals, a bounded audio dBFS sample, SRT cue speed
+and width flags. All input media and stage receipts are SHA-checked
+before *and after* scanning. Decode failure, incomplete B2 finishing,
+missing captions when expected, changed original A or stale source-ASR
+evidence block recording a three-way result. No YouTube contact or
+external model/provider is required.
+
+The **baseline A SRT** is pinned by its canonical stage evidence hash.
+Older **B SRT** provenance was not independently signed by its earlier
+matched receipt, and **B2 SRT** similarly lacks a dedicated persisted
+stage-content hash. For these, current SRT bytes are recorded in the
+in-process snapshot and must remain unchanged until scanning finishes;
+this is *continuity, not proof of correct transcript contents*. The
+caption parser detects invalid, fast and wide cues only; the ASR's
+linguistic correctness must be evaluated separately. Reports contain
+no speech text or arbitrary local paths.
+
+The sidecar records measured per-version local technical warning counts,
+timestamps, caption flags and audio signals, along with numeric flag
+*differences*. Fewer flags **do not** establish better comedic timing,
+sound intelligibility, narrative cohesion, faithful subtitles, actual
+viewer preference or publishing rights; different source footage may
+naturally change flag counts. The tool never picks a winning A/B/B2
+variant, never promotes one into the render queue and never sets
+`ready=true`. Hosted CI tests use synthetic local media and mocked
+decoder results, not a real Hololive stream. Owner-local real video
+evidence and later semantic/human evaluations remain unqualified.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
