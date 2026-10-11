@@ -125,7 +125,8 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] First deterministic Japanese ASS/libass burn-in into a separate create-only captioned MP4, with font detection and optional QA evidence (not editorially qualified)
 - [x] First conservative cut-aware audio leveling baseline: per-cut measured dBFS correction capped at ±6 dB, silence guard, peak limiter, post-encode QA, separate MP4 and durable optional evidence
 - [ ] Complete perceptual LUFS/audio-dialogue qualification, music versus speech balancing and verified near-boundary listening tests
-- [ ] Learned subtitle styling, word-level alignment, loudness and emphasis, scene-aware editing, human-quality QA/repair before approved publishing
+- [x] First conservative single-pass guarded visual-style baseline (high-confidence reaction/payoff gentle <=3.5% zoom, explicitly hinted 80ms A/V dip, unchanged cut clock and technical evidence)
+- [ ] Learned framing/camera focus, scene-aware natural transitions, actual subtitle legibility, word-level alignment and human-quality QA/repair before approved publishing
 - [ ] Complete creative editing, captions, sound processing, human-quality evaluation, output repair and publication approval without promoting unqualified previews
 - [ ] Integrate completion of source acquisition with local rendering, technical QA and further editorial review without repeated user preparation; never auto-publish unqualified clips
 - [ ] Automatically enroll queue jobs from candidate selection and connect post-acquisition rendering/QA without per-video setup or unsupported failure auto-retries

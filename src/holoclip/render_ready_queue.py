@@ -29,6 +29,7 @@ from holoclip.render_source_resolver import resolve_cached_render_sources
 from holoclip.render_subtitles import export_cut_aligned_srt
 from holoclip.render_subtitle_burnin import burn_captioned_preview
 from holoclip.render_audio_finish import level_preview_audio
+from holoclip.render_visual_style import style_evidence
 
 DEFAULT_PREVIEW_ROOT = Path("data/render-previews")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
@@ -75,6 +76,12 @@ def _db(queue: Path, *, write: bool) -> sqlite3.Connection | None:
             "max_abs_gain_db REAL NOT NULL,"
             "before_mean_spread_db REAL, after_mean_spread_db REAL,"
             "updated_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS render_visual_evidence ("
+            "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
+            "style_version TEXT NOT NULL, zoom_cut_count INTEGER NOT NULL,"
+            "dip_transition_count INTEGER NOT NULL, updated_at REAL NOT NULL)"
         )
         connection.commit()
         return connection
@@ -196,6 +203,25 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                 else:
                     raise ValueError("LOCAL_RENDER_AUTO_QA_AUDIO_STATE_UNTRUSTED")
         report["audio_counts"] = audio_counts
+        visual_counts = {"encoded": 0, "unverified": 0}
+        visual_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_visual_evidence'"
+        ).fetchone() is not None
+        if visual_table:
+            visual_rows = conn.execute(
+                "SELECT status FROM render_visual_evidence LIMIT 1001"
+            ).fetchall()
+            if len(visual_rows) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            for item in visual_rows:
+                if item["status"] == "LOCAL_RENDER_VISUAL_ENCODED_TECHNICAL_ONLY":
+                    visual_counts["encoded"] += 1
+                elif item["status"] == "LOCAL_RENDER_VISUAL_UNVERIFIED":
+                    visual_counts["unverified"] += 1
+                else:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_VISUAL_STATE_UNTRUSTED")
+        report["visual_counts"] = visual_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
@@ -256,6 +282,7 @@ def _finish(
     duration: float = 0.0, caption_evidence: dict | None = None,
     burnin_evidence: dict | None = None,
     audio_evidence: dict | None = None,
+    visual_evidence: dict | None = None,
 ) -> None:
     if state not in {"PAUSED", "QA_PASSED"} or reason not in {
         "NONE", "LOCAL_RENDER_AUTO_QA_VALIDATION_FAILED",
@@ -308,6 +335,17 @@ def _finish(
                     float(audio_evidence["max_abs_gain_db"]),
                     audio_evidence["before_mean_spread_db"],
                     audio_evidence["after_mean_spread_db"],
+                    time.time(),
+                ),
+            )
+        if state == "QA_PASSED" and visual_evidence is not None:
+            conn.execute(
+                "INSERT INTO render_visual_evidence VALUES (?,?,?,?,?,?)",
+                (
+                    job_id, str(visual_evidence["status"]),
+                    str(visual_evidence["style_version"]),
+                    int(visual_evidence["zoom_cut_count"]),
+                    int(visual_evidence["dip_transition_count"]),
                     time.time(),
                 ),
             )
@@ -404,6 +442,20 @@ def advance_completed_source_renders(
         details = render_local_preview(plan)
         if details["status"] != "LOCAL_RENDER_BASIC_AV_QA_PASSED_NOT_PRODUCTION_READY":
             raise ValueError("LOCAL_RENDER_AUTO_QA_RENDER_UNQUALIFIED")
+        expected_style = style_evidence(timeline)
+        measured_style = details.get("visual_style")
+        visual_evidence = {
+            "status": (
+                "LOCAL_RENDER_VISUAL_ENCODED_TECHNICAL_ONLY"
+                if measured_style == expected_style
+                else "LOCAL_RENDER_VISUAL_UNVERIFIED"
+            ),
+            "style_version": (
+                expected_style["version"] if measured_style == expected_style else ""
+            ),
+            "zoom_cut_count": expected_style["zoom_cut_count"],
+            "dip_transition_count": expected_style["dip_transition_count"],
+        }
         # Never conflate transcript availability or ASR accuracy with technical
         # MP4 readiness. Missing/ambiguous ASR does not falsify video QA.
         caption_evidence = export_cut_aligned_srt(
@@ -444,8 +496,11 @@ def advance_completed_source_renders(
             output=output, sha256=str(details["output_sha256"]),
             plan_id=plan.id, duration=float(details["measured_duration"]),
             caption_evidence=caption_evidence, burnin_evidence=burnin_evidence,
-            audio_evidence=audio_evidence,
+            audio_evidence=audio_evidence, visual_evidence=visual_evidence,
         )
+        report["visual_status"] = visual_evidence["status"]
+        report["visual_zoom_cut_count"] = visual_evidence["zoom_cut_count"]
+        report["visual_dip_transition_count"] = visual_evidence["dip_transition_count"]
         report["audio_status"] = audio_evidence["status"]
         report["audio_output_sha256"] = audio_evidence["output_sha256"]
         report["audio_cut_count"] = audio_evidence["cut_count"]

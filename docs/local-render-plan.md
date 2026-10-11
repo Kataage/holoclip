@@ -121,6 +121,46 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Conservative visual-style baseline (PR #212)
+
+The initial local FFmpeg render now compiles a **finite, deterministic** visual
+style directly into each ordered ClipTimeline segment. It adds no second
+video encode, user operation, Docker, network or new paid service, and does not
+change source trim positions, output order, duration, A/V cut clocks or SRT
+timing. Any existing completed MP4 is never overwritten or re-rendered.
+
+The safe default is **the original 1280x720 aspect-preserving letterbox and
+hard cut**. A subtle progressive center zoom (capped at 1.035x) applies only
+to clips marked REACTION or PAYOFF with segment confidence >= 0.92 and at least
+two seconds of footage. Because the pipeline does not yet verify face position
+or game UI safety, a center zoom is *not* proof of good composition; it may
+still trim a small part of the visible frame and requires real-video review.
+
+A brief 80 ms dip-to-black at a source boundary (synchronized on both audio
+and video) is allowed **only** when the incoming segment explicitly requests
+the fixed hint \`dip_to_black\`, both segments have confidence >= 0.95,
+are different SourceAssets, and each segment is at least 1.5 seconds.
+Unknown hints and free-form LLM filter strings are ignored, not executed.
+No default dissolve or fade is invented; the duration and cut clock are
+preserved. Speech near those deliberate boundaries may still be affected.
+
+The deterministic \`VISUAL_STYLE_VERSION\` forms part of the RenderPlan ID
+and is verified before FFmpeg starts, preventing an old fingerprint from
+silently producing different style results. A successful local technical MP4
+receives a \`visual_style\` summary (zoomed cut count, hinted transition
+count and style version). The auto queue saves this as separate
+\`render_visual_evidence\` in the final technical QA transaction. Status
+\`LOCAL_RENDER_VISUAL_ENCODED_TECHNICAL_ONLY\` means the renderer returned
+the expected style summary *and* its original A/V QA succeeded; it **does not**
+certify natural composition, continuity or real-frame quality. A missing or
+mismatched summary is recorded as UNVERIFIED, without inventing success.
+The read-only preview status displays aggregate visual evidence.
+
+CI exercises bounded filter decisions and synthetic real FFmpeg A/V
+roundtrips only; real unseen streams, actual reaction crops and scene-aware
+transitions remain unqualified. Publication remains blocked and
+\`ready=false\` is unchanged.
+
 ## Offline cut-aware audio leveling (PR #211)
 
 After the existing deterministic original MP4 technical QA, the local worker
