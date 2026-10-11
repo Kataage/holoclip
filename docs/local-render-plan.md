@@ -121,6 +121,43 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Localized non-destructive edit review ledger (PR #214)
+
+The same bounded, offline PR #213 diagnostic scan now retains **where** an
+abnormality was seen, not only how often. Black intervals include the measured
+start/end seconds. Frozen frames include the onset (their end can be unknown).
+Fast and overly wide subtitles include their own SRT cue number and start/end
+timestamps, but **never subtitle text**. Audio sampled-peak/low-mean warnings
+refer only to the first at-most-10 seconds sampled: do not assume an entire
+stream or later reaction was measured.
+
+Each detected event is mapped to all ordered ClipTimeline segments it overlaps.
+A blackout crossing a cut joins the two adjacent segment IDs so the next
+reviewer does not inspect only one source video. A freeze without an FFmpeg
+end marker is treated as an onset only; it does not accuse every later cut.
+Every event receives a fixed, bounded inspection action and
+\`auto_repair_allowed=false\`. The ledger makes **no inference** that dark or
+static illustration segments are an error, nor any unvalidated estimate of
+quality or probability.
+
+For successful measured scans, the local worker creates an immutable sibling
+\`renderqueue_<id>.review.json\` atomically on the same filesystem. It has
+strict event count and size limits, no shell/network/LLM/OCR access, no source
+paths, no transcript text, and includes the original/final MP4 content hashes
+plus the scan status and explicit \`ready=false\`. A second run cannot
+overwrite an existing manifest. The worker commits an independent
+\`render_review_evidence\` status/hash/candidate count to the existing SQLite
+transaction and exposes read-only aggregate \`review_counts\`. If the
+optional diagnostic was skipped or a manifest could not be safely written,
+its review status is UNAVAILABLE; the original video technical QA is intact.
+
+This is **instrumentation for future calibration**, not learned calibration
+itself. Withheld, real human-rated examples are still required to measure
+which alarms indicate genuine faults and which represent stylistic intent.
+Automatic edits, deletion, retiming and publication remain blocked pending
+such qualification. Never claim a perfect clip just because it has zero
+detected candidates.
+
 ## Read-only edit-quality diagnostics (PR #213)
 
 After the original MP4 technical QA, optional audio leveling and caption
