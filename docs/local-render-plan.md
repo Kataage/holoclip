@@ -877,6 +877,41 @@ require fresh cache/policy/FFmpeg validation before any future rendering.
 `ready=false`, no automatic adoption and no publishing remain mandatory.
 Hosted CI only uses fake local media and no external APIs.
 
+### Distinct local B2 MP4 from speech-completion candidates (PR #245)
+
+`uv run holoclip render-cut-extension-speech-b2` is a **preview-first**
+local A/B/B2 experiment. It reconstructs the current canonical A and
+finished B from queue, source manifest, holdout, local-ASR identity,
+FFprobe A/V checks and SHA-pinned `*.matched.json`. It invokes #244's
+bounded source-ASR extension refiner again: no fresh suitable alternative
+means **no B2 can be rendered**. It never accepts an arbitrary caller
+supplied edited timeline or external file path.
+
+The command defaults to a read-only summary, without starting FFmpeg.
+`--execute --approve-local-preview` explicitly authorizes one new B2
+MP4 made by the existing offline local FFmpeg preview renderer.
+B2 is named separately from both A and B, is created only if absent,
+and still requires fresh canonical source cache mapping, source permission,
+current RENDER policy and measured source A/V ranges. The original A,
+finished B, source cache, QA rows and edit queue are never overwritten.
+The isolated B2 must pass basic video+audio and bounded duration QA.
+Before writing its create-only JSON receipt, both A/B and relevant
+base files are rehashed and their original QA/ASR lineage re-evaluated
+after the render. The receipt records A/B/B2 exact media hashes,
+measured runtimes, source-timeline provenance, technical QA and
+differences in *duration only*.
+
+B2 is a **basic encoded preview**, while A and B refer to their
+previously completed optional leveling/caption finishing. Thus B2 does
+**not** have equivalent postprocessing, even if all three contain A/V.
+`b2_caption_audio_finishing_matched_to_a_b=false` explicitly forbids
+claiming postprocessing parity. The three-way result is not listening,
+narrative or human preference evaluation; it does not claim that the
+new cut is interesting or publishable. Applying matched optional audio
+and subtitle finishing to B2 requires a separate follow-up.
+`ready=false` with no adoption or publication. GitHub CI uses synthetic
+local media and never downloads YouTube streams or probes user PCs.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
