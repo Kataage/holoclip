@@ -142,6 +142,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Explicit qualified two-order model repeatability probe (per-run exact lost/retained quote verification, route identity, redacted quote hashes, no narrative quality inference)
 - [x] Offline re-audit of redacted two-order receipts against regenerated local source clock/ASR substring hashes, route comparisons, per-variant and aggregate counts; not signed authenticity or creative-quality gold
 - [x] Bounded ASR-clock-backed real cut extension trials from verified adjacent human-only context, ordered before/after timeline previews; no blind editing or media substitution
+- [x] Explicit FFmpeg MP4 cut-extension trial B against rehashed QA-passed original A, current cache/policy checks, immutable SHA-bound technical comparison sidecar, no automatic adoption or quality promotion
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion

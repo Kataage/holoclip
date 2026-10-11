@@ -171,6 +171,9 @@ from holoclip.render_same_source_geometry import (
     export_same_source_edit_geometry, compare_same_source_edit_geometry,
 )
 from holoclip.render_cut_extension_trials import preview_cut_extensions
+from holoclip.render_cut_extension_mp4_ab import (
+    prepare_cut_extension_mp4_trial, run_cut_extension_mp4_trial,
+)
 from holoclip.render_same_source_semantic_review import (
     DEFAULT_OUTPUT as DEFAULT_SEMANTIC_OUTPUT,
     prepare_semantic_evidence, infer_semantic_hypotheses, save_semantic_review,
@@ -1529,6 +1532,48 @@ def render_ab_human_context_command(
         raise typer.Exit(6) from exc
     typer.echo(json.dumps(report, sort_keys=True, ensure_ascii=False))
 
+
+
+
+@app.command("render-cut-extension-mp4-trial")
+def render_cut_extension_mp4_trial_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    after_job_id: str | None = typer.Option(None, "--after-job-id"),
+    max_jobs: int = typer.Option(40, "--max-jobs", min=1, max=40),
+    job_id: str | None = typer.Option(None, "--job-id"),
+    proposal_index: int = typer.Option(0, "--proposal-index", min=0, max=1),
+    approve_local_preview: bool = typer.Option(
+        False, "--approve-local-preview",
+        help="Explicit approval for new local MP4 rendering, never publishing.",
+    ),
+    execute: bool = typer.Option(
+        False, "--execute", help="Render a new trial MP4; never replace baseline.",
+    ),
+) -> None:
+    """Make an isolated local MP4 extension trial beside the QA-passed original."""
+    try:
+        prepared = prepare_cut_extension_mp4_trial(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, after_job_id=after_job_id,
+            max_jobs=max_jobs, job_id=job_id, proposal_index=proposal_index,
+        )
+        result = run_cut_extension_mp4_trial(
+            prepared, execute=execute,
+            approve_local_preview=approve_local_preview,
+        )
+    except (ValueError, OSError, TypeError, UnicodeError, sqlite3.Error) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_EXTENSION_AB_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True))
 
 
 @app.command("render-cut-extension-trials")
