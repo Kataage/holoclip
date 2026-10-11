@@ -25,6 +25,13 @@ def source_span_coverage(
         or not 1 <= len(generated) <= _MAX_CUTS
     ):
         raise ValueError("LOCAL_SEMANTIC_SOURCE_SELECTION_INVALID")
+    if any(
+        type(a) not in (int, float) or type(b) not in (int, float)
+        or not math.isfinite(a) or not math.isfinite(b)
+        or not 0 <= a < b <= 86400
+        for a, b in generated
+    ):
+        raise ValueError("LOCAL_SEMANTIC_GENERATED_CUT_RANGE_INVALID")
     intervals = _union(generated)
     selected = _shared([(start, end)], intervals)
     length = end - start
