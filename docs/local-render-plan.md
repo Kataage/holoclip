@@ -1034,6 +1034,48 @@ receives an entertainment score or automatic promotion; `ready=false`
 and publication remain blocked. CI uses synthetic evidence only,
 without YouTube/yt-dlp or owner-local footage.
 
+### Cited source-ASR hypotheses for A/B/B2 narrative review (PR #249)
+
+`uv run holoclip render-cut-extension-three-way-dialogue` builds a
+source-clock-grounded A/B/B2 **text evidence preview** after the
+#248 review plan and #247 measured diagnostics already exist. It rechecks
+the original canonical source database, holdout protections, SHA-verified
+A/B/B2 videos, matching finishing receipts and local source transcript
+without any new downloads or manual inputs. It uses only source-ASR
+utterances **fully contained** in a selected clip interval, maps their
+timestamps to each edit's output clock and samples a bounded region
+around the equivalent cut across A/B/B2. Partially cut utterances
+are *counted* as warnings but their truncated words are not invented.
+The current pilot is fail-closed for multi-source compilation clips until
+per-source identity and matching provenance are supported.
+
+The default command reads metadata and returns **no ASR text**, invokes
+no model, writes no files and does not decode MP4 again. `--save`
+writes a separate create-only, text-redacted evidence metadata JSON
+without inference. `--execute` is a **different explicit opt-in** and
+requires `HOLOCLIP_DATA_CLASS=public`; it sends a limited set of
+existing source-ASR excerpts to the configured **zero-cost-only**
+provider route, never to paid fallback. With no qualified quota or
+model, inference fails closed. Its response is rigorously checked:
+exactly nine variant/question hypotheses for `CONTEXT`, `PAYOFF`
+and `SPEECH_EDGE`, only `POSSIBLE_TEXTUAL_SIGNAL` or
+`INSUFFICIENT_EVIDENCE`, with every positive hypothesis quoting a
+literal contiguous substring of an existing same-variant, fully
+contained ASR excerpt. Invented evidence IDs, duplicate question
+claims, unrelated variants, fictional quotes or unverified labels
+are rejected. The current ASR/source/media provenance is checked
+again after model inference, before immutable receipt creation.
+
+**This is NOT actual narrative quality assessment**: it detects only
+*possible textual signals* in unverified ASR. It does not listen to
+video/audio, recognize speakers, validate captions or decide that a
+setup is understandable, an actual punchline lands, or speech is
+natural. NIM-generated hypotheses cannot be used as human feedback,
+holdout gold, creative scores, clip rankings, automatic editing,
+production readiness or publishing authorization. `ready=false`.
+Hosted CI tests use deterministic offline simulated ASR and mock
+model responses only; no actual model or YouTube streams are touched.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.

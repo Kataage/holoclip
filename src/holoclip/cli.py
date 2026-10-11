@@ -195,6 +195,10 @@ from holoclip.render_cut_extension_three_way_diagnostics import (
 from holoclip.render_cut_extension_three_way_triage import (
     prepare_three_way_review, run_three_way_review,
 )
+from holoclip.render_cut_extension_three_way_dialogue import (
+    prepare_three_way_dialogue, preview_three_way_dialogue,
+    infer_three_way_dialogue, save_three_way_dialogue,
+)
 from holoclip.render_same_source_semantic_review import (
     DEFAULT_OUTPUT as DEFAULT_SEMANTIC_OUTPUT,
     prepare_semantic_evidence, infer_semantic_hypotheses, save_semantic_review,
@@ -1555,6 +1559,65 @@ def render_ab_human_context_command(
 
 
 
+
+
+@app.command("render-cut-extension-three-way-dialogue")
+def render_cut_extension_three_way_dialogue_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    after_job_id: str | None = typer.Option(None, "--after-job-id"),
+    max_jobs: int = typer.Option(40, "--max-jobs", min=1, max=40),
+    job_id: str | None = typer.Option(None, "--job-id"),
+    proposal_index: int = typer.Option(0, "--proposal-index", min=0, max=1),
+    refinement_index: int = typer.Option(
+        0, "--refinement-index", min=0, max=1,
+    ),
+    save: bool = typer.Option(
+        False, "--save", help="Save create-only text-redacted local ASR evidence.",
+    ),
+    execute: bool = typer.Option(
+        False, "--execute",
+        help="Explicitly send public ASR to zero-cost model and store cited hypotheses.",
+    ),
+) -> None:
+    """Source-cited three-way dialogue hypotheses; never score or adopt edits."""
+    try:
+        if save and execute:
+            raise ValueError("LOCAL_DIALOGUE_CHOOSE_SAVE_OR_EXECUTE")
+        prepared = prepare_three_way_dialogue(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, after_job_id=after_job_id,
+            max_jobs=max_jobs, job_id=job_id,
+            proposal_index=proposal_index, refinement_index=refinement_index,
+        )
+        preview = preview_three_way_dialogue(prepared)
+        if not execute:
+            if save:
+                save_three_way_dialogue(preview, prepared)
+            typer.echo(json.dumps(preview, ensure_ascii=False, sort_keys=True))
+            return
+        validate_semantic_output(prepared["receipt"])
+        if os.getenv("HOLOCLIP_DATA_CLASS") != "public":
+            raise ValueError("LOCAL_DIALOGUE_EXPLICIT_PUBLIC_DATA_REQUIRED")
+
+        async def _infer():
+            async with MeshLLMClient() as client:
+                return await infer_three_way_dialogue(prepared, client)
+
+        report = asyncio.run(_infer())
+        save_three_way_dialogue(report, prepared)
+    except Exception as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_THREE_WAY_DIALOGUE_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
 
 @app.command("render-cut-extension-three-way-review")
