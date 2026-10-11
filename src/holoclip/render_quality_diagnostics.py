@@ -49,7 +49,7 @@ def _video_events(ffmpeg: str, video: Path, duration: float) -> tuple[int, int]:
         proc = subprocess.run(
             argv, check=False, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            timeout=min(180.0, max(30.0, duration * 2.0)),
+            timeout=min(60.0, max(15.0, duration * 0.5)),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ValueError("LOCAL_EDIT_DIAGNOSTIC_VIDEO_UNAVAILABLE") from exc
@@ -154,7 +154,7 @@ def _run(
     if not ffmpeg:
         raise ValueError("LOCAL_EDIT_DIAGNOSTIC_FFMPEG_UNAVAILABLE")
     black, freeze = _video_events(ffmpeg, base, duration)
-    mean, peak = _measure(ffmpeg, final, 0.0, min(duration, 90.0))
+    mean, peak = _measure(ffmpeg, final, 0.0, min(duration, 10.0))
     checked, fast, overflow, cps = _subtitle_flags(
         base=base, caption_sha256=caption_sha256, duration=duration,
     )
@@ -194,6 +194,7 @@ def evaluate_local_edit_quality(
     *, mp4_output: Path, video_sha256: str,
     final_output: Path, final_sha256: str,
     timeline: ClipTimeline, caption_sha256: str | None,
+    scan_allowed: bool = True,
 ) -> dict[str, object]:
     """Fail-safe diagnostic. No returned status makes a video production ready."""
     result: dict[str, object] = {
@@ -215,6 +216,8 @@ def evaluate_local_edit_quality(
         "ready": False,
         "production_ready": False,
     }
+    if not scan_allowed:
+        return result
     try:
         result.update(_run(
             base=mp4_output, base_sha256=video_sha256,
