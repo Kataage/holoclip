@@ -472,6 +472,7 @@ def advance_completed_source_renders(
         overview = inspect_completed_source_renders(queue=queue)
         overview["rendered_count"] = 0
         return overview
+    started_monotonic = time.monotonic()
     root = _no_links(preview_root)
     if root.exists() and not root.is_dir():
         raise ValueError("LOCAL_RENDER_AUTO_QA_OUTPUT_ROOT_UNSAFE")
@@ -564,6 +565,10 @@ def advance_completed_source_renders(
             final_output=final_output, final_sha256=final_sha,
             timeline=timeline,
             caption_sha256=caption_evidence["output_sha256"],
+            # A conservative reserve under the existing 55-minute Windows
+            # scheduled-task limit. Do not risk its hard termination solely
+            # for optional quality diagnostics.
+            scan_allowed=time.monotonic() - started_monotonic < 3000.0,
         )
         _finish(
             queue, job_id=job_id, token=token, state="QA_PASSED", reason="NONE",
