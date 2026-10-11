@@ -139,7 +139,7 @@ def test_offline_real_ffmpeg_zoom_fade_and_audio_duration_no_shift(tmp_path):
         path = tmp_path / f"{name}.mp4"
         proc = subprocess.run([
             ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-            "-f", "lavfi", "-i", f"testsrc2=size=160x90:rate=30:duration=4",
+            "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=30:duration=4",
             "-f", "lavfi", "-i",
             f"sine=frequency={400 + n*220}:sample_rate=48000:duration=4",
             "-c:v", "mpeg4", "-q:v", "6", "-c:a", "aac", "-shortest",
