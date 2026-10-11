@@ -845,6 +845,38 @@ different source content; measured dBFS and ASR edges are inspection
 signals only. No real owner media are accessible in hosted CI, which
 uses offline fakes. `ready=false` always.
 
+### Conservative source-ASR speech-boundary alternative suggestions (PR #244)
+
+`uv run holoclip render-cut-extension-speech-refine` reuses the current
+finished extension A/B and #243 speech audit to identify **only cut edges
+that interrupt a source-ASR-timed utterance**. It never edits MP4s, source
+audio, queue state or ASR. No manual dataset or new YouTube download is
+required. Existing local media, trained-alignment holdout gates, canonical
+source identity, QA evidence, SHA-256 media hashes and transcript bytes must
+still agree with the verified finished trial; missing/stale evidence blocks.
+
+When the outer edge of the extension clips an ASR utterance, a preview may
+propose extending that same edge by **at most 2 seconds beyond current B**
+and at most **8 seconds total beyond original A**, while not overlapping
+any other selected same-source cut or exceeding the bounded edit duration.
+The new edge must match a real ASR utterance boundary, reduce the number
+of straddling ASR intervals, and increase the number of fully contained
+ASR utterances vs original A. Proposals use the existing immutable
+ClipTimeline validation, capped at two per checked pair. When no qualifying
+edge exists, the tool abstains rather than claiming a quality improvement.
+
+Default output is read-only JSON to stdout. Optional `--output path.json`
+saves create-only evidence without overwriting any existing report.
+The report contains bounded source-clock timings, source/transcript hashes,
+alternative timeline digests and explicit restrictions, but no spoken
+text, raw video IDs or arbitrary local file paths. It is **not an actual
+audio/video edit**, and source-ASR intervals are not trustworthy word
+timestamps, independently listened-to sound, verified comedy context,
+permission evidence or proof of an improved final clip. Proposed ranges
+require fresh cache/policy/FFmpeg validation before any future rendering.
+`ready=false`, no automatic adoption and no publishing remain mandatory.
+Hosted CI only uses fake local media and no external APIs.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.

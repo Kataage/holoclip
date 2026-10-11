@@ -146,6 +146,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Replay original A's QA-documented cut-audio leveling and caption/SRT/burnin stages onto extension B with immutable matched-stage SHA evidence, no quality inference or overwrite
 - [x] Recheck original A MP4 bytes after finishing B and retain FFprobe-measured final B duration separately from expected timeline duration (offline regression only; real A/B qualification still pending)
 - [x] Source-ASR-clock speech boundary audit for one finished cut-extension A/B with local decoded A-adjacent/B-added audio dBFS sampling, checksum-protected report and no creative-quality claims (requires owner-local real video execution for actual measurement)
+- [x] Conservative preview-only alternative cut edges for ASR utterances clipped by the current finished trial, with strict <=2s additional budget, no false improvement claims, and no automatic execution (real creative validation remains pending)
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion
