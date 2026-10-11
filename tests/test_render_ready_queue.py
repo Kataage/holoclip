@@ -783,3 +783,68 @@ def test_review_unavailable_retains_original_mp4_and_basic_av_qa(
     assert (root / f"{receipt['job_id']}.mp4").exists()
     counts = ready.inspect_completed_source_renders(queue=queue)
     assert counts["review_counts"] == {"created": 0, "unavailable": 1}
+
+
+
+def test_completed_render_automatically_archives_unlabelled_review_receipt(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    # The current synthetic render fake does not produce an actual review
+    # ledger; exercise the queue stage and transactional evidence explicitly.
+    delivered = []
+
+    def archive(**kwargs):
+        delivered.append(kwargs)
+        return {
+            "status": "LOCAL_EDIT_ARCHIVE_CREATED_UNLABELLED",
+            "sha256": "e" * 64,
+            "candidate_count": 3,
+        }
+
+    monkeypatch.setattr(ready, "archive_incremental_review", archive)
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["archive_status"] == "LOCAL_EDIT_ARCHIVE_CREATED_UNLABELLED"
+    assert result["archive_candidate_count"] == 3
+    assert result["archive_sha256"] == "e" * 64
+    assert len(delivered) == 1
+    assert delivered[0]["mp4_output"] == root / f"{receipt['job_id']}.mp4"
+    assert delivered[0]["video_sha256"] == "a" * 64
+    assert delivered[0]["review_sha256"] == result["review_sha256"]
+    assert delivered[0]["final_sha256"] == "a" * 64
+    with sqlite3.connect(queue) as connection:
+        row = connection.execute(
+            "SELECT status,output_sha256,candidate_count "
+            "FROM render_review_archive_evidence WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()
+        state = connection.execute("SELECT state FROM render_jobs").fetchone()[0]
+    assert row == ("LOCAL_EDIT_ARCHIVE_CREATED_UNLABELLED", "e" * 64, 3)
+    assert state == "QA_PASSED"
+    counters = ready.inspect_completed_source_renders(queue=queue)
+    assert counters["archive_counts"] == {"created": 1, "unavailable": 0}
+    assert result["ready"] is False and result["publication_performed"] is False
+
+
+def test_incremental_archive_unavailable_does_not_revoke_technical_qa(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    # No valid review sidecar: the cheap archive stage fails independently.
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["archive_status"] == "LOCAL_EDIT_ARCHIVE_UNAVAILABLE"
+    assert result["archive_candidate_count"] == 0
+    assert (root / f"{receipt['job_id']}.mp4").is_file()
+    report = ready.inspect_completed_source_renders(queue=queue)
+    assert report["archive_counts"] == {"created": 0, "unavailable": 1}
+    assert report["counts"]["QA_PASSED"] == 1

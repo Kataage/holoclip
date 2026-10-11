@@ -1440,6 +1440,10 @@ def render_review_calibration_pack_command(
     preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
     example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
     output: Path = typer.Option(DEFAULT_PACK, "--output"),
+    after_job_id: str | None = typer.Option(None, "--after-job-id",
+        help="Continue after the previous page's next_cursor."),
+    max_jobs: int = typer.Option(40, "--max-jobs", min=1, max=40),
+    max_candidates: int = typer.Option(30, "--max-candidates", min=1, max=30),
     execute: bool = typer.Option(False, "--execute",
         help="Explicit create-only offline unlabeled review sampling pack."),
 ) -> None:
@@ -1448,6 +1452,8 @@ def render_review_calibration_pack_command(
         report = export_review_calibration_pack(
             preview_root=preview_root, example_store=example_store,
             output=output, execute=execute,
+            after_job_id=after_job_id, max_jobs=max_jobs,
+            max_candidates=max_candidates,
         )
     except (OSError, ValueError, TypeError, UnicodeError) as exc:
         typer.echo(json.dumps({
