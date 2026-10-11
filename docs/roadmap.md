@@ -126,6 +126,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] First conservative cut-aware audio leveling baseline: per-cut measured dBFS correction capped at ±6 dB, silence guard, peak limiter, post-encode QA, separate MP4 and durable optional evidence
 - [ ] Complete perceptual LUFS/audio-dialogue qualification, music versus speech balancing and verified near-boundary listening tests
 - [x] Localized review ledgers for measured anomalies: event timestamps mapped to ordered cuts, suggested manual inspection action and immutable SHA-256-bound JSON, no automatic content edits
+- [x] Source-clock-aligned bounded black/freeze anomaly context from existing cached original media, independent immutable evidence and fail-closed source windows, never automatic repair
 - [x] Durable append-only per-render review backlog and multi-page review sampling beyond the 40-ledger cap, with separate SQLite evidence, no new media downloads and honest unlabelled status
 - [x] Create SHA-verified, balanced offline unlabeled quality-diagnostic sampling packs from local review ledgers; report existing trusted human alignment corpus separately and never invent visual/audio human gold
 - [ ] Obtain independent human-rated labels for sampled signals and calibrate precision/recall across sources before any automatic correction

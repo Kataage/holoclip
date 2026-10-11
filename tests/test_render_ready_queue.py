@@ -848,3 +848,74 @@ def test_incremental_archive_unavailable_does_not_revoke_technical_qa(
     report = ready.inspect_completed_source_renders(queue=queue)
     assert report["archive_counts"] == {"created": 0, "unavailable": 1}
     assert report["counts"]["QA_PASSED"] == 1
+
+
+
+def test_original_source_context_evidence_is_independent_and_persisted(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    compared = []
+
+    def measure(**kwargs):
+        compared.append(kwargs)
+        return {
+            "status": "LOCAL_SOURCE_CONTEXT_SAMPLED_UNLABELLED",
+            "sha256": "b" * 64,
+            "sampled_event_count": 2,
+            "matched_count": 1,
+            "no_match_count": 1,
+        }
+
+    monkeypatch.setattr(ready, "compare_local_source_context", measure)
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["source_context_status"] == "LOCAL_SOURCE_CONTEXT_SAMPLED_UNLABELLED"
+    assert result["source_context_sampled_event_count"] == 2
+    assert result["source_context_matched_count"] == 1
+    assert result["source_context_no_match_count"] == 1
+    assert compared[0]["plan"].id == result["plan_id"]
+    assert compared[0]["video_sha256"] == result["output_sha256"]
+    assert compared[0]["review_sha256"] == result["review_sha256"]
+    assert compared[0]["scan_allowed"] is True
+    with sqlite3.connect(queue) as conn:
+        row = conn.execute(
+            "SELECT status,output_sha256,sampled_event_count,matched_count,"
+            "no_match_count FROM render_source_context_evidence WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()
+        state = conn.execute(
+            "SELECT state FROM render_jobs WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()[0]
+    assert row == (
+        "LOCAL_SOURCE_CONTEXT_SAMPLED_UNLABELLED", "b" * 64, 2, 1, 1
+    )
+    assert state == "QA_PASSED"
+    assert ready.inspect_completed_source_renders(queue=queue)[
+        "source_context_counts"
+    ] == {"sampled": 1, "no_video_events": 0, "unavailable": 0}
+    assert result["ready"] is False
+
+
+def test_source_context_without_review_is_optional_not_render_failure(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    outcome = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert outcome["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert outcome["source_context_status"] == "LOCAL_SOURCE_CONTEXT_UNAVAILABLE"
+    assert (root / f"{receipt['job_id']}.mp4").is_file()
+    counts = ready.inspect_completed_source_renders(queue=queue)
+    assert counts["source_context_counts"] == {
+        "sampled": 0, "no_video_events": 0, "unavailable": 1,
+    }
+    assert counts["counts"]["QA_PASSED"] == 1

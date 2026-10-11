@@ -121,6 +121,55 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Bounded original-stream anomaly context (PR #217)
+
+After the local MP4 render is complete, the existing worker can **optionally**
+inspect the *cached original source footage* corresponding to up to three
+previously detected black/frozen-frame events. It maps output seconds back
+through the ClipTimeline cut source clocks and runs a fixed, 2fps 160x90
+FFmpeg blackdetect/freezedetect pass on only the selected original-media
+windows (up to six seconds each, max 15 seconds per subprocess). It does not
+download source material, call a service, upload, make new edits, use OCR/AI,
+or read the source transcripts. The original stream and finished MP4 are
+never modified.
+
+Events that cross a cut boundary or are too short for a meaningful
+single-source comparison are marked **skipped** instead of being attributed
+to the wrong original. Missing/corrupt original files, ffmpeg errors and
+source changes while scanning are **unavailable**, not a false negative.
+The source snapshot SHA-256 was already verified twice during rendering.
+This optional event-window scan checks the local file's size and stat identity
+before/after reading, but **does not independently rehash the entire source**
+again; the sidecar states this limitation plainly.
+
+The separate immutable output
+\`data/render-previews/renderqueue_<id>.source-context.json\` is bound to
+the generated review ledger SHA and RenderPlan ID. It contains limited
+timings and pseudonymous asset/segment identifiers, comparison status and
+original source SHA-256 from the render snapshot, without local paths or
+transcript text. Its outcomes are:
+
+- \`SIMILAR_SIGNAL_OBSERVED_IN_SOURCE_WINDOW\`: the corresponding source
+  sample also exhibited the type of signal seen in the render
+- \`NO_SIMILAR_SIGNAL_IN_SAMPLED_SOURCE_WINDOW\`: it was not observed at
+  the coarse chosen thresholds in that small source sample
+- \`SKIPPED_BOUNDARY_OR_SHORT_OBSERVATION\` or
+  \`SOURCE_WINDOW_UNAVAILABLE\`: the source comparison cannot establish
+  a sound observation
+
+Even a matching source signal is **not proof that the edit is good**. An
+absent source signal is **not proof the renderer introduced a defect**:
+the coarse sampler, zoom, temporal resampling, keyframes and boundaries can
+change detector behavior. No flag is removed or automatically fixed.
+
+\`render_source_context_evidence\` tracks status, SHA and aggregate
+comparison counts independently in SQLite; read-only queue status exposes
+\`source_context_counts\`. When the worker approaches its Windows runtime
+budget, this step is skipped. Lack of a source comparison cannot revoke
+technical A/V QA or mark the video production-ready. Existing
+\`ready=false\`, \`auto_repair_allowed=false\` and human-editorial
+qualification requirements remain enforced.
+
 ## Rolling review backlog and paged sampling (PR #216)
 
 The existing unattended local render worker now appends a tiny, create-only
