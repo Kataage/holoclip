@@ -636,6 +636,47 @@ not counted as valid consistency comparisons. The gate always keeps
 \`semantic_accuracy=null\`, \`independent_gold_available=false\`,
 \`ready=false\`, and does not edit or publish any video.
 
+### Offline audit of two-order AI hypothesis receipts (PR #238)
+
+\`uv run holoclip render-real-semantic-order-audit --receipt <existing-PR237>.json\`
+rebuilds the **same existing trusted source clips, counterfactuals and
+source-timed local ASR** through the PR #236/#237 read-only provenance,
+holdout and canonical source checks. Use the *same* \`--max-streams\`
+and \`--max-cases\` as when the original report was created; the
+default is one source. No AI, API, FFmpeg, yt-dlp, new transcription,
+download or operator-supplied dataset is required.
+
+The audit demands byte-equivalent regenerated *redacted evidence*,
+matching SHA-256 of raw evidence, source transcript/holdout identities,
+an exact two-call-per-case request count, the same bounded model
+comparison structure, truthful provider/model-route comparability,
+exactly the right original source variants, safe failure/quality flags,
+and independently recomputed per-variant comparisons and summary counts.
+Because the original model quote text was **correctly redacted** in
+PR #237, the audit checks each SHA-256 quote hash against the bounded
+set of **actual contiguous, valid short quotations** of the current
+local source ASR, matching the cited LOST or RETAINED evidence ID.
+Hashes for absent quotes or fabricated/invalid source selections fail.
+It does **not** copy any human story text, full ASR, validated quote,
+raw provider output, source URLs or raw video IDs into the result.
+
+The command defaults to stdout only and returns nonzero on rejection.
+\`--output <new>.json\` optionally writes a safe create-only audit
+sidecar with only a receipt hash, evidence hash, counts, fixed
+rejection codes and explicit non-qualification flags. Changing the
+source ASR, saved evidence, model route, cited quote hash, status,
+pairwise agreement or aggregate counters invalidates the receipt;
+holdout reservation conflicts also block validation.
+
+**Important limitations:** A reproducible quotation hash and internal
+receipt consistency do not authenticate the original model's identity,
+establish that the model actually produced the recorded answer, or
+verify Japanese meaning, audible speech, creative editing success
+or human quality ratings. SHA-256 on a JSON file is **not** a
+signature. This is a consistency audit of untrusted in-sample
+observations, not a production/auto-edit/publication gate.
+\`ready=false\` is unchanged.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.

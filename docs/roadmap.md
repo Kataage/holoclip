@@ -140,6 +140,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Bounded one-command real local corpus readiness audit with explicit missing/ambiguous ASR reasons and source-diverse evidence suggestions, no semantic quality labels or user-prepared dataset
 - [x] Dry-run source-grounded real human-vs-omission contrasts and explicit qualified AI textual comparison of lost/retained ASR (strict paired citations, no semantic gold or auto-edit)
 - [x] Explicit qualified two-order model repeatability probe (per-run exact lost/retained quote verification, route identity, redacted quote hashes, no narrative quality inference)
+- [x] Offline re-audit of redacted two-order receipts against regenerated local source clock/ASR substring hashes, route comparisons, per-variant and aggregate counts; not signed authenticity or creative-quality gold
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion
