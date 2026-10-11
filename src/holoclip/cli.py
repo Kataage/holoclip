@@ -1507,6 +1507,7 @@ def render_same_source_geometry_command(
     example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
     growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
     preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
     output: Path = typer.Option(DEFAULT_SAME_SOURCE_OUTPUT, "--output"),
     after_job_id: str | None = typer.Option(
         None, "--after-job-id", help="Continue after a prior page's next_cursor."),
@@ -1519,6 +1520,7 @@ def render_same_source_geometry_command(
         report = export_same_source_edit_geometry(
             queue=queue, example_store=example_store,
             growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root,
             output=output, after_job_id=after_job_id, max_jobs=max_jobs,
             execute=execute,
         )

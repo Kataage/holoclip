@@ -224,6 +224,31 @@ required. Opt-in \`--execute --output <new>.json\` saves a create-only immutable
 report, including the queue. \`ready=false\` and \`auto_adoption_allowed=false\`
 are unchanged. This is bounded per page, **not a global all-stream ranking**.
 
+### Local transcript context for prioritized source disagreements (PR #227)
+
+The same read-only \`render-same-source-geometry\` command optionally reads
+timed local source ASR under \`data/transcripts\`, with
+\`--transcript-root <local-folder>\` for an existing alternate cache. Only the
+ten already holdout-screened inspection jobs are considered. Fixed recognized
+paths are \`<root>/<video-id>.json\`, \`<root>/sources/<video-id>.json\`,
+and \`<root>/examples/sources/<video-id>.json\`. Multiple files for one ID,
+identity mismatch, invalid timing, oversized data and linked paths fail
+closed. Missing files report \`TRANSCRIPT_UNAVAILABLE\`, not invented text.
+
+For each job's top generated-only and human-only source window, record up to
+three short ASR utterances from the preceding eight seconds, an at-most-eight
+second window within the discrepancy, and the following eight seconds.
+Each excerpt is capped to 160 characters; unsafe controls are excluded.
+The transcript's SHA-256 and the basis of source identity are recorded.
+Filename-only association is explicitly **unverified**; matching metadata
+does not independently verify the audio or word timing.
+
+This is **unverified ASR context**, not a judgment about humor, intentions,
+or the correct cut. No network, yt-dlp, new ASR, LLM inference, FFmpeg,
+automatic edit, approval, publishing, or manual dataset is required. Local
+reports can contain verbatim speech; review them before sharing. Normal
+\`ready=false\`, holdout exclusion, no overwrite, and in-sample status remain.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.

@@ -129,6 +129,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Exact canonical YouTube source-ID matched human-vs-generated interval geometry on QA-passed offline rendered timelines, holdout collisions blocked, human alignment treated as in-sample reference only
 - [x] Read-only per-pair source-selection disagreement windows and playback source-time backtracks, union-corrected gap detection; no automatic edit proposals or human-quality scores
 - [x] Page-local, one-per-job inspection priority queue for strongest observed source-selection differences with exact-interval playback order check, never a creative quality score or auto-adoption
+- [x] Optional bounded before/within/after local ASR source-time context for ranked discrepancies with explicit source provenance limitations and missing evidence status
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion
