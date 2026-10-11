@@ -16,7 +16,7 @@ from holoclip.render_same_source_geometry import (
     compare_same_source_edit_geometry,
 )
 from holoclip.render_source_queue import DEFAULT_QUEUE
-from holoclip.render_source_worker import DEFAULT_PREVIEW_ROOT
+from holoclip.render_ready_queue import DEFAULT_PREVIEW_ROOT
 from holoclip.render_same_source_selection_presence import (
     parse_generated_intervals, source_span_coverage,
 )
