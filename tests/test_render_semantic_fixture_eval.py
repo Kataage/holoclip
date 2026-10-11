@@ -1,7 +1,6 @@
 """Offline synthetic narrative omission and source-selection presence safeguards."""
 from __future__ import annotations
 
-import copy
 import json
 
 import pytest
@@ -15,7 +14,7 @@ from holoclip import render_semantic_fixture_eval as fixture
 from holoclip.render_same_source_selection_presence import (
     parse_generated_intervals, source_span_coverage,
 )
-from test_render_same_source_semantic_review import _case, _model_answer
+from test_render_same_source_semantic_review import _case
 from test_render_same_source_semantic_audit import _saved
 
 
