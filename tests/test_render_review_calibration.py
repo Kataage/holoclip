@@ -127,7 +127,7 @@ def test_symlinked_review_data_is_rejected(tmp_path):
         (root / review.name).symlink_to(review)
     except (OSError, NotImplementedError):
         pytest.skip("No symlink permission")
-    with pytest.raises(ValueError, match="symlink|link|LOCAL_EDIT_PACK"):
+    with pytest.raises(ValueError, match="LOCAL_RENDER_LINKED_PATH|LOCAL_EDIT_PACK"):
         cal.compile_review_calibration_pack(
             preview_root=root, example_store=tmp_path / "missing.jsonl",
         )
