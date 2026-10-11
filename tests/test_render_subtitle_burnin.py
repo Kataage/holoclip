@@ -196,3 +196,46 @@ def test_real_offline_ffmpeg_japanese_caption_with_audio(tmp_path):
     assert result["status"] == "LOCAL_SUBTITLE_BURNED_PREVIEW_UNVERIFIED_EDITORIAL"
     assert burn._probe(video.with_name("preview.captioned.mp4"))[1:] == (True, True)
     assert hashlib.sha256(video.read_bytes()).hexdigest() == original_sha
+
+
+def test_leveled_mp4_burns_original_sidecar_with_stable_caption_target(
+    tmp_path, monkeypatch,
+):
+    original = tmp_path / "preview.mp4"
+    original.write_bytes(b"original")
+    srt = tmp_path / "preview.srt"
+    srt.write_text(SRT, encoding="utf-8")
+    leveled = tmp_path / "preview.leveled.mp4"
+    leveled.write_bytes(b"verified audio")
+    output = tmp_path / "preview.captioned.mp4"
+    called = []
+
+    def encode(video, subtitle, target, *, video_sha, srt_sha):
+        called.append((video, subtitle, target))
+        assert video == leveled and subtitle == srt and target == output
+        assert video_sha == hashlib.sha256(leveled.read_bytes()).hexdigest()
+        target.write_bytes(b"synthetic captioned output")
+        return hashlib.sha256(target.read_bytes()).hexdigest(), target.stat().st_size
+
+    monkeypatch.setattr(burn, "_burn", encode)
+    status = burn.burn_captioned_preview(
+        mp4_output=leveled,
+        video_sha256=hashlib.sha256(leveled.read_bytes()).hexdigest(),
+        subtitle_sha256=hashlib.sha256(srt.read_bytes()).hexdigest(),
+    )
+    assert status["status"] == "LOCAL_SUBTITLE_BURNED_PREVIEW_UNVERIFIED_EDITORIAL"
+    assert called == [(leveled, srt, output)]
+    assert original.read_bytes() == b"original"
+
+
+def test_real_burn_guard_rejects_unrelated_subtitle_path(tmp_path):
+    video = tmp_path / "preview.leveled.mp4"
+    video.write_bytes(b"input")
+    srt = tmp_path / "unrelated.srt"
+    srt.write_text(SRT, encoding="utf-8")
+    with pytest.raises(ValueError, match="INPUT_UNTRUSTED"):
+        burn._burn(
+            video, srt, tmp_path / "unrelated.captioned.mp4",
+            video_sha=hashlib.sha256(video.read_bytes()).hexdigest(),
+            srt_sha=hashlib.sha256(srt.read_bytes()).hexdigest(),
+        )
