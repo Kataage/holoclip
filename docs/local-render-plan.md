@@ -139,7 +139,9 @@ baseline, and duration clock consistency. No captions means a **partial**
 diagnostic, not a fake subtitle success.
 
 All tool invocations are offline, use fixed validated FFmpeg arguments,
-have strict time and stderr limits and verify local input content SHA-256
+have strict time and stderr limits (including a 60-second ceiling for the
+video scan and at most 30 seconds for the audio sample) and verify local
+input content SHA-256
 both before and after scanning. No operator SRT or unrelated MP4 is scanned
 on untrusted provenance. Only bounded counters and numeric diagnostics
 are persisted; no sensitive transcript lines or paths are logged.
@@ -149,8 +151,9 @@ MP4 identities, frame anomaly counts, caption observation state and flags,
 audio mean/peak and combined warning count. Its statuses mean exactly
 \`MEASURED_FLAGS\`, \`MEASURED_NO_FLAGS\`, \`MEASURED_PARTIAL\` or
 \`UNAVAILABLE\` under the \`LOCAL_EDIT_DIAGNOSTIC_*\` prefix.
-Read-only worker status adds aggregate quality counts. An unavailable
-diagnostic never revokes existing technical MP4 QA.
+Read-only worker status adds aggregate quality counts. The scheduled worker skips the optional scan entirely once earlier work
+has consumed 50 minutes, reserving time under the 55-minute Windows task
+deadline. An unavailable diagnostic never revokes existing technical MP4 QA.
 
 **Important:** Dark scenes, still illustrations, intentional holds and
 strong reactions can be perfectly good editing choices. Thresholds are
