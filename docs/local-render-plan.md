@@ -543,6 +543,53 @@ algorithm with synthetic offline fixtures, **not** truthfully report the
 number or semantic accuracy of user-owned real clips. Real counts must
 come from execution against the user's original \`data/\` directory.
 
+### Source-cited comparison of human edits with virtual omissions (PR #236)
+
+\`uv run holoclip render-real-semantic-contrast\` uses the existing
+source-diverse real-corpus readiness inventory to select up to three
+**in-sample trusted human-made clips from different source streams**,
+then independently rechecks each video's canonical ID, stored ASR
+manifest/metadata identity, holdout reservations, 2–200 ordered
+alignment segments and local transcript SHA. It constructs three
+possible counterfactual selections by dropping the first, intermediate,
+or final human-aligned clip segments (no middle variant for two-segment
+examples). These are **virtual** removals, not rendered edits.
+
+For every variant, the report distinguishes existing source-timed
+ASR excerpts that disappear *entirely* from the selected source-clock
+timeline, remain fully selected, or are only partially present. At most
+nine short ASR excerpts are sampled per source and only counterfactuals
+with a demonstrably lost excerpt and a retained excerpt qualify.
+The default runs locally with **no network/AI request** and prints a
+JSON preview containing source-time positions, SHA-256 of each ASR
+utterance, precise source-selection loss, and no verbatim ASR text.
+There is no new data preparation, yt-dlp, FFmpeg, paid service or
+Docker dependency.
+
+For optional actual textual comparison, **only when the user has
+confirmed that the local ASR content is public**, set
+\`HOLOCLIP_DATA_CLASS=public\` and add \`--execute --output <new>.json\`.
+The existing capability-qualified \`MeshLLMClient\` is reused, with at
+most three requests and no unqualified fallback. The model must
+either express \`POSSIBLE_COMPREHENSION_LOSS\` while citing an **exact**
+lost ASR substring AND an exact retained substring from the appropriate
+virtual version, or report \`NO_CLEAR_LOSS_FOUND\` or
+\`INSUFFICIENT_EVIDENCE\` with null citations. Unsupported statuses,
+fabricated quotes/evidence IDs, references to still-retained speech as
+"lost", wrong variants, incomplete/malformed outputs or extra approval
+fields are rejected. The saved create-only JSON contains only hashed
+source identifiers, excerpt times/digests and verified model quotations,
+not the full raw local ASR. Review quoted phrases before sharing.
+
+The model output is **NOT** an independently verified factual,
+audible or semantic assessment; a surviving ASR excerpt is not proof
+that a rendered video contains audible speech. First/middle/last
+aligned clip segments are **not** verified setup/development/payoff
+labels. Even matching real human training edits cannot establish
+humor, completion, human preference or actual precision/recall. Neither
+dry-run nor model hypothesis can automatically edit, qualify, accept or
+publish a clip. \`real_semantic_accuracy=null\`, no gold, \`ready=false\`.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
