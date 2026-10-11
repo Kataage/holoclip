@@ -22,7 +22,7 @@ from holoclip.render_cut_extension_finish_ab import (
 from holoclip.render_plan import _hash, _no_links, _probe
 from holoclip.render_same_source_semantic_review import save_semantic_review
 from holoclip.render_source_resolver import _canonical_assets
-from holoclip.render_subtitles import _load_source_transcript
+from holoclip.render_same_source_transcript_context import _read_transcript
 
 VERSION = "holoclip-finished-extension-speech-audio-audit-v1"
 _MAX_RECEIPT = 65536
@@ -170,10 +170,10 @@ def _asr_boundary_evidence(prepared: dict, span: dict) -> dict:
     asset = _canonical_assets(
         plan["original"]["database"], {asset_id},
     )[asset_id]
-    segments = _load_source_transcript(
+    transcript = _read_transcript(
         _no_links(prepared["transcript_root"]), asset.external_id,
     )
-    if segments is None:
+    if transcript is None:
         return {
             "status": "SOURCE_ASR_NOT_AVAILABLE",
             "boundary_overlap_baseline_count": None,
@@ -182,6 +182,16 @@ def _asr_boundary_evidence(prepared: dict, span: dict) -> dict:
             "added_interval_partial_utterance_count": None,
             "source_text_exported": False,
         }
+
+    segments, digest, basis = transcript
+    if digest != plan["local_source_asr_sha256"] or basis not in {
+        "FILENAME_AND_METADATA_ID_MATCH_AUDIO_UNVERIFIED",
+        "FILENAME_ONLY_IDENTITY_UNVERIFIED",
+    }:
+        # A filename-only association is allowed here ONLY after the original
+        # extension proposal has independently anchored its exact bytes to a
+        # trusted source manifest and the digest still agrees.
+        raise ValueError("LOCAL_SPEECH_AB_ASR_LINEAGE_CHANGED")
 
     def crossings(start: float, end: float) -> int:
         return sum(
