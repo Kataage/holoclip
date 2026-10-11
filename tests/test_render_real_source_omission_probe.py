@@ -114,13 +114,15 @@ def test_two_aligned_spans_only_test_opening_and_closing(tmp_path):
 
 
 def test_overlapping_reference_spans_count_unique_source_seconds(tmp_path):
-    from holoclip.example_quality import evaluate_human_example_learning_quality
+    from holoclip.example_quality import (
+        LearningQuality, evaluate_human_example_learning_quality,
+    )
     example = _human_example(ranges=[
         (0, 2, 10, 12), (2, 5, 10, 13), (5, 8, 31, 34),
     ])
     # Learning gates remain authoritative. This test exercises the overlap
     # arithmetic only rather than weakening eligibility for unusual edits.
-    if evaluate_human_example_learning_quality(example).decision.value != "TRUSTED":
+    if evaluate_human_example_learning_quality(example).decision is not LearningQuality.TRUSTED:
         pytest.skip("Overlapping source spans not eligible for real-corpus trusted learning")
     params, _ = _scenario(tmp_path, clips=[example])
     result = _probe(params)
