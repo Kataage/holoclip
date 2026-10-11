@@ -121,6 +121,51 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Non-destructive fast-subtitle style A/B samples (PR #220)
+
+For the first **verified fast_subtitle cue** previously identified in the
+immutable review and triage ledgers, the completed Windows worker can make
+one additional short local Japanese-caption style comparison. The experiment
+is for visual inspection only, not a claim to fix too-short cue duration.
+
+The new, create-only folder
+\`data/render-previews/renderqueue_<id>.subtitle-ab/\` contains:
+
+- \`before.mp4\`: the corresponding small excerpt of the original/leveled,
+  *not-yet-captioned* MP4 with the existing standard 43pt ASS style
+- \`after.mp4\`: the **same** excerpt and SRT text/clock with an experimental
+  48pt, slightly stronger outlined ASS style
+- \`receipt.json\`: SHA-256 of both samples, original MP4, uncaptioned
+  input MP4, immutable prior triage and SRT; one cue ID and relative source
+  clock; and original-MP4 SHA verification as the immutable fallback
+
+The real SRT is parsed by the existing bounded safe Japanese caption parser,
+and the exact stored cue number/clock is checked against the immutable review
+ledger. No cue's actual text, time range, source URL or absolute local path
+is included in the output receipt. The sample is at most 4 seconds and uses
+fixed file-only FFmpeg, without network access or shell expressions.
+
+Oversized text that violates the existing two-line wrapping rule is
+**not silently shrunk into an illegible sample**. This first experiment is
+limited to fast subtitle cues; overwide/overflowing captions, video-cut
+warnings and black/frozen-frame events retain inspection-only guidance.
+
+The output is never promoted or used in the full-length video. Both A/B
+variants must be valid local MP4s with video/audio and distinct SHA-256
+proofs. Their visible quality is **not objectively certified**; changing
+font size/outline cannot repair an unreadably fast subtitle or an ASR
+mistake. If encoding, font discovery, source hash checks or receipt binding
+fails, optional status is unavailable and successful original video QA is
+preserved. Interrupted output without final \`receipt.json\` is unqualified
+and never automatically reused.
+
+Read-only render-queue inspection exposes \`subtitle_ab_counts\` from a
+separate SQLite \`render_subtitle_ab_evidence\` table; the original,
+leveled/captioned MP4s and SRT are never overwritten/deleted. The immutable
+original base SHA remains the fallback, not a destructive undo command.
+\`ready=false\`, no autonomous repair, no publication and no invented
+editorial quality metrics remain mandatory.
+
 ## Non-destructive audio A/B listening preview and verified fallback (PR #219)
 
 For a previously measured **audio_peak** event in the first ten seconds,
