@@ -191,6 +191,10 @@ from holoclip.render_real_semantic_contrast import (
     preview_real_semantic_contrasts,
     infer_real_semantic_contrasts,
 )
+from holoclip.render_real_semantic_order_sensitivity import (
+    DEFAULT_OUTPUT as DEFAULT_ORDER_SENSITIVITY_OUTPUT,
+    preview_real_order_sensitivity, infer_real_order_sensitivity,
+)
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
 )
@@ -1607,6 +1611,55 @@ def render_same_source_semantic_review_command(
 
 
 
+
+
+
+@app.command("render-real-semantic-order-sensitivity")
+def render_real_semantic_order_sensitivity_command(
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    max_streams: int = typer.Option(128, "--max-streams", min=1, max=128),
+    max_cases: int = typer.Option(1, "--max-cases", min=1, max=3),
+    output: Path = typer.Option(DEFAULT_ORDER_SENSITIVITY_OUTPUT, "--output"),
+    execute: bool = typer.Option(
+        False, "--execute",
+        help="Opt in to two order-permuted requests per public case, max six qualified requests.",
+    ),
+) -> None:
+    """Measure two-run prompt ordering sensitivity without quality promotion."""
+    try:
+        prepared = prepare_real_semantic_contrasts(
+            example_store=example_store, growth_state=growth_state,
+            transcript_root=transcript_root, max_streams=max_streams,
+            max_cases=max_cases,
+        )
+        if not execute:
+            typer.echo(json.dumps(
+                preview_real_order_sensitivity(prepared),
+                ensure_ascii=False, sort_keys=True,
+            ))
+            return
+        validate_semantic_output(output)
+        if os.getenv("HOLOCLIP_DATA_CLASS") != "public":
+            raise ValueError("LOCAL_ORDER_SENSITIVITY_EXPLICIT_PUBLIC_DATA_REQUIRED")
+        if prepared["status"] != "LOCAL_REAL_CONTRAST_EVIDENCE_PREPARED":
+            raise ValueError("LOCAL_ORDER_SENSITIVITY_NO_ELIGIBLE_EVIDENCE")
+
+        async def _infer():
+            async with MeshLLMClient() as client:
+                return await infer_real_order_sensitivity(prepared, client)
+
+        result = asyncio.run(_infer())
+        save_semantic_review(result, output)
+    except Exception as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_ORDER_SENSITIVITY_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True))
 
 
 @app.command("render-real-semantic-contrast")
