@@ -16,8 +16,11 @@ from test_render_cut_extension_mp4_ab import _args
 
 
 def _case(tmp_path, monkeypatch):
-    params, _, media, asr, _ = _prepared(tmp_path, monkeypatch)
-    prepared = acoustic.prepare_three_way_acoustic(**params)
+    params, review, media, asr, _ = _prepared(tmp_path, monkeypatch)
+    proposal_index = review["diagnostics"]["finished"]["b2"]["prepared"]["trial"]["proposal_index"]
+    prepared = acoustic.prepare_three_way_acoustic(
+        **params, proposal_index=proposal_index,
+    )
     return params, prepared, media, asr
 
 
@@ -188,7 +191,11 @@ def test_cli_preview_and_explicit_local_probe(tmp_path, monkeypatch):
         cli, "MeshLLMClient",
         lambda *a, **k: pytest.fail("no external language provider needed"),
     )
-    args = ["render-cut-extension-three-way-acoustic", *_args(params)[1:]]
+    proposal_index = prepared["dialogue"]["review"]["diagnostics"]["finished"]["b2"]["prepared"]["trial"]["proposal_index"]
+    args = [
+        "render-cut-extension-three-way-acoustic", *_args(params)[1:],
+        "--proposal-index", str(proposal_index),
+    ]
     preview = CliRunner().invoke(cli.app, args)
     assert preview.exit_code == 0, preview.stdout
     assert json.loads(preview.stdout)["measured_audio_sample_count"] == 0
