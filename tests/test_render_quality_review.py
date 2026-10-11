@@ -25,11 +25,6 @@ def timeline():
     )
 
 
-def video(tmp_path):
-    path = tmp_path / "renderqueue_" + "a" * 32
-    return path
-
-
 def _case(tmp_path):
     mp4 = tmp_path / ("renderqueue_" + "a" * 32 + ".mp4")
     mp4.write_bytes(b"already QA passed original MP4")
