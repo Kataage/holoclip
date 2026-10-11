@@ -24,7 +24,9 @@ from holoclip.render_plan import _hash, _no_links, _probe
 VERSION = "holoclip-independent-ab-signal-audit-v1"
 _JOB = re.compile(r"renderqueue_[a-f0-9]{32}\Z")
 _SHA = re.compile(r"[a-f0-9]{64}\Z")
-_SSIM = re.compile(rb"SSIM Y:[0-9.]+ U:[0-9.]+ V:[0-9.]+ All:([0-9.]+)")
+# FFmpeg emits parenthesized per-channel dB numbers between Y/U/V fields.
+# Extract the bounded All: SSIM value from the single final summary line.
+_SSIM = re.compile(rb"\bSSIM Y:[^\r\n]{0,200}?\bAll:([0-9.]+)")
 _RECEIPT_LIMIT = 65536
 _MAX_SAMPLE_BYTES = 80 * 1024 * 1024
 _KINDS = {
