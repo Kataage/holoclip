@@ -252,3 +252,22 @@ def test_evidence_sha_is_stable_and_immutable_output_has_no_replacement(tmp_path
     semantic.save_semantic_review(evidence, p)
     with pytest.raises(ValueError, match="OUTPUT_UNSAFE"):
         semantic.save_semantic_review(evidence, p)
+
+
+
+def test_existing_semantic_report_blocks_provider_before_quota_use(
+    tmp_path, monkeypatch,
+):
+    params, *_ = _case(tmp_path)
+    monkeypatch.setenv("HOLOCLIP_DATA_CLASS", "public")
+    target = tmp_path / "occupied.json"
+    target.write_text("preserve", encoding="utf-8")
+    class MustNotCall:
+        def __init__(self):
+            raise AssertionError("Do not call AI before output preflight")
+    monkeypatch.setattr(cli, "MeshLLMClient", MustNotCall)
+    res = CliRunner().invoke(
+        cli.app, [*_args(params, target), "--execute"]
+    )
+    assert res.exit_code == 6
+    assert target.read_text(encoding="utf-8") == "preserve"
