@@ -162,22 +162,45 @@ def test_changed_input_provenance_blocks_without_decoder(
     assert not prepared["receipt"].exists()
 
 
-@pytest.mark.parametrize("variant", ["a", "b", "b2"])
-def test_corrupted_subtitles_block_without_scanning(tmp_path, monkeypatch, variant):
+def test_corrupted_signed_baseline_srt_blocks_before_decoder(tmp_path, monkeypatch):
     _, prepared, _, _ = _ready(tmp_path, monkeypatch)
     b2 = prepared["finished"]["b2"]
-    bases = {
-        "a": b2["prepared"]["trial"]["original"]["baseline_media"],
-        "b": b2["prepared"]["trial"]["output"],
-        "b2": b2["output"],
-    }
-    caption = ab._stage_paths(bases[variant])["caption"]
-    caption.write_bytes(b"changed SRT")
+    a_base = b2["prepared"]["trial"]["original"]["baseline_media"]
+    ab._stage_paths(a_base)["caption"].write_bytes(b"changed signed A SRT")
     monkeypatch.setattr(
         quality, "_run", lambda **kwargs: pytest.fail("do not decode"),
     )
     with pytest.raises(ValueError):
         quality.run_three_way_diagnostics(prepared, execute=True)
+    assert not prepared["receipt"].exists()
+
+
+@pytest.mark.parametrize("variant", ["b", "b2"])
+def test_unsigned_srt_changed_during_scan_never_commits(tmp_path, monkeypatch, variant):
+    _, prepared, _, _ = _ready(tmp_path, monkeypatch)
+    b2 = prepared["finished"]["b2"]
+    bases = {
+        "b": b2["prepared"]["trial"]["output"],
+        "b2": b2["output"],
+    }
+    subtitle = ab._stage_paths(bases[variant])["caption"]
+    scan_count = 0
+    baseline_scan = _fake_scan(monkeypatch)
+    scan = quality._run
+
+    def mutate(*args, **kwargs):
+        nonlocal scan_count
+        result = scan(*args, **kwargs)
+        scan_count += 1
+        if (variant == "b" and scan_count == 2
+                or variant == "b2" and scan_count == 3):
+            subtitle.write_bytes(b"altered during diagnostic")
+        return result
+
+    monkeypatch.setattr(quality, "_run", mutate)
+    with pytest.raises(ValueError, match="SOURCE_CHANGED_DURING_SCAN"):
+        quality.run_three_way_diagnostics(prepared, execute=True)
+    assert len(baseline_scan) == 3
     assert not prepared["receipt"].exists()
 
 
