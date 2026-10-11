@@ -140,7 +140,7 @@ def _utterance_evidence(timelines: dict, checklist: dict, segments: list) -> dic
                     overlap_partial += 1
                     continue
                 text = _clean(item.text, _MAX_CHARS)
-                if text is None or not 0 < offset_start < offset_end <= 180.001:
+                if text is None or not 0 <= offset_start < offset_end <= 180.001:
                     continue
                 pending.append({
                     "source_start_seconds": round(item.start, 3),
@@ -253,6 +253,7 @@ def _validate_response(response: object, pack: dict) -> list[dict]:
         quoted = row["quote"]
         if status == "POSSIBLE_TEXTUAL_SIGNAL":
             if (not isinstance(cited, str) or cited not in refs[variant]
+                    or not isinstance(quoted, str)
                     or _clean(quoted, 100) != quoted
                     or quoted not in refs[variant][cited]["unverified_asr_text"]):
                 raise ValueError("LOCAL_DIALOGUE_MODEL_UNGROUNDED_QUOTE")
