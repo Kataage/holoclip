@@ -1215,3 +1215,78 @@ def test_cut_ab_unavailable_never_revokes_base_mp4_qa(tmp_path, monkeypatch):
         "created": 0, "not_applicable": 0, "unavailable": 1,
     }
     assert summary["counts"]["QA_PASSED"] == 1
+
+
+
+def test_ab_metrics_are_independently_stored_without_auto_editing(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    calls = []
+
+    def measure(**kwargs):
+        calls.append(kwargs)
+        return {
+            "status": "LOCAL_AB_AUDIT_MEASURED_TECHNICAL_ONLY",
+            "sha256": "f" * 64,
+            "measured_pair_count": 2,
+            "human_quality_qualified": False,
+            "auto_adoption_allowed": False,
+            "ready": False,
+        }
+
+    monkeypatch.setattr(ready, "evaluate_independent_ab_signals", measure)
+    report = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert report["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert report["ab_metrics_status"] == "LOCAL_AB_AUDIT_MEASURED_TECHNICAL_ONLY"
+    assert report["ab_metrics_sha256"] == "f" * 64
+    assert report["ab_metrics_measured_pair_count"] == 2
+    assert len(calls) == 1
+    assert calls[0]["video_sha256"] == report["output_sha256"]
+    assert calls[0]["triage_sha256"] == report["triage_sha256"]
+    assert calls[0]["audio_sha256"] == report["ab_preview_sha256"]
+    assert calls[0]["subtitle_sha256"] == report["subtitle_ab_sha256"]
+    assert calls[0]["cut_sha256"] == report["cut_ab_sha256"]
+    assert calls[0]["scan_allowed"] is True
+    with sqlite3.connect(queue) as connection:
+        row = connection.execute(
+            "SELECT status,receipt_sha256,measured_pair_count "
+            "FROM render_ab_metrics_evidence WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()
+        state = connection.execute(
+            "SELECT state FROM render_jobs WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()[0]
+    assert row == ("LOCAL_AB_AUDIT_MEASURED_TECHNICAL_ONLY", "f" * 64, 2)
+    assert state == "QA_PASSED"
+    status = ready.inspect_completed_source_renders(queue=queue)
+    assert status["ab_metrics_counts"] == {
+        "measured": 1, "not_applicable": 0, "unavailable": 0,
+    }
+    assert status["source_complete_count"] == 1
+    assert report["ready"] is False
+
+
+def test_unavailable_optional_ab_metrics_cannot_demote_render(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    report = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert report["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert report["ab_metrics_status"] == "LOCAL_AB_AUDIT_NOT_APPLICABLE"
+    assert report["ab_metrics_measured_pair_count"] == 0
+    assert (root / f"{receipt['job_id']}.mp4").is_file()
+    counts = ready.inspect_completed_source_renders(queue=queue)
+    assert counts["ab_metrics_counts"] == {
+        "measured": 0, "not_applicable": 1, "unavailable": 0,
+    }
+    assert counts["counts"]["QA_PASSED"] == 1
