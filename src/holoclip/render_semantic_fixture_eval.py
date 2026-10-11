@@ -42,6 +42,7 @@ def _guardrail_examples() -> dict:
         "source_end_seconds": 14,
         "source_window_selection_side": "generated_only",
         "source_clock_selection_status": _FULL,
+        "source_clock_selected_seconds": 4.0,
         "unverified_asr_text": "最初の説明",
     }
     case = {"source_timed_unverified_asr": [excerpt]}
