@@ -13,7 +13,6 @@ from holoclip import render_real_semantic_contrast as contrast
 from holoclip import render_real_semantic_order_audit as audit
 from holoclip import render_real_semantic_order_sensitivity as ordering
 from holoclip.corpus_growth import CorpusGrowthState
-from test_ingested_source_transcript_identity_bridge import _native
 from test_render_real_semantic_order_sensitivity import _case, _fake_client, _args
 from test_render_real_semantic_contrast import _paths
 from test_render_ready_queue import VIDEO
