@@ -1065,3 +1065,79 @@ def test_ab_preview_optional_failure_keeps_original_mp4_qa(
         "created": 0, "not_applicable": 1, "unavailable": 0,
     }
     assert counts["counts"]["QA_PASSED"] == 1
+
+
+
+def test_subtitle_ab_preview_is_optional_and_persisted_independently(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    calls = []
+
+    def compare(**kwargs):
+        calls.append(kwargs)
+        return {
+            "status": "LOCAL_SUBTITLE_AB_CREATED_UNVERIFIED_EDITORIAL",
+            "sha256": "e" * 64, "variant_count": 2,
+            "cue_number": 1, "baseline_recovery_verified": True,
+        }
+
+    monkeypatch.setattr(ready, "create_subtitle_ab_preview", compare)
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["subtitle_ab_status"] == (
+        "LOCAL_SUBTITLE_AB_CREATED_UNVERIFIED_EDITORIAL"
+    )
+    assert result["subtitle_ab_sha256"] == "e" * 64
+    assert result["subtitle_ab_variant_count"] == 2
+    assert result["subtitle_ab_cue_number"] == 1
+    assert len(calls) == 1
+    assert calls[0]["mp4_output"] == root / f"{receipt['job_id']}.mp4"
+    assert calls[0]["video_sha256"] == result["output_sha256"]
+    assert calls[0]["input_video"] == root / f"{receipt['job_id']}.mp4"
+    assert calls[0]["input_sha256"] == result["output_sha256"]
+    assert calls[0]["final_sha256"] == result["output_sha256"]
+    assert calls[0]["triage_sha256"] == result["triage_sha256"]
+    assert calls[0]["scan_allowed"] is True
+    with sqlite3.connect(queue) as dbconn:
+        row = dbconn.execute(
+            "SELECT status,receipt_sha256,variant_count,cue_number "
+            "FROM render_subtitle_ab_evidence WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()
+        job_state = dbconn.execute(
+            "SELECT state FROM render_jobs WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()[0]
+    assert row == ("LOCAL_SUBTITLE_AB_CREATED_UNVERIFIED_EDITORIAL", "e" * 64, 2, 1)
+    assert job_state == "QA_PASSED"
+    inspection = ready.inspect_completed_source_renders(queue=queue)
+    assert inspection["subtitle_ab_counts"] == {
+        "created": 1, "not_applicable": 0, "unavailable": 0,
+    }
+    assert inspection["source_complete_count"] == 1
+    assert result["ready"] is False
+
+
+def test_unavailable_subtitle_ab_does_not_revoke_video_qa(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["subtitle_ab_status"] == "LOCAL_SUBTITLE_AB_UNAVAILABLE"
+    assert result["subtitle_ab_variant_count"] == 0
+    assert (root / f"{receipt['job_id']}.mp4").is_file()
+    count = ready.inspect_completed_source_renders(queue=queue)
+    assert count["subtitle_ab_counts"] == {
+        "created": 0, "not_applicable": 0, "unavailable": 1,
+    }
+    assert count["counts"]["QA_PASSED"] == 1
