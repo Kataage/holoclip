@@ -116,7 +116,7 @@ def _summary(prepared: dict) -> dict:
         "b2_id": prepared["b2_id"],
         "refinement_index": prepared["refinement_index"],
         "baseline_a_filename": plan["baseline_mp4_filename"],
-        "trial_b_filename": prepared["proposal"]["trial_id"],
+        "trial_b_mp4_filename": plan["trial_mp4_filename"],
         "b2_mp4_filename": prepared["output"].name,
         "b2_receipt_filename": prepared["receipt"].name,
         "matched_ab_receipt_sha256": prepared["proposal"]["matched_receipt_sha256"],
