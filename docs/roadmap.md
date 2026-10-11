@@ -127,6 +127,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [ ] Complete perceptual LUFS/audio-dialogue qualification, music versus speech balancing and verified near-boundary listening tests
 - [x] Localized review ledgers for measured anomalies: event timestamps mapped to ordered cuts, suggested manual inspection action and immutable SHA-256-bound JSON, no automatic content edits
 - [x] Exact canonical YouTube source-ID matched human-vs-generated interval geometry on QA-passed offline rendered timelines, holdout collisions blocked, human alignment treated as in-sample reference only
+- [x] Read-only per-pair source-selection disagreement windows and playback source-time backtracks, union-corrected gap detection; no automatic edit proposals or human-quality scores
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion
