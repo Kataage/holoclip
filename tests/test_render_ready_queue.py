@@ -466,3 +466,79 @@ def test_optional_burnin_encoder_failure_preserves_successful_video_qa(
             "SELECT state FROM render_jobs WHERE job_id=?",
             (receipt["job_id"],),
         ).fetchone()[0] == "QA_PASSED"
+
+
+def test_audio_qa_is_persisted_and_burnin_uses_leveled_output(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    observed = []
+    def level(*, mp4_output, video_sha256, timeline):
+        observed.append(("audio", mp4_output.name, timeline.id))
+        mp4_output.with_name(f"{mp4_output.stem}.leveled.mp4").write_bytes(
+            b"leveled test placeholder"
+        )
+        return {
+            "status": "LOCAL_AUDIO_LEVELED_AV_QA_UNVERIFIED_EDITORIAL",
+            "output_sha256": "e" * 64, "cut_count": 2,
+            "max_abs_gain_db": 4.0,
+            "before_mean_spread_db": 9.0, "after_mean_spread_db": 3.0,
+        }
+    def burn(*, mp4_output, video_sha256, subtitle_sha256):
+        observed.append(("burn", mp4_output.name, video_sha256))
+        return {
+            "status": "LOCAL_SUBTITLE_BURNIN_NOT_AVAILABLE",
+            "output_sha256": "", "subtitle_sha256": subtitle_sha256 or "",
+        }
+    monkeypatch.setattr(ready, "level_preview_audio", level)
+    monkeypatch.setattr(ready, "burn_captioned_preview", burn)
+    finished = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert finished["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert finished["audio_status"] == "LOCAL_AUDIO_LEVELED_AV_QA_UNVERIFIED_EDITORIAL"
+    assert observed == [
+        ("audio", f"{receipt['job_id']}.mp4", timeline.id),
+        ("burn", f"{receipt['job_id']}.leveled.mp4", "e" * 64),
+    ]
+    with sqlite3.connect(queue) as conn:
+        row = conn.execute(
+            "SELECT status,output_sha256,cut_count,max_abs_gain_db,"
+            "before_mean_spread_db,after_mean_spread_db "
+            "FROM render_audio_evidence WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()
+        state = conn.execute("SELECT state FROM render_jobs").fetchone()[0]
+    assert row == ("LOCAL_AUDIO_LEVELED_AV_QA_UNVERIFIED_EDITORIAL",
+                   "e" * 64, 2, 4.0, 9.0, 3.0)
+    assert state == "QA_PASSED"
+    assert ready.inspect_completed_source_renders(queue=queue)["audio_counts"]["leveled"] == 1
+
+
+def test_optional_audio_failure_keeps_original_qa_and_caption_flow(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    monkeypatch.setattr(ready, "level_preview_audio", lambda **kw: {
+        "status": "LOCAL_AUDIO_LEVELING_UNAVAILABLE_OR_FAILED",
+        "output_sha256": "", "cut_count": 0, "max_abs_gain_db": 0.0,
+        "before_mean_spread_db": None, "after_mean_spread_db": None,
+    })
+    called = []
+    monkeypatch.setattr(ready, "burn_captioned_preview", lambda **kw: (
+        called.append(kw["mp4_output"]) or {
+            "status": "LOCAL_SUBTITLE_BURNIN_NOT_AVAILABLE",
+            "output_sha256": "", "subtitle_sha256": "",
+        }
+    ))
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["audio_status"] == "LOCAL_AUDIO_LEVELING_UNAVAILABLE_OR_FAILED"
+    assert called == [root / f"{receipt['job_id']}.mp4"]
+    assert ready.inspect_completed_source_renders(queue=queue)["audio_counts"]["failed"] == 1
