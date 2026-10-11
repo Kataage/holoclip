@@ -542,3 +542,16 @@ def test_optional_audio_failure_keeps_original_qa_and_caption_flow(
     assert result["audio_status"] == "LOCAL_AUDIO_LEVELING_UNAVAILABLE_OR_FAILED"
     assert called == [root / f"{receipt['job_id']}.mp4"]
     assert ready.inspect_completed_source_renders(queue=queue)["audio_counts"]["failed"] == 1
+
+
+def test_readonly_completed_source_count_not_shadowed_by_optional_media_rows(tmp_path):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    # New optional evidence tables may be present without any burn-in rows.
+    connection = ready._db(queue, write=True)
+    assert connection is not None
+    connection.close()
+    result = ready.inspect_completed_source_renders(queue=queue)
+    assert result["source_complete_count"] == 1
+    assert result["counts"]["PENDING"] == 1
+    assert result["burnin_counts"]["created"] == 0
+    assert result["audio_counts"]["leveled"] == 0
