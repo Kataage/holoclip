@@ -136,10 +136,11 @@ def audit_semantic_receipt(
     }
     for key, expected in gate_fields.items():
         value = receipt.get(key)
-        if type(value) is not bool and value not in expected:
-            _reject(output, "RECEIPT_GATES_INVALID")
-            break
-        if type(value) is bool and value not in expected:
+        if key == "status":
+            valid = isinstance(value, str) and value in expected
+        else:
+            valid = type(value) is bool and value in expected
+        if not valid:
             _reject(output, "RECEIPT_GATES_INVALID")
             break
     if (receipt.get("version") != fresh["version"]
@@ -165,9 +166,7 @@ def audit_semantic_receipt(
         return output
     if output["rejection_reasons"]:
         return output
-    for index, (case, model) in enumerate(
-        zip(fresh["cases"], hypotheses, strict=True),
-    ):
+    for case, model in zip(fresh["cases"], hypotheses, strict=True):
         if not isinstance(model, dict):
             _reject(output, "HYPOTHESIS_FORMAT_INVALID")
             continue
