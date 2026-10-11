@@ -16,7 +16,7 @@ from holoclip.render_cut_extension_three_way_dialogue import (
     _pack, prepare_three_way_dialogue,
 )
 from holoclip.render_cut_extension_three_way_diagnostics import _source_evidence
-from holoclip.render_cut_extension_three_way_triage import _load_diagnostics
+from holoclip.render_cut_extension_three_way_triage import _focus_windows, _load_diagnostics
 from holoclip.render_plan import _hash, _no_links
 from holoclip.render_same_source_semantic_review import save_semantic_review
 
@@ -94,12 +94,12 @@ def _samples(role: str, focus: dict, excerpts: list[dict], duration: float) -> l
 def _public(prepared: dict, observed: dict, diagnostic: dict,
             pack: dict, digest: str) -> dict:
     role_reports = {}
-    focus = prepared["dialogue"]["review"]["diagnostics"]["finished"]["b2"]
+    focus = _focus_windows(prepared["dialogue"]["review"], observed)
     for role in _ROLES:
         original_timeline = observed["roles"][role]["timeline"]
         sample_plan = _samples(
             role,
-            _focus_from_review(prepared, pack),
+            focus,
             pack["variants"][role]["excerpts"],
             original_timeline.estimated_duration,
         )
@@ -143,18 +143,6 @@ def _public(prepared: dict, observed: dict, diagnostic: dict,
         "production_ready": False,
         "youtube_contacted": False,
     }
-
-
-def _focus_from_review(prepared: dict, pack: dict) -> dict:
-    # This computes the review window from the current source edit rather than
-    # accepting windows embedded in an untrusted JSON supplied to this API.
-    from holoclip.render_cut_extension_three_way_triage import (
-        _focus_windows,
-    )
-    return _focus_windows(
-        prepared["dialogue"]["review"],
-        _source_evidence(prepared["dialogue"]["review"]["diagnostics"]),
-    )
 
 
 def run_three_way_acoustic(prepared: dict, *, execute: bool = False) -> dict:
