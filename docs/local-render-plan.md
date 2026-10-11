@@ -813,6 +813,38 @@ or editor preference; no editing is auto-adopted or published and all
 time-localized audio and caption characteristics on both final outputs
 while treating the extra clip content as a confounder.
 
+### Source-ASR speech boundary and real audio evidence for finished A/B (PR #243)
+
+`uv run holoclip render-cut-extension-speech-audit` re-derives the
+current source-grounded proposal and uses ONLY the existing successful
+`*.matched.json` receipt from PRs #241/#242. It rechecks all original
+QA-pinned stages, the unmodified base A MP4 and the precise final trial
+B MP4 SHA-256 before returning any diagnosis. Existing manually
+rendered A/B assets are reused, never silently generated or replaced.
+No user-supplied sample labels or separately prepared dataset required.
+
+The default command is read-only and performs **no FFmpeg decode**. It
+checks that the local source ASR's current raw bytes still match the
+source-time provenance hash in the verified cut-extension proposal.
+It counts fully contained utterances vs utterances straddling the added
+source-clock region, plus ASR utterances crossing the old and new cut
+boundaries. The text is not exported. Source-clock ASR and metadata are
+**not** proof that speech was audible, correctly transcribed, naturally
+timed, or funny.
+
+Use `--execute` on the owner's Windows/uv computer to measure at most
+one second of the A adjacent region and the newly added B region,
+using FFmpeg's audio mean/peak signal measurement. This creates a
+new-only `*.speech-audit.json` SHA-anchored receipt; concurrent changes
+to A/B or the matched receipt block report completion. Decoder failure
+is explicitly marked unavailable; partial measurements are discarded.
+No YouTube/yt-dlp/NIM/model requests, new ASR, video rendering, Docker,
+automatic cut adoption or publishing are used. There is no
+content-preference comparison because these two audio samples contain
+different source content; measured dBFS and ASR edges are inspection
+signals only. No real owner media are accessible in hosted CI, which
+uses offline fakes. `ready=false` always.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
