@@ -789,6 +789,11 @@ gain/limiter; subtitles burn into the leveled or base trial following
 A's recorded choice. Stage processing uses existing no-overwrite
 and rehash checks. A sidecar named \`*.matched.json\` records original
 and trial finishing checksums, stage outcomes and duration evidence.
+Both the original base MP4 and its optional QA-anchored sibling artifacts
+are rehashed after B finishing; any drift blocks a comparable receipt.
+`trial_final_seconds` is the decoded FFprobe measurement of the final B
+artifact, while `trial_expected_seconds` is the edit timeline estimate
+(they may differ within the bounded technical QA tolerance).
 
 This produces more **technically comparable finishing pipelines**, not
 identical captions (B contains extra source time), equal narrative

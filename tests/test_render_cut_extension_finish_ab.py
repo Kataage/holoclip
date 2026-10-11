@@ -210,6 +210,8 @@ def test_full_finished_trial_reuses_base_protection_and_creates_new_stage_artifa
     assert result["trial_final_sha256"] == _sha(
         prepared["trial"]["output"].with_name(result["trial_final_filename"])
     )
+    assert result["trial_final_seconds"] == 7.0
+    assert result["trial_expected_seconds"] == 7.0
     assert result["trial_caption_cue_count"] == 1
     assert result["trial_audio_max_abs_gain_db"] == 2.0
     assert result["trial_audio_status"] == finish._SUCCESS["audio"]
@@ -320,3 +322,49 @@ def test_cli_execute_without_preview_permission_refuses(tmp_path, monkeypatch):
     )
     assert result.exit_code == 6
     assert json.loads(result.stdout)["status"] == "LOCAL_MATCHED_AB_BLOCKED"
+
+
+def test_trial_final_duration_is_measured_not_copied_from_timeline(
+    tmp_path, monkeypatch,
+):
+    params, _, _, media, _ = _inputs(tmp_path)
+    _stages(params, media)
+    prepared = finish.prepare_matched_finishing_trial(**params)
+    _monkeypatch_video(monkeypatch)
+    monkeypatch.setattr(
+        finish, "_probe",
+        lambda path: (7.25 if "-extension-" in path.name else 6.0, True, True),
+    )
+    result = finish.run_matched_finishing_trial(
+        prepared, execute=True, approve_local_preview=True,
+    )
+    assert result["stage_comparable"] is True
+    assert result["trial_expected_seconds"] == 7.0
+    assert result["trial_final_seconds"] == 7.25
+    assert json.loads(prepared["matched_receipt"].read_text(
+        encoding="utf-8"
+    ))["trial_final_seconds"] == 7.25
+
+
+def test_baseline_base_mp4_drift_during_finishing_blocks_receipt(
+    tmp_path, monkeypatch,
+):
+    params, _, _, media, _ = _inputs(tmp_path)
+    original_bytes = media.read_bytes()
+    _stages(params, media)
+    prepared = finish.prepare_matched_finishing_trial(**params)
+    _monkeypatch_video(monkeypatch)
+    burn = finish.burn_captioned_preview
+
+    def mutate_original_after_burn(**kwargs):
+        report = burn(**kwargs)
+        media.write_bytes(b"unexpected replacement of baseline MP4")
+        return report
+
+    monkeypatch.setattr(finish, "burn_captioned_preview", mutate_original_after_burn)
+    with pytest.raises(ValueError, match="ORIGINAL_CHANGED_DURING_FINISH"):
+        finish.run_matched_finishing_trial(
+            prepared, execute=True, approve_local_preview=True,
+        )
+    assert media.read_bytes() != original_bytes
+    assert not prepared["matched_receipt"].exists()

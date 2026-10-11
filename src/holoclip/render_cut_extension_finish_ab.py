@@ -300,14 +300,19 @@ def run_matched_finishing_trial(prepared: dict, *, execute: bool = False,
         evidence.get("burnin", {}).get("status") == _SUCCESS["burnin"]
     )
     stage_match = caption_ok and audio_ok and burn_ok
+    trial_final_measured_seconds = None
     if stage_match:
         if _hash(b_final)[0] != b_final_sha:
             raise ValueError("LOCAL_MATCHED_AB_TRIAL_FINAL_CHANGED")
         td, tv, ta = _probe(b_final)
         if not tv or not ta or abs(td - prepared["trial"]["trial"].estimated_duration) > 0.5:
             raise ValueError("LOCAL_MATCHED_AB_TRIAL_FINAL_AV_UNTRUSTED")
+        trial_final_measured_seconds = round(td, 3)
     # Recheck original and all previously pinned A stages *after* FFmpeg;
     # do not report completion if A was modified while B was processing.
+    # _verify_stages only rehashes optional siblings, not the base MP4.
+    if _hash(base)[0] != original["baseline_sha256"]:
+        raise ValueError("LOCAL_MATCHED_AB_ORIGINAL_CHANGED_DURING_FINISH")
     if _verify_stages(stage_paths, stages, original["baseline_sha256"]) != initial:
         raise ValueError("LOCAL_MATCHED_AB_ORIGINAL_STAGE_CHANGED")
     if _hash(output)[0] != trial_sha:
@@ -331,8 +336,9 @@ def run_matched_finishing_trial(prepared: dict, *, execute: bool = False,
             evidence.get("caption", {}).get("dropped_cue_count"),
         "trial_audio_max_abs_gain_db": evidence.get("audio", {}).get("max_abs_gain_db"),
         "baseline_final_seconds": round(base_duration, 3),
-        "trial_final_seconds": (
-            round(prepared["trial"]["trial"].estimated_duration, 3) if stage_match else None
+        "trial_final_seconds": trial_final_measured_seconds,
+        "trial_expected_seconds": round(
+            prepared["trial"]["trial"].estimated_duration, 3
         ),
         "stage_comparable": stage_match,
         "real_media_checked": True,
