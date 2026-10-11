@@ -162,12 +162,12 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
             "AND name='render_burnin_evidence'"
         ).fetchone() is not None
         if burnin_table:
-            rows = conn.execute(
+            burnin_rows = conn.execute(
                 "SELECT status FROM render_burnin_evidence LIMIT 1001"
             ).fetchall()
-            if len(rows) > 1000:
+            if len(burnin_rows) > 1000:
                 raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
-            for item in rows:
+            for item in burnin_rows:
                 if item["status"] == "LOCAL_SUBTITLE_BURNED_PREVIEW_UNVERIFIED_EDITORIAL":
                     burnin_counts["created"] += 1
                 elif item["status"] == "LOCAL_SUBTITLE_BURNIN_NOT_AVAILABLE":
