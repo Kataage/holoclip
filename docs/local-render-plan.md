@@ -121,6 +121,53 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Read-only edit-quality diagnostics (PR #213)
+
+After the original MP4 technical QA, optional audio leveling and caption
+burn-in, the existing local scheduled worker runs a **bounded read-only**
+FFmpeg diagnostic pass. It never modifies source media, subtitles or finished
+MP4s, does not use YouTube, LLMs or OCR, and never uploads or publishes.
+
+The uncaptioned local MP4 is scanned at 2fps and 160x90 with FFmpeg
+\`blackdetect\` (>=1 second, about 98% very dark) and \`freezedetect\`
+(>=2 seconds), capped at 100 events each. The last selected audio track
+(base, leveled or captioned MP4) is inspected using \`volumedetect\` on up to
+the first 90 seconds, recording its mean/peak sample dBFS. The SHA-256
+verified *generated* sibling SRT is checked for unusually fast lines
+(over 20 Unicode characters/second), unsafe wrapping over the two-line
+baseline, and duration clock consistency. No captions means a **partial**
+diagnostic, not a fake subtitle success.
+
+All tool invocations are offline, use fixed validated FFmpeg arguments,
+have strict time and stderr limits (including a 60-second ceiling for the
+video scan and at most 30 seconds for the audio sample) and verify local
+input content SHA-256
+both before and after scanning. No operator SRT or unrelated MP4 is scanned
+on untrusted provenance. Only bounded counters and numeric diagnostics
+are persisted; no sensitive transcript lines or paths are logged.
+
+\`render_quality_evidence\` preserves the diagnostic version, source/final
+MP4 identities, frame anomaly counts, caption observation state and flags,
+audio mean/peak and combined warning count. Its statuses mean exactly
+\`MEASURED_FLAGS\`, \`MEASURED_NO_FLAGS\`, \`MEASURED_PARTIAL\` or
+\`UNAVAILABLE\` under the \`LOCAL_EDIT_DIAGNOSTIC_*\` prefix.
+Read-only worker status adds aggregate quality counts. The scheduled worker skips the optional scan entirely once earlier work
+has consumed 50 minutes, reserving time under the 55-minute Windows task
+deadline. An unavailable diagnostic never revokes existing technical MP4 QA.
+
+**Important:** Dark scenes, still illustrations, intentional holds and
+strong reactions can be perfectly good editing choices. Thresholds are
+screening heuristics, not human-labeled calibration. Absence of flags is
+not evidence of engaging content, correct Japanese ASR, legible text on
+complex backgrounds, reliable perceptual LUFS or source rights.
+The tool does not silently "repair" a suspected artistic element.
+Automatic repair is deferred until data supports a safe, reversible
+rule and real held-out footage can distinguish bugs from style.
+
+\`ready=false\` / \`production_ready=false\` and manual publishing
+approval remain unchanged. CI runs offline synthetic/mocked checks, never
+tests live YouTube media.
+
 ## Conservative visual-style baseline (PR #212)
 
 The initial local FFmpeg render now compiles a **finite, deterministic** visual
