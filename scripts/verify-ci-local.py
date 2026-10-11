@@ -19,6 +19,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 WINDOWS_TESTS = (
+    "tests/test_render_audio_finish.py",
     "tests/test_render_subtitle_burnin.py",
     "tests/test_render_subtitles.py",
     "tests/test_render_ready_queue.py",
