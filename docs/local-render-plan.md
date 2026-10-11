@@ -121,6 +121,53 @@ Only locally approved technical previews should use this path; apply
 applicable Hololive source restrictions and review finished edits separately.
 The output status remains ready=false even when an archive is acquired.
 
+## Offline unlabelled edit-review calibration pack (PR #215)
+
+The new preview-first CLI takes **already collected** local edit review ledgers
+from \`data/render-previews\` and the existing human clipping examples from
+\`data/examples/human_clips.jsonl\`. It does **not** call yt-dlp, GitHub media,
+the LLM, the internet, Docker or any paid API. The worker's normal rendering
+already generates \`renderqueue_<id>.review.json\` where its diagnostics
+succeed, so no new per-video data preparation is needed.
+
+\`\`\`powershell
+uv run holoclip render-review-calibration-pack
+uv run holoclip render-review-calibration-pack --execute
+\`\`\`
+
+The first command is **read-only**. \`--execute\` creates
+\`data/render-previews/edit-review-calibration.json\` only if that path does
+not already exist. To keep multiple snapshots, specify a distinct
+\`--output\` path; existing files are never overwritten.
+
+The report requires each ledger's previously recorded diagnostic version,
+status, false production-ready flags, and original/final SHA-256. It rehashes
+the local original and whichever allowed final MP4 is present and rejects
+stale/mismatched evidence. Up to 40 ledger records are processed per pass;
+more than that reports a bounded \`TOO_MANY_REVIEWS\` state rather than
+silently sampling an incomplete backlog. Candidate samples are balanced
+round-robin by signal type, max 30 total / 6 per signal. Successful
+zero-warning scans form *unlabelled controls*, never "human approved"
+negative examples. The report contains job IDs, hashes, coarse output
+timestamps, event kinds and segment counts only: no transcript excerpts
+or source file paths.
+
+The existing human-cut store is used strictly to report how many distinct
+clips have **trusted temporal alignment** under the existing learning gate
+and how many source streams are represented. Trusted alignment proves
+neither that each frame or subtitle was good nor that a particular
+blackout was incorrect. That store currently provides no independent
+per-anomaly human labels for this pipeline, so \`precision\`,
+\`recall\`, \`false_positive_rate\` and
+\`calibration_metrics_available\` stay null/false.
+No scoring threshold, auto-repair, forced rejection or publication change
+is derived from these examples. \`ready=false\` remains mandatory.
+
+This prepares deterministic evaluation cases without asking the operator
+to supply files. Real calibration still requires **independent, withheld,
+human-rated judgments** of the specific technical event types; none are
+fabricated from the existence of professionally cut videos.
+
 ## Localized non-destructive edit review ledger (PR #214)
 
 The same bounded, offline PR #213 diagnostic scan now retains **where** an
