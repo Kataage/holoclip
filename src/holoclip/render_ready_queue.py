@@ -28,6 +28,7 @@ from holoclip.render_source_queue import _recovery_cache_verified
 from holoclip.render_source_resolver import resolve_cached_render_sources
 from holoclip.render_subtitles import export_cut_aligned_srt
 from holoclip.render_subtitle_burnin import burn_captioned_preview
+from holoclip.render_audio_finish import level_preview_audio
 
 DEFAULT_PREVIEW_ROOT = Path("data/render-previews")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
@@ -65,6 +66,14 @@ def _db(queue: Path, *, write: bool) -> sqlite3.Connection | None:
             "CREATE TABLE IF NOT EXISTS render_burnin_evidence ("
             "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
             "output_sha256 TEXT NOT NULL, subtitle_sha256 TEXT NOT NULL,"
+            "updated_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS render_audio_evidence ("
+            "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
+            "output_sha256 TEXT NOT NULL, cut_count INTEGER NOT NULL,"
+            "max_abs_gain_db REAL NOT NULL,"
+            "before_mean_spread_db REAL, after_mean_spread_db REAL,"
             "updated_at REAL NOT NULL)"
         )
         connection.commit()
@@ -168,6 +177,25 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                 else:
                     raise ValueError("LOCAL_RENDER_AUTO_QA_BURNIN_STATE_UNTRUSTED")
         report["burnin_counts"] = burnin_counts
+        audio_counts = {"leveled": 0, "failed": 0}
+        audio_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_audio_evidence'"
+        ).fetchone() is not None
+        if audio_table:
+            audio_rows = conn.execute(
+                "SELECT status FROM render_audio_evidence LIMIT 1001"
+            ).fetchall()
+            if len(audio_rows) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            for item in audio_rows:
+                if item["status"] == "LOCAL_AUDIO_LEVELED_AV_QA_UNVERIFIED_EDITORIAL":
+                    audio_counts["leveled"] += 1
+                elif item["status"] == "LOCAL_AUDIO_LEVELING_UNAVAILABLE_OR_FAILED":
+                    audio_counts["failed"] += 1
+                else:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_AUDIO_STATE_UNTRUSTED")
+        report["audio_counts"] = audio_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
@@ -227,6 +255,7 @@ def _finish(
     output: Path | None = None, sha256: str = "", plan_id: str = "",
     duration: float = 0.0, caption_evidence: dict | None = None,
     burnin_evidence: dict | None = None,
+    audio_evidence: dict | None = None,
 ) -> None:
     if state not in {"PAUSED", "QA_PASSED"} or reason not in {
         "NONE", "LOCAL_RENDER_AUTO_QA_VALIDATION_FAILED",
@@ -266,6 +295,19 @@ def _finish(
                     job_id, str(burnin_evidence["status"]),
                     str(burnin_evidence["output_sha256"]),
                     str(burnin_evidence["subtitle_sha256"]),
+                    time.time(),
+                ),
+            )
+        if state == "QA_PASSED" and audio_evidence is not None:
+            conn.execute(
+                "INSERT INTO render_audio_evidence VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    job_id, str(audio_evidence["status"]),
+                    str(audio_evidence["output_sha256"]),
+                    int(audio_evidence["cut_count"]),
+                    float(audio_evidence["max_abs_gain_db"]),
+                    audio_evidence["before_mean_spread_db"],
+                    audio_evidence["after_mean_spread_db"],
                     time.time(),
                 ),
             )
@@ -368,12 +410,27 @@ def advance_completed_source_renders(
             timeline, sources, transcript_root=transcript_root,
             mp4_output=output,
         )
-        # Optional final presentation output. A missing Japanese font, malformed
-        # SRT, or failed second encode cannot revoke the verified original MP4.
+        # Per-cut bounded corrections happen offline, only after a successful
+        # original MP4. Failures never demote the original technical QA.
+        audio_evidence = level_preview_audio(
+            mp4_output=output,
+            video_sha256=str(details["output_sha256"]),
+            timeline=timeline,
+        )
+        audio_ok = (
+            audio_evidence["status"] == "LOCAL_AUDIO_LEVELED_AV_QA_UNVERIFIED_EDITORIAL"
+        )
+        burn_input = output.with_name(f"{output.stem}.leveled.mp4") if audio_ok else output
+        burn_hash = (
+            str(audio_evidence["output_sha256"]) if audio_ok
+            else str(details["output_sha256"])
+        )
+        # Burn subtitles onto leveled audio if available, otherwise the
+        # original preview. Original MP4 and SRT are never modified.
         try:
             burnin_evidence = burn_captioned_preview(
-                mp4_output=output,
-                video_sha256=str(details["output_sha256"]),
+                mp4_output=burn_input,
+                video_sha256=burn_hash,
                 subtitle_sha256=caption_evidence["output_sha256"],
             )
         except (ValueError, OSError, TypeError, UnicodeError):
@@ -387,7 +444,11 @@ def advance_completed_source_renders(
             output=output, sha256=str(details["output_sha256"]),
             plan_id=plan.id, duration=float(details["measured_duration"]),
             caption_evidence=caption_evidence, burnin_evidence=burnin_evidence,
+            audio_evidence=audio_evidence,
         )
+        report["audio_status"] = audio_evidence["status"]
+        report["audio_output_sha256"] = audio_evidence["output_sha256"]
+        report["audio_cut_count"] = audio_evidence["cut_count"]
         report["burnin_status"] = burnin_evidence["status"]
         report["burnin_output_sha256"] = burnin_evidence["output_sha256"]
         report["subtitle_status"] = caption_evidence["status"]
