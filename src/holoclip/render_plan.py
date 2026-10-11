@@ -19,6 +19,10 @@ from pydantic import BaseModel, Field, model_validator
 from holoclip.domain import (
     AccessClass, ClipTimeline, SourceAsset, SourceAvailability, stable_id,
 )
+from holoclip.render_visual_style import (
+    VISUAL_STYLE_VERSION, audio_suffix, select_cut_styles, style_evidence,
+    video_suffix,
+)
 
 VERSION = "holoclip-local-render-v1"
 VIDEO_WIDTH = 1280
@@ -49,6 +53,7 @@ class RenderSourceSnapshot(BaseModel):
 
 class RenderPlan(BaseModel):
     version: str = VERSION
+    visual_style_version: str = VISUAL_STYLE_VERSION
     id: str
     timeline: ClipTimeline
     sources: list[RenderSourceSnapshot]
@@ -62,7 +67,8 @@ class RenderPlan(BaseModel):
 
     @model_validator(mode="after")
     def check_static_contract(self):
-        if self.version != VERSION or self.ready or self.production_ready:
+        if (self.version != VERSION or self.visual_style_version != VISUAL_STYLE_VERSION
+                or self.ready or self.production_ready):
             raise ValueError("LOCAL_RENDER_UNTRUSTED_PLAN")
         if (self.video_width != VIDEO_WIDTH
                 or self.video_height != VIDEO_HEIGHT
@@ -202,7 +208,7 @@ def compile_local_render_plan(
         "localrender", VERSION, timeline.model_dump(mode="json"),
         sorted((source.asset_id, source.sha256, source.duration_seconds)
                for source in checked),
-        VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS,
+        VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, VISUAL_STYLE_VERSION,
         length=32,
     )
     return RenderPlan(
@@ -222,8 +228,11 @@ def _ffmpeg_command(plan: RenderPlan, target: Path) -> list[str]:
         inputs.extend(["-protocol_whitelist", "file,pipe", "-i", str(src.path)])
     filters: list[str] = []
     labels: list[str] = []
-    for index, seg in enumerate(sorted(plan.timeline.segments, key=lambda s: s.output_order)):
+    ordered_cuts = sorted(plan.timeline.segments, key=lambda s: s.output_order)
+    styles = select_cut_styles(plan.timeline)
+    for index, (seg, style) in enumerate(zip(ordered_cuts, styles)):
         k = source_index[seg.source_asset_id]
+        duration = seg.source_end - seg.source_start
         start = f"{seg.source_start:.6f}"
         end = f"{seg.source_end:.6f}"
         filters.append(
@@ -231,12 +240,13 @@ def _ffmpeg_command(plan: RenderPlan, target: Path) -> list[str]:
             f"fps={VIDEO_FPS},scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:"
             "force_original_aspect_ratio=decrease,"
             f"pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2,"
-            f"setsar=1,format=yuv420p[v{index}]"
+            f"setsar=1,format=yuv420p"
+            f"{video_suffix(style, duration)}[v{index}]"
         )
         filters.append(
             f"[{k}:a:0]atrim=start={start}:end={end},asetpts=PTS-STARTPTS,"
             "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo"
-            f"[a{index}]"
+            f"{audio_suffix(style, duration)}[a{index}]"
         )
         labels.extend([f"[v{index}]", f"[a{index}]"])
     filters.append(
@@ -289,7 +299,7 @@ def render_local_preview(plan: RenderPlan) -> dict[str, object]:
         "localrender", VERSION, timeline.model_dump(mode="json"),
         sorted((src.asset_id, src.sha256, src.duration_seconds)
                for src in plan.sources),
-        VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS,
+        VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS, VISUAL_STYLE_VERSION,
         length=32,
     )
     if expected_id != plan.id:
@@ -328,6 +338,7 @@ def render_local_preview(plan: RenderPlan) -> dict[str, object]:
         "expected_duration": plan.expected_duration,
         "source_count": len(plan.sources),
         "segment_count": len(plan.timeline.segments),
+        "visual_style": style_evidence(plan.timeline),
         "youtube_contacted": False,
         "publication_performed": False,
         "human_editorial_qa_completed": False,
