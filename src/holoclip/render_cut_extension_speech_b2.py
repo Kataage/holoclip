@@ -7,14 +7,11 @@ from __future__ import annotations
 
 import hashlib
 import math
-from pathlib import Path
-
 from holoclip.domain import stable_id
 from holoclip.render_cut_extension_finish_ab import prepare_matched_finishing_trial
 from holoclip.render_cut_extension_mp4_ab import _trial_timeline
 from holoclip.render_cut_extension_speech_audit import _load_matched
 from holoclip.render_cut_extension_speech_refine import (
-    VERSION as REFINE_VERSION,
     suggest_speech_boundary_refinements,
 )
 from holoclip.render_plan import (
