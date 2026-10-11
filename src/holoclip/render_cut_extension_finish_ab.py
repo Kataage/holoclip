@@ -246,12 +246,12 @@ def run_matched_finishing_trial(prepared: dict, *, execute: bool = False,
     if output.exists() or prepared["trial"]["receipt"].exists():
         if not output.is_file() or not prepared["trial"]["receipt"].is_file():
             raise ValueError("LOCAL_MATCHED_AB_PARTIAL_TRIAL_EXISTS")
-        base_trial = _trial_receipt(prepared)
+        base_trial = _trial_receipt(prepared["trial"])
     else:
         base_trial = run_cut_extension_mp4_trial(
             prepared["trial"], execute=True, approve_local_preview=True,
         )
-        base_trial = _trial_receipt(prepared)
+        base_trial = _trial_receipt(prepared["trial"])
     # Re-evaluate source RENDER policy and source mapping for the proposed
     # extensions as of finishing time, including previously created trial B.
     sources = resolve_cached_render_sources(
