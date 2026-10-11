@@ -349,6 +349,38 @@ human preference. The report and its model provenance remain
 auto-edit/publication effect. Only a new JSON output is created, never
 overwriting an existing report or video.
 
+### Fully offline re-audit of saved AI citations (PR #231)
+
+Use \`uv run holoclip render-same-source-semantic-audit --receipt <existing-semantic-review>.json\`
+to recheck a PR #230 **saved** model receipt. This command **never**
+calls NIM, yt-dlp, another API, FFmpeg, or new ASR. It re-reads the
+original local queue, trusted human example JSONL, holdout state and local
+source-time ASR through the existing same-source safety checks, then
+recomputes the prepared evidence. The fresh evidence SHA and exact bounded
+case list must match the saved receipt, and every model-cited utterance,
+quoted substring, source-clock timestamps, evidence ID and
+\`generated_only\`/\`human_only\` context side must reproduce from that
+same locally rederived evidence. Every role must still be present, with
+\`INSUFFICIENT_EVIDENCE\` entries retaining null citations. Tampering,
+a stale transcript, a changed source or holdout reservation, and an
+unsafe/ambiguous receipt are rejected with **reason codes**, not untrusted
+speech text. A missing or altered input is never guessed from model text.
+
+The default is read-only JSON stdout; \`--output <new>.json\` optionally
+writes an immutable audit file without touching the saved AI receipt.
+On rejection the command uses nonzero exit status, but can still write a
+rejection diagnostic if requested. The audit output includes counts of
+syntactically reproducible verbatim quotes and explicit model
+\`INSUFFICIENT_EVIDENCE\` responses **only**. These counts are
+not narrative classification accuracy, semantic agreement, ASR
+correctness, independent editorial human ratings, precision/recall,
+creative quality or permission to auto-edit/publish. Even a consistent
+receipt remains \`ready=false\` and
+\`LOCAL_SEMANTIC_AUDIT_CITATIONS_CONSISTENT_UNQUALIFIED\`.
+
+No additional accounts, tools, datasets or user-supplied labels are
+required. This check is safe to run in CI with synthetic local fixtures.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
