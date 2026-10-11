@@ -17,7 +17,6 @@ from holoclip.render_cut_extension_finish_ab import (
     VERSION as MATCHED_VERSION,
     _stage_paths,
     _verify_stages,
-    prepare_matched_finishing_trial,
 )
 from holoclip.render_plan import _hash, _no_links, _probe
 from holoclip.render_same_source_semantic_review import save_semantic_review
