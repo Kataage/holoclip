@@ -555,3 +555,57 @@ def test_readonly_completed_source_count_not_shadowed_by_optional_media_rows(tmp
     assert result["counts"]["PENDING"] == 1
     assert result["burnin_counts"]["created"] == 0
     assert result["audio_counts"]["leveled"] == 0
+
+
+def test_visual_evidence_saves_render_plan_style_receipt_without_editorial_claim(
+    tmp_path, monkeypatch,
+):
+    from holoclip.render_visual_style import style_evidence
+
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    stub = ready.render_local_preview
+
+    def fake_with_visual_profile(plan):
+        result = stub(plan)
+        result["visual_style"] = style_evidence(plan.timeline)
+        return result
+
+    monkeypatch.setattr(ready, "render_local_preview", fake_with_visual_profile)
+    outcome = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert outcome["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert outcome["visual_status"] == "LOCAL_RENDER_VISUAL_ENCODED_TECHNICAL_ONLY"
+    assert outcome["visual_zoom_cut_count"] == 0
+    assert outcome["visual_dip_transition_count"] == 0
+    assert outcome["ready"] is False and outcome["publication_performed"] is False
+    with sqlite3.connect(queue) as connection:
+        row = connection.execute(
+            "SELECT status,style_version,zoom_cut_count,dip_transition_count "
+            "FROM render_visual_evidence WHERE job_id=?", (receipt["job_id"],),
+        ).fetchone()
+    assert row == (
+        "LOCAL_RENDER_VISUAL_ENCODED_TECHNICAL_ONLY",
+        "holoclip-visual-style-v1", 0, 0,
+    )
+    overview = ready.inspect_completed_source_renders(queue=queue)
+    assert overview["visual_counts"] == {"encoded": 1, "unverified": 0}
+    assert overview["source_complete_count"] == 1
+
+
+def test_missing_visual_renderer_proof_never_claims_effects_applied(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    outcome = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert outcome["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert outcome["visual_status"] == "LOCAL_RENDER_VISUAL_UNVERIFIED"
+    report = ready.inspect_completed_source_renders(queue=queue)
+    assert report["counts"]["QA_PASSED"] == 1
+    assert report["visual_counts"]["unverified"] == 1
