@@ -21,12 +21,14 @@ REVIEW_VERSION = "holoclip-review-ledger-v1"
 SHA = re.compile(r"[a-f0-9]{64}\Z")
 _MAX_ITEMS = 300
 _MAX_BYTES = 65536
-_KINDS = frozenset({"blackout", "freeze", "fast_subtitle", "wide_subtitle"})
+_KINDS = frozenset({"blackout", "freeze", "fast_subtitle", "wide_subtitle", "audio_peak", "audio_low_mean"})
 _ACTIONS = {
     "blackout": "INSPECT_DARK_SCENE_AND_SOURCE",
     "freeze": "VERIFY_INTENTIONAL_HOLD_VS_STALLED_FRAMES",
     "fast_subtitle": "CHECK_ASR_TIMING_AND_SUBTITLE_READABILITY",
     "wide_subtitle": "CHECK_SUBTITLE_WRAP_AND_LEGIBILITY",
+    "audio_peak": "LISTEN_TO_INTENTIONAL_PEAK_VS_CLIPPING",
+    "audio_low_mean": "LISTEN_TO_INTENTIONAL_QUIET_VS_MISSING_AUDIO",
 }
 
 
@@ -77,8 +79,7 @@ def candidates_for_review(
         affected = [
             segment_id
             for left, right, segment_id in windows
-            if start < right + 0.01 and (end is None or end > left - 0.01)
-            and (end is None or start <= right + 0.01)
+            if start < right + 0.01 and ((end if end is not None else start) >= left - 0.01)
         ]
         if not affected:
             raise ValueError("LOCAL_EDIT_REVIEW_OUTSIDE_TIMELINE")
