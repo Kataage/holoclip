@@ -987,3 +987,81 @@ def test_missing_triage_evidence_cannot_invalidate_render_qa(
     stats = ready.inspect_completed_source_renders(queue=queue)
     assert stats["triage_counts"] == {"created": 0, "unavailable": 1}
     assert stats["counts"]["QA_PASSED"] == 1
+
+
+
+def test_ab_preview_proof_stored_separately_from_successful_render_qa(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    received = []
+
+    def create_ab(**kwargs):
+        received.append(kwargs)
+        return {
+            "status": "LOCAL_AB_PREVIEW_CREATED_UNVERIFIED_EDITORIAL",
+            "sha256": "f" * 64, "sample_count": 1,
+            "baseline_recovery_verified": True,
+            "ready": False, "production_ready": False,
+        }
+
+    monkeypatch.setattr(ready, "create_audio_ab_preview", create_ab)
+    report = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert report["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert report["ab_preview_status"] == (
+        "LOCAL_AB_PREVIEW_CREATED_UNVERIFIED_EDITORIAL"
+    )
+    assert report["ab_preview_sha256"] == "f" * 64
+    assert report["ab_preview_sample_count"] == 1
+    assert report["ab_preview_baseline_recovery_verified"] is True
+    assert len(received) == 1
+    assert received[0]["mp4_output"] == root / f"{receipt['job_id']}.mp4"
+    assert received[0]["video_sha256"] == report["output_sha256"]
+    assert received[0]["final_sha256"] == report["output_sha256"]
+    assert received[0]["triage_sha256"] == report["triage_sha256"]
+    assert received[0]["scan_allowed"] is True
+    with sqlite3.connect(queue) as connection:
+        row = connection.execute(
+            "SELECT status,receipt_sha256,sample_count,"
+            "baseline_recovery_verified "
+            "FROM render_audio_ab_preview_evidence WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()
+        state = connection.execute(
+            "SELECT state FROM render_jobs WHERE job_id=?",
+            (receipt["job_id"],),
+        ).fetchone()[0]
+    assert row == (
+        "LOCAL_AB_PREVIEW_CREATED_UNVERIFIED_EDITORIAL", "f" * 64, 1, 1,
+    )
+    assert state == "QA_PASSED"
+    inspect = ready.inspect_completed_source_renders(queue=queue)
+    assert inspect["ab_preview_counts"] == {
+        "created": 1, "not_applicable": 0, "unavailable": 0,
+    }
+    assert report["ready"] is False
+
+
+def test_ab_preview_optional_failure_keeps_original_mp4_qa(
+    tmp_path, monkeypatch,
+):
+    db, cache, queue, root, timeline, receipt = _case(tmp_path)
+    _probe(monkeypatch)
+    _fake_render(monkeypatch)
+    result = ready.advance_completed_source_renders(
+        queue=queue, preview_root=root, execute=True,
+    )
+    assert result["status"] == "LOCAL_RENDER_AUTO_QA_PASSED_TECHNICAL_ONLY"
+    assert result["ab_preview_status"] == "LOCAL_AB_PREVIEW_NOT_APPLICABLE"
+    assert result["ab_preview_sample_count"] == 0
+    assert result["ab_preview_baseline_recovery_verified"] is False
+    assert (root / f"{receipt['job_id']}.mp4").is_file()
+    counts = ready.inspect_completed_source_renders(queue=queue)
+    assert counts["ab_preview_counts"] == {
+        "created": 0, "not_applicable": 1, "unavailable": 0,
+    }
+    assert counts["counts"]["QA_PASSED"] == 1
