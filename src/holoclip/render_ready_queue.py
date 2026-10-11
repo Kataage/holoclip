@@ -32,6 +32,7 @@ from holoclip.render_audio_finish import level_preview_audio
 from holoclip.render_visual_style import style_evidence
 from holoclip.render_quality_diagnostics import evaluate_local_edit_quality
 from holoclip.render_quality_review import store_review_ledger
+from holoclip.render_review_calibration import archive_incremental_review
 
 DEFAULT_PREVIEW_ROOT = Path("data/render-previews")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
@@ -99,6 +100,12 @@ def _db(queue: Path, *, write: bool) -> sqlite3.Connection | None:
         )
         connection.execute(
             "CREATE TABLE IF NOT EXISTS render_review_evidence ("
+            "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
+            "output_sha256 TEXT NOT NULL, candidate_count INTEGER NOT NULL,"
+            "updated_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS render_review_archive_evidence ("
             "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
             "output_sha256 TEXT NOT NULL, candidate_count INTEGER NOT NULL,"
             "updated_at REAL NOT NULL)"
@@ -285,6 +292,25 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                 else:
                     raise ValueError("LOCAL_RENDER_AUTO_QA_REVIEW_STATE_UNTRUSTED")
         report["review_counts"] = review_counts
+        archive_counts = {"created": 0, "unavailable": 0}
+        archive_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_review_archive_evidence'"
+        ).fetchone() is not None
+        if archive_table:
+            archive_rows = conn.execute(
+                "SELECT status FROM render_review_archive_evidence LIMIT 1001"
+            ).fetchall()
+            if len(archive_rows) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            for item in archive_rows:
+                if item["status"] == "LOCAL_EDIT_ARCHIVE_CREATED_UNLABELLED":
+                    archive_counts["created"] += 1
+                elif item["status"] == "LOCAL_EDIT_ARCHIVE_UNAVAILABLE":
+                    archive_counts["unavailable"] += 1
+                else:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_ARCHIVE_STATE_UNTRUSTED")
+        report["archive_counts"] = archive_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
@@ -348,6 +374,7 @@ def _finish(
     visual_evidence: dict | None = None,
     quality_evidence: dict | None = None,
     review_evidence: dict | None = None,
+    archive_evidence: dict | None = None,
 ) -> None:
     if state not in {"PAUSED", "QA_PASSED"} or reason not in {
         "NONE", "LOCAL_RENDER_AUTO_QA_VALIDATION_FAILED",
@@ -441,6 +468,16 @@ def _finish(
                     job_id, str(review_evidence["status"]),
                     str(review_evidence["sha256"]),
                     int(review_evidence["candidate_count"]),
+                    time.time(),
+                ),
+            )
+        if state == "QA_PASSED" and archive_evidence is not None:
+            conn.execute(
+                "INSERT INTO render_review_archive_evidence VALUES (?,?,?,?,?)",
+                (
+                    job_id, str(archive_evidence["status"]),
+                    str(archive_evidence["sha256"]),
+                    int(archive_evidence["candidate_count"]),
                     time.time(),
                 ),
             )
@@ -616,6 +653,16 @@ def advance_completed_source_renders(
             timeline=timeline,
             observed=quality_evidence.get("review_observations", []),
         )
+        # Cheap append-only evaluation backlog handoff. Rehashes only the
+        # small, just-created review JSON; later paged calibration independently
+        # revalidates both video artifacts. Never delays a successful render
+        # for missing optional review data.
+        archive_evidence = archive_incremental_review(
+            mp4_output=output,
+            review_sha256=str(review_evidence["sha256"]),
+            video_sha256=str(details["output_sha256"]),
+            final_sha256=final_sha,
+        )
         _finish(
             queue, job_id=job_id, token=token, state="QA_PASSED", reason="NONE",
             output=output, sha256=str(details["output_sha256"]),
@@ -624,7 +671,11 @@ def advance_completed_source_renders(
             audio_evidence=audio_evidence, visual_evidence=visual_evidence,
             quality_evidence=quality_evidence,
             review_evidence=review_evidence,
+            archive_evidence=archive_evidence,
         )
+        report["archive_status"] = archive_evidence["status"]
+        report["archive_sha256"] = archive_evidence["sha256"]
+        report["archive_candidate_count"] = archive_evidence["candidate_count"]
         report["review_status"] = review_evidence["status"]
         report["review_candidate_count"] = review_evidence["candidate_count"]
         report["review_sha256"] = review_evidence["sha256"]
