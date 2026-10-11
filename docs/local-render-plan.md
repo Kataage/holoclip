@@ -989,6 +989,51 @@ variant, never promotes one into the render queue and never sets
 decoder results, not a real Hololive stream. Owner-local real video
 evidence and later semantic/human evaluations remain unqualified.
 
+### Three-way edit review triage from verified local measurements (PR #248)
+
+`uv run holoclip render-cut-extension-three-way-review` derives a short
+review **worklist**, not a creative score, from an already measured,
+immutable `*.three-way-diagnostics.json` (PR #247) and current
+canonical source-ASR and SHA-verified A/B/B2 finished videos.
+The command **does not decode again**, consult an LLM, download sources,
+modify an MP4, alter an SRT or update any editing queue. By default it
+prints JSON to stdout; `--save` optionally writes one create-only
+`*.three-way-review.json` alongside the existing three-way evidence.
+
+The most useful first checks are 2 seconds before through 3 seconds
+after the **same source-grounded edit transition in A, B and B2**.
+Their output timestamps differ when a source interval was extended;
+absolute output clocks must not be used to imply content alignment.
+Each review target records variant, source-cut index, output-clock
+interval, evidence class and a fixed question about complete speech
+and natural pacing. Valid time-coded FFmpeg/SRT observations from the
+saved technical scan become additional concrete audio, video and
+subtitle checks. Existing `candidates_for_review` maps technical
+observations to canonical segment IDs, rejects out-of-range and
+non-finite time stamps, and never treats anomalies as objectively
+bad comedy. Review target order is deterministic and intended to
+save inspection time, not predict the winning clip.
+
+Before displaying or writing targets, the system re-derives the
+job/source/holdout/ASR context, A/B/B2 MP4 hashes, optional-stage
+state and source policy lineage. It requires completed measured
+three-way evidence and matching source/receipt SHA-256. The persisted
+diagnostic JSON is **not cryptographically signed**; ordinary local
+file tampering cannot generally be ruled out by a matching self-report
+alone. Explicit structural and cross-field consistency checks reject
+stale/contradictory entries; manual and real-media verification remain
+necessary. `--save` performs one more evidence comparison before
+creating the report and never overwrites an existing output.
+
+The worklist explicitly leaves these questions **unanswered** until
+someone listens/watches: whether the setup is understandable, the
+payoff and reaction finish, pauses are intentional, and subtitles
+faithfully match speech. A training-set human-made clip and source-ASR
+times are **not** independent proof of those answers. No variant
+receives an entertainment score or automatic promotion; `ready=false`
+and publication remain blocked. CI uses synthetic evidence only,
+without YouTube/yt-dlp or owner-local footage.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
