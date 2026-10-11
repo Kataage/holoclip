@@ -30,6 +30,7 @@ from holoclip.render_subtitles import export_cut_aligned_srt
 from holoclip.render_subtitle_burnin import burn_captioned_preview
 from holoclip.render_audio_finish import level_preview_audio
 from holoclip.render_visual_style import style_evidence
+from holoclip.render_quality_diagnostics import evaluate_local_edit_quality
 
 DEFAULT_PREVIEW_ROOT = Path("data/render-previews")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
@@ -82,6 +83,18 @@ def _db(queue: Path, *, write: bool) -> sqlite3.Connection | None:
             "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
             "style_version TEXT NOT NULL, zoom_cut_count INTEGER NOT NULL,"
             "dip_transition_count INTEGER NOT NULL, updated_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS render_quality_evidence ("
+            "job_id TEXT PRIMARY KEY, status TEXT NOT NULL,"
+            "version TEXT NOT NULL, base_sha256 TEXT NOT NULL,"
+            "final_sha256 TEXT NOT NULL, black_interval_count INTEGER NOT NULL,"
+            "freeze_interval_count INTEGER NOT NULL,"
+            "subtitle_checked INTEGER NOT NULL,"
+            "subtitle_fast_cue_count INTEGER NOT NULL,"
+            "subtitle_overflow_count INTEGER NOT NULL,"
+            "audio_sample_mean_dbfs REAL, audio_sample_peak_dbfs REAL,"
+            "flag_count INTEGER NOT NULL, updated_at REAL NOT NULL)"
         )
         connection.commit()
         return connection
@@ -222,6 +235,30 @@ def inspect_completed_source_renders(*, queue: Path = DEFAULT_QUEUE) -> dict:
                 else:
                     raise ValueError("LOCAL_RENDER_AUTO_QA_VISUAL_STATE_UNTRUSTED")
         report["visual_counts"] = visual_counts
+        quality_counts = {
+            "flags": 0, "no_flags": 0, "partial": 0, "unavailable": 0,
+        }
+        quality_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='render_quality_evidence'"
+        ).fetchone() is not None
+        if quality_table:
+            quality_rows = conn.execute(
+                "SELECT status FROM render_quality_evidence LIMIT 1001"
+            ).fetchall()
+            if len(quality_rows) > 1000:
+                raise ValueError("LOCAL_RENDER_AUTO_QA_QUEUE_TOO_LARGE")
+            mapping = {
+                "LOCAL_EDIT_DIAGNOSTIC_MEASURED_FLAGS": "flags",
+                "LOCAL_EDIT_DIAGNOSTIC_MEASURED_NO_FLAGS": "no_flags",
+                "LOCAL_EDIT_DIAGNOSTIC_MEASURED_PARTIAL": "partial",
+                "LOCAL_EDIT_DIAGNOSTIC_UNAVAILABLE": "unavailable",
+            }
+            for item in quality_rows:
+                if item["status"] not in mapping:
+                    raise ValueError("LOCAL_RENDER_AUTO_QA_QUALITY_STATE_UNTRUSTED")
+                quality_counts[mapping[item["status"]]] += 1
+        report["quality_counts"] = quality_counts
         report["counts"] = counts
         report["source_complete_count"] = len(rows)
         report["status"] = "LOCAL_RENDER_AUTO_QA_STATUS"
@@ -283,6 +320,7 @@ def _finish(
     burnin_evidence: dict | None = None,
     audio_evidence: dict | None = None,
     visual_evidence: dict | None = None,
+    quality_evidence: dict | None = None,
 ) -> None:
     if state not in {"PAUSED", "QA_PASSED"} or reason not in {
         "NONE", "LOCAL_RENDER_AUTO_QA_VALIDATION_FAILED",
@@ -346,6 +384,26 @@ def _finish(
                     str(visual_evidence["style_version"]),
                     int(visual_evidence["zoom_cut_count"]),
                     int(visual_evidence["dip_transition_count"]),
+                    time.time(),
+                ),
+            )
+        if state == "QA_PASSED" and quality_evidence is not None:
+            conn.execute(
+                "INSERT INTO render_quality_evidence VALUES "
+                "(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    job_id, str(quality_evidence["status"]),
+                    str(quality_evidence["version"]),
+                    str(quality_evidence["base_sha256"]),
+                    str(quality_evidence["final_sha256"]),
+                    int(quality_evidence["black_interval_count"]),
+                    int(quality_evidence["freeze_interval_count"]),
+                    int(bool(quality_evidence["subtitle_checked"])),
+                    int(quality_evidence["subtitle_fast_cue_count"]),
+                    int(quality_evidence["subtitle_overflow_count"]),
+                    quality_evidence["audio_sample_mean_dbfs"],
+                    quality_evidence["audio_sample_peak_dbfs"],
+                    int(quality_evidence["flag_count"]),
                     time.time(),
                 ),
             )
@@ -491,12 +549,36 @@ def advance_completed_source_renders(
                 "output_sha256": "",
                 "subtitle_sha256": str(caption_evidence["output_sha256"] or ""),
             }
+        # Independently inspect the base uncaptioned video (black/frozen
+        # frames), final selected audio and the verified SRT text clock.
+        # A warning is NOT cause to silently cut away a potentially intended
+        # pause, dark scene or dramatic reaction.
+        final_output = burn_input
+        final_sha = burn_hash
+        if burnin_evidence["status"] == "LOCAL_SUBTITLE_BURNED_PREVIEW_UNVERIFIED_EDITORIAL":
+            final_output = output.with_name(f"{output.stem}.captioned.mp4")
+            final_sha = str(burnin_evidence["output_sha256"])
+        quality_evidence = evaluate_local_edit_quality(
+            mp4_output=output,
+            video_sha256=str(details["output_sha256"]),
+            final_output=final_output, final_sha256=final_sha,
+            timeline=timeline,
+            caption_sha256=caption_evidence["output_sha256"],
+        )
         _finish(
             queue, job_id=job_id, token=token, state="QA_PASSED", reason="NONE",
             output=output, sha256=str(details["output_sha256"]),
             plan_id=plan.id, duration=float(details["measured_duration"]),
             caption_evidence=caption_evidence, burnin_evidence=burnin_evidence,
             audio_evidence=audio_evidence, visual_evidence=visual_evidence,
+            quality_evidence=quality_evidence,
+        )
+        report["quality_status"] = quality_evidence["status"]
+        report["quality_flag_count"] = quality_evidence["flag_count"]
+        report["quality_black_interval_count"] = quality_evidence["black_interval_count"]
+        report["quality_freeze_interval_count"] = quality_evidence["freeze_interval_count"]
+        report["quality_subtitle_fast_cue_count"] = (
+            quality_evidence["subtitle_fast_cue_count"]
         )
         report["visual_status"] = visual_evidence["status"]
         report["visual_zoom_cut_count"] = visual_evidence["zoom_cut_count"]
