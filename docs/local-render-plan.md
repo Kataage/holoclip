@@ -500,6 +500,49 @@ only lifts the false-negative artifact association blocker; it makes
 **no** claims of semantic model accuracy, editing quality, validated
 transcription content, production readiness or human preference.
 
+### Existing local corpus readiness inventory (PR #235)
+
+Run \`uv run holoclip render-real-corpus-readiness\` on the normal
+Windows/uv machine with an already-ingested corpus. **No downloads,
+NIM/API calls, FFmpeg, manual labeling, Docker or new ASR** are invoked.
+The command performs an actual, deterministic bounded scan of existing
+trusted human clip examples and cached source transcripts, respecting
+the existing full training/holdout collision blocker and the exact
+canonical source/ingest-manifest checks from PR #234.
+
+The report separates sources with **embedded metadata-based ASR
+association**, **matching original ingest manifest association**, **missing
+transcript**, **filename-only unverified association**, and **invalid or
+ambiguous source ASR**. On valid ASR it counts examples with at least
+two clip-aligned segments, any source-timed ASR snippets observed in both
+the human clip's opening and closing aligned positions, and complete
+clip-level \`setup\`/\`development\`/\`payoff\` descriptions. It also
+reports the number of *distinct source streams* represented. This
+identifies potential next-stage semantic probing material **without
+pretending the story descriptions are ground-truth role timestamps**.
+
+The scan is capped at 128 distinct streams, with \`--max-streams\` to
+lower the bound. The output declares whether the inventory is
+exhaustive and how many streams remained unscanned. Up to 12 candidate
+**in-sample** references are shown, at most one per source, sorted by
+available ASR positional evidence and alignment completeness. There is
+no cross-stream leak into independent heldout evaluation.
+
+No raw YouTube IDs/URLs, file paths, human descriptions or ASR text are
+included in the output; stable SHA-256 references, aggregate counts,
+limited per-position utterance counts and source transcript digests
+are recorded. The default prints JSON without writing files; an optional
+\`--output <new>.json\` creates an immutable sidecar. A blocked holdout
+state returns a nonzero exit code. The inventory's \`ready=false\`,
+\`real_video_role_accuracy=null\` and
+\`independent_semantic_gold_available=false\` remain regardless of
+the number of candidates discovered.
+
+GitHub does not contain users' local corpus data. CI can verify the
+algorithm with synthetic offline fixtures, **not** truthfully report the
+number or semantic accuracy of user-owned real clips. Real counts must
+come from execution against the user's original \`data/\` directory.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
