@@ -86,6 +86,7 @@ def test_audit_rechecks_real_local_evidence_and_exposes_no_text_or_secret(tmp_pa
     "identity", "model_gate", "role_model_flag",
     "ready_true", "ready_number", "publication_true",
     "source_cases", "evidence_hash", "duplicate_hypothesis",
+    "top_level_promotion",
 ])
 def test_audit_rejects_adversarial_saved_receipt_mutation(tmp_path, change):
     params, *_ = _case(tmp_path)
@@ -132,6 +133,8 @@ def test_audit_rejects_adversarial_saved_receipt_mutation(tmp_path, change):
         saved["evidence_sha256"] = "a" * 64
     elif change == "duplicate_hypothesis":
         saved["hypotheses"].append(copy.deepcopy(item))
+    elif change == "top_level_promotion":
+        saved["creative_quality_approved"] = True
     result = audit.audit_semantic_receipt(saved, fresh)
     assert result["status"] == "LOCAL_SEMANTIC_AUDIT_REJECTED"
     assert result["rejection_reasons"]
