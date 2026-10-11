@@ -20,9 +20,29 @@ from holoclip.render_same_source_handoff import summarize_playback_handoffs
 _ID = re.compile(r"[A-Za-z0-9_-]{11}\Z")
 _MAX_BYTES = 8 * 1024 * 1024
 _MAX_SEGMENTS = 20000
+INGESTED_MANIFEST_BASIS = (
+    "TRUSTED_EXAMPLE_MANIFEST_AND_SOURCE_URL_ID_MATCH_AUDIO_UNVERIFIED"
+)
 
 
-def _read_transcript(root: Path, stream: str) -> tuple[list[TranscriptSegment], str, str] | None:
+def trusted_source_manifest_path(examples: list) -> str | None:
+    """Only a unanimous stored ingest artifact path supplies identity context.
+
+    The surrounding caller MUST first verify every human example's trusted
+    learning quality, canonical source URL and source stream ID.
+    """
+    paths = [item.source_transcript_path for item in examples]
+    if not paths or any(not isinstance(p, str) or not p for p in paths):
+        return None
+    normalized = {str(Path(p).absolute()) for p in paths}
+    return next(iter(normalized)) if len(normalized) == 1 else None
+
+
+
+def _read_transcript(
+    root: Path, stream: str, *,
+    trusted_source_manifest_path: str | None = None,
+) -> tuple[list[TranscriptSegment], str, str] | None:
     if not _ID.fullmatch(stream):
         raise ValueError("LOCAL_INSPECTION_SOURCE_ID_INVALID")
     candidates = (
@@ -40,6 +60,17 @@ def _read_transcript(root: Path, stream: str) -> tuple[list[TranscriptSegment], 
         raise ValueError("LOCAL_INSPECTION_TRANSCRIPT_EMPTY")
     payload = json.loads(raw)
     identity_basis = "FILENAME_ONLY_IDENTITY_UNVERIFIED"
+    # The ingestion pipeline's save_transcript() writes {"segments": ...}
+    # without source_id/video_id. If this file is at the exact original
+    # ingestion path recorded by an independently source-URL-checked trusted
+    # human example, accept the *association*, not the audio as verified.
+    original_source_path = _no_links(root / "sources" / f"{stream}.json")
+    if (
+        trusted_source_manifest_path is not None
+        and matching[0] == original_source_path
+        and _no_links(Path(trusted_source_manifest_path)) == original_source_path
+    ):
+        identity_basis = INGESTED_MANIFEST_BASIS
     if isinstance(payload, dict):
         ids = [
             payload[name] for name in
@@ -115,11 +146,13 @@ def attach_inspection_context(
     inspection: dict, *, transcript_root: Path,
     stream_by_job: dict[str, str],
     ordered_cuts_by_job: dict[str, list[tuple[float, float]]] | None = None,
+    trusted_manifest_path_by_stream: dict[str, str] | None = None,
 ) -> None:
     """Attach context only AFTER every same-source and holdout safety gate."""
     root = _no_links(transcript_root)
     cache: dict[str, tuple[list[TranscriptSegment], str, str] | None] = {}
     ordered_cuts_by_job = ordered_cuts_by_job or {}
+    trusted_manifest_path_by_stream = trusted_manifest_path_by_stream or {}
     invalid: set[str] = set()
     for item in inspection["results"]:
         stream = stream_by_job.get(item["job_id"])
@@ -128,7 +161,11 @@ def attach_inspection_context(
             continue
         if stream not in invalid and stream not in cache:
             try:
-                cache[stream] = _read_transcript(root, stream)
+                cache[stream] = _read_transcript(
+                    root, stream,
+                    trusted_source_manifest_path=
+                        trusted_manifest_path_by_stream.get(stream),
+                )
             except (OSError, ValueError, TypeError, UnicodeError, KeyError):
                 invalid.add(stream)
         if stream in invalid:

@@ -136,6 +136,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Independent offline re-audit of semantic receipts against newly regenerated same-source/holdout/ASR evidence, verbatim quote ID/clock/source-side and explicit missing evidence, with no creative precision/recall claims
 - [x] Built-in offline synthetic context/setup/development/payoff/reaction omissions and replay fixture benchmark with selection-bound ASR citation flags; explicitly exposes real semantic role accuracy blind spot, no production pass
 - [x] Read-only real existing human-alignment omission probes (opening/middle/closing, optional source-ASR observations, bounded and privacy-hashed), no semantics-as-ground-truth or new manual datasets
+- [x] Reconcile ingest's native segments-only source transcript format with provenance-based real/semantic evaluation eligibility; exact trusted manifest path and source URL checks without weakening filename-only restrictions
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion

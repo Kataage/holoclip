@@ -17,10 +17,13 @@ from holoclip.render_same_source_geometry import (
 )
 from holoclip.render_same_source_narrative_reference import _shared, _union
 from holoclip.render_same_source_selection_presence import source_span_coverage
-from holoclip.render_same_source_transcript_context import _read_transcript, _utterances
+from holoclip.render_same_source_transcript_context import (
+    _read_transcript, _utterances, INGESTED_MANIFEST_BASIS,
+    trusted_source_manifest_path,
+)
 from holoclip.render_plan import _no_links
 
-VERSION = "holoclip-real-source-alignment-omission-probes-v1"
+VERSION = "holoclip-real-source-alignment-omission-probes-v2"
 _MAX_PAGE = 20
 _MAX_ASR_EXCERPTS_PER_GROUP = 3
 _MAX_ALIGNED_SPANS = 200
@@ -216,6 +219,10 @@ def probe_real_source_omissions(
     )
     report["candidate_trusted_reference_count"] = len(entries)
     cache: dict[str, tuple[list, str, str] | None] = {}
+    validated_manifest_paths = {
+        stream: trusted_source_manifest_path(human_examples)
+        for stream, human_examples in grouped.items()
+    }
     invalid: set[str] = set()
     for example in entries:
         if len(report["results"]) >= max_examples:
@@ -229,7 +236,10 @@ def probe_real_source_omissions(
         stream = example.stream_id
         if stream not in cache and stream not in invalid:
             try:
-                cache[stream] = _read_transcript(transcript_root, stream)
+                cache[stream] = _read_transcript(
+                    transcript_root, stream,
+                    trusted_source_manifest_path=validated_manifest_paths.get(stream),
+                )
             except (OSError, ValueError, UnicodeError, TypeError, KeyError):
                 invalid.add(stream)
         if stream in invalid:
@@ -240,7 +250,10 @@ def probe_real_source_omissions(
             report["unavailable_local_asr_count"] += 1
             continue
         segments, digest, source_id_basis = parsed
-        if source_id_basis != "FILENAME_AND_METADATA_ID_MATCH_AUDIO_UNVERIFIED":
+        if source_id_basis not in {
+            "FILENAME_AND_METADATA_ID_MATCH_AUDIO_UNVERIFIED",
+            INGESTED_MANIFEST_BASIS,
+        }:
             report["untrusted_or_ambiguous_local_asr_count"] += 1
             continue
         try:
