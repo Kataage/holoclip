@@ -912,6 +912,40 @@ and subtitle finishing to B2 requires a separate follow-up.
 `ready=false` with no adoption or publication. GitHub CI uses synthetic
 local media and never downloads YouTube streams or probes user PCs.
 
+### Matched optional local finishing for the distinct B2 trial (PR #246)
+
+`uv run holoclip render-cut-extension-speech-b2-finish` continues
+the existing source-ASR-grounded A/B/B2 work *without a new download or
+manual dataset*. It requires that both original A and completed B have
+their existing SHA-verified optional audio/SRT/burn-in evidence and
+`*.matched.json` receipt, and that an already-rendered B2 MP4 has a
+matching `*.json` technical receipt. No missing B2 is silently rendered
+by this command. The current queue, canonical source, holdout reservations,
+source policy and local ASR must still agree.
+
+By default it only reports the expected optional stages without modifying
+media. `--execute --approve-local-preview` explicitly runs the
+**same available optional processes** as original A: cut-aware audio
+leveling, cut-aligned Japanese SRT, and caption burn-in when A actually
+has those stages. Existing B2 siblings and the matched receipt are never
+overwritten. Optional failure yields
+`LOCAL_B2_FINISH_INCOMPLETE_NOT_COMPARABLE`, **not** a success claim.
+On success a separate create-only
+`<B2 basename>.matched.json` receipt records a SHA-pinned B2 final
+MP4, stage statuses and actual decoded final runtime distinct from
+timeline estimate. A and B media, original B2, stage files and queued
+jobs remain untouched; existing A/B hashes, source-ASR proposal, B2
+receipt, A/B optional stage bytes and B2 source bytes are rechecked
+after potentially lengthy FFmpeg work.
+
+`stage_comparable_to_a_and_b=true` means only that the **same types**
+of audio and caption postprocessing were applied. It does not imply
+identical dialog, content, editing quality, SRT accuracy, viewer
+preference, loudness perception or publication rights. No independent
+real-world video/creative evaluation was conducted by CI; synthetic
+offline tests are used. Auto-adoption and publication stay disabled;
+`ready=false` even on successful technical matching.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
