@@ -111,10 +111,10 @@ def test_render_plan_filter_graph_keeps_exact_same_timeline_and_limits(
     args = render_plan._ffmpeg_command(plan, tmp_path / "temp.mp4")
     graph = args[args.index("-filter_complex") + 1]
     assert graph.count("zoompan=") == 2
-    assert graph.count("fade=t=out") == 1
-    assert graph.count("fade=t=in") == 1
-    assert graph.count("afade=t=out") == 1
-    assert graph.count("afade=t=in") == 1
+    assert graph.count(",fade=t=out") == 1
+    assert graph.count(",fade=t=in") == 1
+    assert graph.count(",afade=t=out") == 1
+    assert graph.count(",afade=t=in") == 1
     assert "concat=n=2:v=1:a=1" in graph
     assert "trim=start=0.100000:end=2.500000" in graph
     assert "trim=start=0.200000:end=2.600000" in graph
