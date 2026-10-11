@@ -159,6 +159,9 @@ from holoclip.render_source_queue_task import prepare_render_queue_task
 from holoclip.render_ready_queue import (
     DEFAULT_PREVIEW_ROOT, DEFAULT_TRANSCRIPT_ROOT, advance_completed_source_renders,
 )
+from holoclip.render_review_calibration import (
+    DEFAULT_EXAMPLE_STORE, DEFAULT_PACK, export_review_calibration_pack,
+)
 from holoclip.render_candidate_autoqueue import (
     DEFAULT_AUTOQUEUE_CONFIG, setup_candidate_autoqueue, enroll_candidate_run,
 )
@@ -1430,6 +1433,29 @@ def render_ready_preview_command(
         "LOCAL_RENDER_AUTO_QA_PAUSED_NEEDS_REVIEW",
     }:
         raise typer.Exit(6)
+
+
+@app.command("render-review-calibration-pack")
+def render_review_calibration_pack_command(
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    output: Path = typer.Option(DEFAULT_PACK, "--output"),
+    execute: bool = typer.Option(False, "--execute",
+        help="Explicit create-only offline unlabeled review sampling pack."),
+) -> None:
+    """Inspect existing review evidence and alignment context; never infer gold."""
+    try:
+        report = export_review_calibration_pack(
+            preview_root=preview_root, example_store=example_store,
+            output=output, execute=execute,
+        )
+    except (OSError, ValueError, TypeError, UnicodeError) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_EDIT_PACK_BLOCKED", "ready": False,
+            "production_ready": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(report, sort_keys=True, ensure_ascii=False))
 
 
 @app.command("render-source-queue-enqueue")
