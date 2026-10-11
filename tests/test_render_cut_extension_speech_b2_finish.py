@@ -226,10 +226,35 @@ def test_source_ASR_modified_during_B2_finishing_blocks_receipt(
     call = finish.level_preview_audio
     def corrupt(*args, **kwargs):
         result = call(*args, **kwargs)
-        transcript.write_bytes(b"changed ASR during optional stage")
+        payload = json.loads(transcript.read_text(encoding="utf-8"))
+        payload["segments"][-1]["end"] = 25.0
+        transcript.write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8",
+        )
         return result
     monkeypatch.setattr(finish, "level_preview_audio", corrupt)
     with pytest.raises(ValueError, match="ASR_LINEAGE_CHANGED"):
+        finish.finish_speech_b2(
+            plan, execute=True, approve_local_preview=True,
+        )
+    assert not plan["finished_receipt"].exists()
+
+
+
+def test_malformed_ASR_during_B2_finishing_never_commits_receipt(
+    tmp_path, monkeypatch,
+):
+    _, plan, _, transcript = _case(tmp_path, monkeypatch)
+    _stages(monkeypatch)
+    original_leveler = finish.level_preview_audio
+
+    def corrupt(*args, **kwargs):
+        result = original_leveler(*args, **kwargs)
+        transcript.write_bytes(b"invalid ASR json")
+        return result
+
+    monkeypatch.setattr(finish, "level_preview_audio", corrupt)
+    with pytest.raises(ValueError):
         finish.finish_speech_b2(
             plan, execute=True, approve_local_preview=True,
         )
