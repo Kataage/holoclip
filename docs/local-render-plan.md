@@ -460,6 +460,46 @@ role-time annotations or blind judgments on unseen streams; a high rate
 of agreement with these human selection intervals alone is not evidence
 that Holoclip understands jokes or outputs better videos.
 
+### Native ingest transcript provenance bridge (PR #234)
+
+The actual \`examples-ingest\` workflow writes source ASR to
+\`data/transcripts/sources/<11-character-video-id>.json\` via
+\`save_transcript()\`. That JSON normally contains just \`segments\` and
+does **not** contain \`video_id\`, \`source_id\` or \`stream_id\`. Earlier
+PR #227–#233 read the file, but downstream semantic/real-example probes
+required matching embedded source metadata. Consequently valid, previously
+ingested clips were incorrectly excluded as filename-only and their
+semantic evidence/real omission measurements often remained empty.
+
+We now derive a **second, explicitly qualified association basis** from
+the *already trusted and canonical-YouTube-ID-checked* human example
+\`source_transcript_path\` recorded at ingestion. For each stream, all
+eligible human examples must unanimously identify the **same exact
+ingest source artifact path**, equal to
+\`<transcript-root>/sources/<video-id>.json\`. The path and its parent
+must be symlink/junction free. The file still passes 8 MiB, JSON
+structure, bounded segment count, finite source timing, unique-location
+checks and source metadata mismatch checks. The source ID must also
+have been confirmed against the trusted human example's canonical
+\`source_url\` by the existing corpus gate. This does NOT authenticate
+the media bytes, recognizer output, speaker or Japanese semantics;
+the provenance label is
+\`TRUSTED_EXAMPLE_MANIFEST_AND_SOURCE_URL_ID_MATCH_AUDIO_UNVERIFIED\`.
+The original \`FILENAME_ONLY_IDENTITY_UNVERIFIED\` basis still cannot
+qualify model requests or real ASR probes. If two trusted examples
+disagree on the transcript path, the upgrade does not apply.
+
+This automatic bridge is used by both the render inspection context
+and \`render-real-source-omission-probe\`, and enables the same conservative
+basis for the **opt-in** \`render-same-source-semantic-review\` (which still
+requires explicit public-data authorization, an available qualified
+provider route and source/holdout identity checks). Existing transcripts
+and human example JSONL are reused without file migration, new ASR,
+yt-dlp, API/network requests or manual dataset preparation. This change
+only lifts the false-negative artifact association blocker; it makes
+**no** claims of semantic model accuracy, editing quality, validated
+transcription content, production readiness or human preference.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.

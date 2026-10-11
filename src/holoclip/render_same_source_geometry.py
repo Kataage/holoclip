@@ -29,10 +29,12 @@ from holoclip.render_human_edit_context import (
 from holoclip.render_plan import _no_links
 from holoclip.render_source_queue import DEFAULT_QUEUE, _connect
 from holoclip.render_source_resolver import _canonical_assets
-from holoclip.render_same_source_transcript_context import attach_inspection_context
+from holoclip.render_same_source_transcript_context import (
+    attach_inspection_context, trusted_source_manifest_path,
+)
 from holoclip.render_same_source_narrative_reference import attach_narrative_reference
 
-VERSION = "holoclip-same-source-edit-geometry-v7"
+VERSION = "holoclip-same-source-edit-geometry-v8"
 DEFAULT_OUTPUT = Path("data/render-previews/same-source-edit-geometry.json")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
@@ -526,6 +528,10 @@ def compare_same_source_edit_geometry(
     attach_inspection_context(
         report["inspection_queue"], transcript_root=transcript_root,
         stream_by_job=stream_by_job, ordered_cuts_by_job=ordered_cuts_by_job,
+        trusted_manifest_path_by_stream={
+            stream: path for stream, human_examples in grouped.items()
+            if (path := trusted_source_manifest_path(human_examples)) is not None
+        },
     )
     attach_narrative_reference(
         report["inspection_queue"], examples_by_stream=grouped,

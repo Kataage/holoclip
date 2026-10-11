@@ -19,8 +19,9 @@ from holoclip.render_plan import _no_links
 from holoclip.render_same_source_selection_presence import (
     parse_generated_intervals, source_span_coverage,
 )
+from holoclip.render_same_source_transcript_context import INGESTED_MANIFEST_BASIS
 
-VERSION = "holoclip-semantic-evidence-hypothesis-v2"
+VERSION = "holoclip-semantic-evidence-hypothesis-v3"
 DEFAULT_OUTPUT = Path("data/render-previews/semantic-evidence-review.json")
 _ROLES = ("setup", "development", "payoff")
 _STATUS = {"POSSIBLE_TEXTUAL_REFERENCE", "INSUFFICIENT_EVIDENCE"}
@@ -116,8 +117,10 @@ def prepare_semantic_evidence(comparison: dict) -> dict:
                 or narrative.get("human_clip_identity_sha256")
                 != entry.get("human_clip_identity_sha256")
                 or transcript.get("status") != "TRANSCRIPT_CONTEXT_AVAILABLE"
-                or transcript.get("source_identity_basis")
-                != "FILENAME_AND_METADATA_ID_MATCH_AUDIO_UNVERIFIED"
+                or transcript.get("source_identity_basis") not in {
+                    "FILENAME_AND_METADATA_ID_MATCH_AUDIO_UNVERIFIED",
+                    INGESTED_MANIFEST_BASIS,
+                }
                 or transcript.get("local_asr_audio_independently_verified") is not False
                 or entry.get("evaluation_split") != "TRAINING_REFERENCE_IN_SAMPLE"
                 or not all(
