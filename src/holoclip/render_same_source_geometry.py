@@ -30,8 +30,9 @@ from holoclip.render_plan import _no_links
 from holoclip.render_source_queue import DEFAULT_QUEUE, _connect
 from holoclip.render_source_resolver import _canonical_assets
 from holoclip.render_same_source_transcript_context import attach_inspection_context
+from holoclip.render_same_source_narrative_reference import attach_narrative_reference
 
-VERSION = "holoclip-same-source-edit-geometry-v5"
+VERSION = "holoclip-same-source-edit-geometry-v6"
 DEFAULT_OUTPUT = Path("data/render-previews/same-source-edit-geometry.json")
 DEFAULT_TRANSCRIPT_ROOT = Path("data/transcripts")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
@@ -391,6 +392,7 @@ def compare_same_source_edit_geometry(
         "selection_difference_is_not_a_human_quality_label": True,
         "local_asr_context_is_not_creative_quality_evidence": True,
         "narrative_roles_not_inferred_from_local_asr": True,
+        "human_story_descriptions_are_clip_level_only": True,
         "inspection_queue": _inspection_queue(
             [], verified_reservations=holdout_known
         ),
@@ -524,6 +526,11 @@ def compare_same_source_edit_geometry(
     attach_inspection_context(
         report["inspection_queue"], transcript_root=transcript_root,
         stream_by_job=stream_by_job, ordered_cuts_by_job=ordered_cuts_by_job,
+    )
+    attach_narrative_reference(
+        report["inspection_queue"], examples_by_stream=grouped,
+        stream_by_job=stream_by_job,
+        ordered_cuts_by_job=ordered_cuts_by_job,
     )
     return report
 

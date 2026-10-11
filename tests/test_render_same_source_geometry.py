@@ -716,3 +716,142 @@ def test_holdout_conflict_blocks_all_handoff_analysis(tmp_path):
     report = geo.compare_same_source_edit_geometry(**params)
     assert report["inspection_queue"]["results"] == []
     assert "ASR_CANARY_DO_NOT_EXPOSE_9274" not in json.dumps(report)
+
+
+
+def test_clip_level_story_annotations_and_alignment_position_coverage(tmp_path):
+    params, receipt, _, _ = _build(tmp_path, clips=[_human_example()])
+    report = geo.compare_same_source_edit_geometry(**params)
+    entry = report["inspection_queue"]["results"][0]
+    narrative = entry["narrative_reference"]
+    assert entry["job_id"] == receipt["job_id"]
+    assert narrative["status"] == "IN_SAMPLE_CLIP_LEVEL_NARRATIVE_REFERENCE"
+    assert narrative["human_clip_level_annotations_unverified"]["setup"] == (
+        "ordinary setup"
+    )
+    assert narrative["human_clip_level_annotations_unverified"]["payoff"] == (
+        "clear payoff"
+    )
+    groups = narrative["human_segment_order_coverage"]
+    assert groups["first_aligned"]["human_aligned_source_seconds"] == 2
+    assert groups["first_aligned"]["generated_coverage_of_human_group_fraction"] == 1
+    assert groups["intermediate_aligned"]["aligned_segment_count"] == 0
+    assert groups["intermediate_aligned"][
+        "generated_coverage_of_human_group_fraction"
+    ] is None
+    assert groups["last_aligned"]["human_aligned_source_seconds"] == 3
+    assert groups["last_aligned"]["generated_shared_source_seconds"] == 2
+    assert groups["last_aligned"][
+        "generated_coverage_of_human_group_fraction"
+    ] == pytest.approx(2 / 3, abs=1e-6)
+    assert narrative["clip_level_story_labels_time_anchored"] is False
+    assert narrative["setup_development_payoff_in_generated_clip_verified"] is False
+    assert report["human_story_descriptions_are_clip_level_only"] is True
+    assert narrative["auto_edit_allowed"] is False
+
+
+def test_narrative_alignment_middle_group_never_claims_story_development():
+    from holoclip.render_same_source_narrative_reference import (
+        summarize_human_reference,
+    )
+
+    example = _human_example(ranges=[
+        (0, 1, 10, 11), (1, 3, 20, 22), (3, 5, 30, 32),
+    ])
+    result = summarize_human_reference(example, [(10, 11), (30, 31)])
+    groups = result["human_segment_order_coverage"]
+    assert groups["first_aligned"]["generated_shared_source_seconds"] == 1
+    assert groups["intermediate_aligned"]["aligned_segment_count"] == 1
+    assert groups["intermediate_aligned"]["generated_shared_source_seconds"] == 0
+    assert groups["last_aligned"]["generated_shared_source_seconds"] == 1
+    assert result["group_names_are_positions_not_story_roles"] is True
+    assert result["text_matches_source_asr_verified"] is False
+
+
+def test_replayed_generated_material_cannot_double_count_human_coverage():
+    from holoclip.render_same_source_narrative_reference import (
+        summarize_human_reference,
+    )
+
+    example = _human_example()
+    result = summarize_human_reference(
+        example, [(10, 12), (10, 12), (20, 23), (21, 22)],
+    )
+    groups = result["human_segment_order_coverage"]
+    assert groups["first_aligned"]["generated_shared_source_seconds"] == 2
+    assert groups["last_aligned"]["generated_shared_source_seconds"] == 2
+    assert groups["last_aligned"][
+        "generated_coverage_of_human_group_fraction"
+    ] <= 1
+
+
+def test_unsafe_human_story_annotation_is_not_included_in_inspection(tmp_path):
+    item = _human_example()
+    item.payoff = "malicious\u202e"
+    params, *_ = _build(tmp_path, clips=[item])
+    report = geo.compare_same_source_edit_geometry(**params)
+    reference = report["inspection_queue"]["results"][0]["narrative_reference"]
+    assert reference["status"] == "NARRATIVE_ANNOTATIONS_UNSAFE_OR_UNAVAILABLE"
+    assert "malicious" not in json.dumps(reference)
+
+
+def test_narrative_reference_lookup_stays_specific_to_selected_human_clip():
+    from holoclip.render_same_source_narrative_reference import (
+        attach_narrative_reference,
+    )
+
+    h1 = _human_example(clip="human-1")
+    h2 = _human_example(clip="human-2")
+    report = {"results": [{
+        "job_id": "renderqueue_" + "a" * 32,
+        "human_clip_identity_sha256": hashlib.sha256(
+            b"youtube:human-2"
+        ).hexdigest(),
+    }]}
+    attach_narrative_reference(
+        report, examples_by_stream={VIDEO: [h1, h2]},
+        stream_by_job={"renderqueue_" + "a" * 32: VIDEO},
+        ordered_cuts_by_job={
+            "renderqueue_" + "a" * 32: [(10, 12), (21, 24)]
+        },
+    )
+    entry = report["results"][0]["narrative_reference"]
+    assert entry["status"] == "IN_SAMPLE_CLIP_LEVEL_NARRATIVE_REFERENCE"
+    assert entry["human_clip_identity_sha256"] == hashlib.sha256(
+        b"youtube:human-2"
+    ).hexdigest()
+
+
+def test_holdout_collision_suppresses_story_descriptions(tmp_path):
+    item = _human_example()
+    item.setup = "SENTINEL_UNIQUE_STORY_PRIVATE_9182"
+    params, *_ = _build(tmp_path, clips=[item], reserved=[VIDEO])
+    report = geo.compare_same_source_edit_geometry(**params)
+    assert report["status"] == "LOCAL_SAME_SOURCE_TRAIN_HOLDOUT_CONFLICT"
+    assert report["inspection_queue"]["results"] == []
+    assert "SENTINEL_UNIQUE_STORY_PRIVATE_9182" not in json.dumps(report)
+
+
+def test_without_human_matches_no_story_reference_is_invented(tmp_path):
+    params, *_ = _build(tmp_path, clips=None)
+    report = geo.compare_same_source_edit_geometry(**params)
+    assert report["same_source_pairs"] == 0
+    assert report["inspection_queue"]["results"] == []
+
+
+def test_immutable_json_export_includes_human_story_reference(tmp_path):
+    params, _, _, media = _build(tmp_path, clips=[_human_example()])
+    output = tmp_path / "narrative-inspection.json"
+    original = media.read_bytes()
+    report = geo.export_same_source_edit_geometry(
+        **params, output=output, execute=True
+    )
+    assert report["inspection_queue"]["results"][0]["narrative_reference"][
+        "status"
+    ] == "IN_SAMPLE_CLIP_LEVEL_NARRATIVE_REFERENCE"
+    assert json.loads(output.read_text(encoding="utf-8")) == report
+    with pytest.raises(ValueError, match="OUTPUT_UNSAFE"):
+        geo.export_same_source_edit_geometry(
+            **params, output=output, execute=True
+        )
+    assert media.read_bytes() == original

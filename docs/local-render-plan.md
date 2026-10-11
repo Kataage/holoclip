@@ -274,6 +274,38 @@ there is no handoff speech evidence rather than a fabricated default.
 No new ASR, remote inference, video playback or downloads, yt-dlp,
 network calls, new operator data, destructive writes or publishing.
 
+### In-sample story annotation and human-aligned position coverage (PR #229)
+
+The same read-only \`render-same-source-geometry\` report now attaches
+\`narrative_reference\` to **only the existing top-ten, identity-matched and
+holdout-screened inspection jobs**. The chosen trusted human example is
+looked up by the exact source stream and hashed canonical human clip
+identity, never by loosely similar text or a different channel/stream.
+
+Each reference includes bounded, sanitized **clip-level** human annotations
+for \`setup\`, \`development\`, \`payoff\` and \`why_selected\`, plus overlap
+coverage of generated source selections against the human example's
+**first**, **intermediate**, and **last** aligned clip segments. These are
+*positions in the human clip alignment order*, NOT story-role timestamps:
+the first aligned segment may not contain the actual setup, and the last
+may not contain a payoff. Missing middle group coverage is null, not zero.
+Repeated generated source material is unioned before measuring shared
+seconds, so a replay cannot inflate source coverage.
+
+The report explicitly sets
+\`clip_level_story_labels_time_anchored=false\`,
+\`setup_development_payoff_in_generated_clip_verified=false\` and
+\`text_matches_source_asr_verified=false\`.
+There is no annotation-to-speech semantic matching, narrative completion
+claim, or human creative-quality gold. Unsafe annotations do not enter
+the report; holdout collisions wipe all inspection entries. Since this
+output includes original human clip descriptions and potentially local ASR
+text, review JSON before sharing.
+
+No new operator data, download, ASR, LLM request, paid service, Docker,
+FFmpeg, media rewrites, automatic cut adjustment or publishing are needed.
+The unchanged \`ready=false\` and create-only opt-in report gate apply.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
