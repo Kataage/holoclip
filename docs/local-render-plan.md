@@ -677,6 +677,44 @@ signature. This is a consistency audit of untrusted in-sample
 observations, not a production/auto-edit/publication gate.
 \`ready=false\` is unchanged.
 
+### Source-ASR-backed trial cut extensions (PR #239)
+
+\`uv run holoclip render-cut-extension-trials\` derives **alternative
+candidate cut boundaries** for existing QA-passed generated preview
+timelines. This advances beyond observation-only differences: the
+output has both the **original complete ordered source-cut timeline**
+and a concrete **trial ordered timeline** that extends one existing
+cut's start or end. It still does NOT execute FFmpeg, alter the queued
+render, replace the original MP4, or enqueue automatic publication.
+
+The conservative search is restricted to the **single longest
+human-only source-time disagreement window actually sampled by the
+local transcript context**, when all source URL, original media
+identity, holdout reservation and trusted in-sample human-reference
+gates passed. The potential extension must add at most 8 seconds and
+leave at most 4 seconds of adjacent source-time gap to bridge;
+it may not overlap a different selected source cut, reorder a
+segment, exceed 600 seconds of edited playback, or cross the
+original 0–24h source clock bounds. A candidate must recover
+at least 0.25 seconds of previously missing source-time ASR,
+matched against original and trial selections. Reports include SHA-256
+of observed ASR text, source start/end times, seconds gained,
+added playback duration and original/trial source intervals; **no
+verbatim speech, raw original YouTube video IDs or file paths**.
+At most two trials are suggested per job, 12 per 40-job page.
+
+The command is offline and read-only by default; optional
+\`--output <new>.json\` saves an immutable create-only report.
+These are **hypothetical edit alternatives** rather than executable
+RenderPlans: actual source file duration/decoding, audible speech,
+sentence completeness, setup, jokes, payoff, human preference and
+creative improvement remain **unverified**. A trusted human training
+cut is NOT a heldout gold edit, and even source-clock ASR coverage
+does not show that extending the edit is desirable. Future work
+can perform distinct local MP4 trial renders plus genuine before/after
+blind review, with rollback and independently measured quality.
+\`ready=false\` and no auto-edit/auto-publication remain mandatory.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.

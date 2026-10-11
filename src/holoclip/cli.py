@@ -170,6 +170,7 @@ from holoclip.render_same_source_geometry import (
     DEFAULT_OUTPUT as DEFAULT_SAME_SOURCE_OUTPUT,
     export_same_source_edit_geometry, compare_same_source_edit_geometry,
 )
+from holoclip.render_cut_extension_trials import preview_cut_extensions
 from holoclip.render_same_source_semantic_review import (
     DEFAULT_OUTPUT as DEFAULT_SEMANTIC_OUTPUT,
     prepare_semantic_evidence, infer_semantic_hypotheses, save_semantic_review,
@@ -1527,6 +1528,40 @@ def render_ab_human_context_command(
         }))
         raise typer.Exit(6) from exc
     typer.echo(json.dumps(report, sort_keys=True, ensure_ascii=False))
+
+
+
+@app.command("render-cut-extension-trials")
+def render_cut_extension_trials_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    after_job_id: str | None = typer.Option(None, "--after-job-id"),
+    max_jobs: int = typer.Option(40, "--max-jobs", min=1, max=40),
+    output: Path | None = typer.Option(
+        None, "--output", help="Optional new immutable JSON cut trial report.",
+    ),
+) -> None:
+    """Preview evidence-backed, bounded cut extensions; never edit originals."""
+    try:
+        result = preview_cut_extensions(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, after_job_id=after_job_id,
+            max_jobs=max_jobs, output=output,
+        )
+    except (OSError, ValueError, TypeError, UnicodeError, sqlite3.Error) as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_CUT_EXTENSION_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6) from exc
+    typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    if result["status"] == "LOCAL_CUT_EXTENSION_GATES_BLOCKED":
+        raise typer.Exit(6)
 
 
 @app.command("render-same-source-geometry")
