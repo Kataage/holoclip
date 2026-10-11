@@ -150,6 +150,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Preview-first B2 MP4 rendering from separately SHA-verified A/B and source-ASR boundary proposal, with local source cache/policy/FFmpeg QA, immutable three-way duration receipt and no matched finishing or editorial promotion
 - [x] Explicit B2 matched optional audio leveling/SRT/burn-in on existing SHA-pinned local B2 video with separate immutable stage-parity receipt, no editorial quality or publication promotion
 - [x] Read-only-first, SHA-verified three-way A/B/B2 local decoded A/V and subtitle technical review hints, immutable sidecar and no creative ranking (real footage evaluation still required)
+- [x] Three-way source-time-matched, review-first operator triage worklist grounded in local measured diagnostics and existing review-ledger cut mapping, without automatic winner/quality claims
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion
