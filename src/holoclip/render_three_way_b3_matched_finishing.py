@@ -49,41 +49,26 @@ def _render_receipt(found: dict, inputs: dict, candidate_index: int) -> tuple[di
         evidence = json.loads(raw)
     except (ValueError, UnicodeError) as exc:
         raise ValueError("LOCAL_B3_FINISH_RENDER_RECEIPT_INVALID") from exc
+    invariant = {
+        key: value for key, value in base.items() if key not in {
+            "status", "new_b3_local_mp4_rendered",
+            "a_b_b2_b3_duration_compared",
+        }
+    }
     if (not isinstance(evidence, dict)
             or evidence.get("version") != B3_VERSION
             or evidence.get("status")
             != "LOCAL_B3_RENDERED_BASIC_AV_QA_NOT_EDITED_QUALITY"
-            or any(evidence.get(key) != value for key, value in base.items())
+            or any(evidence.get(key) != value
+                   for key, value in invariant.items())
             or evidence.get("b3_technical_qa") != _B3_QA
             or evidence.get("new_b3_local_mp4_rendered") is not True
             or evidence.get("a_b_b2_b3_duration_compared") is not True
-            or evidence.get("b3_finished_audio_or_captions_matched") is not False
             or evidence.get("publication_performed") is not False
             or evidence.get("automatic_adoption_allowed") is not False
             or evidence.get("ready") is not False
             or evidence.get("production_ready") is not False):
-        # The base summary contains read-only defaults for fields that the
-        # rendered receipt *must* change. Compare only invariant keys below.
-        invariant = {
-            key: value for key, value in base.items() if key not in {
-                "status", "new_b3_local_mp4_rendered",
-                "a_b_b2_b3_duration_compared",
-            }
-        }
-        if (not isinstance(evidence, dict)
-                or evidence.get("version") != B3_VERSION
-                or evidence.get("status")
-                != "LOCAL_B3_RENDERED_BASIC_AV_QA_NOT_EDITED_QUALITY"
-                or any(evidence.get(key) != value
-                       for key, value in invariant.items())
-                or evidence.get("b3_technical_qa") != _B3_QA
-                or evidence.get("new_b3_local_mp4_rendered") is not True
-                or evidence.get("a_b_b2_b3_duration_compared") is not True
-                or evidence.get("publication_performed") is not False
-                or evidence.get("automatic_adoption_allowed") is not False
-                or evidence.get("ready") is not False
-                or evidence.get("production_ready") is not False):
-            raise ValueError("LOCAL_B3_FINISH_RENDER_LINEAGE_UNTRUSTED")
+        raise ValueError("LOCAL_B3_FINISH_RENDER_LINEAGE_UNTRUSTED")
     digest, size = _hash(target)
     duration, video, audio = _probe(target)
     reported = evidence.get("b3_measured_seconds")
@@ -288,6 +273,17 @@ def run_existing_b3_matched_finishing(
                 final, sha = paths["burnin"], outputs["burnin"]["output_sha256"]
         burn_ok = (not stages["burnin"]["successful"]
                    or outputs.get("burnin", {}).get("status") == _SUCCESS["burnin"])
+        # Each individual claimed-success stage must exist and match its
+        # reported digest, even when it is not the final playback MP4.
+        for kind, output in outputs.items():
+            if output.get("status") == _SUCCESS[kind]:
+                sibling = paths[kind]
+                if not sibling.is_file() or sibling.is_symlink():
+                    raise ValueError("LOCAL_B3_FINISH_STAGE_NOT_CREATED")
+                stage_sha, stage_size = _hash(sibling)
+                if (not stage_size
+                        or stage_sha != output.get("output_sha256")):
+                    raise ValueError("LOCAL_B3_FINISH_STAGE_HASH_INVALID")
         comparable = caption_ok and audio_ok and burn_ok
         measured = None
         if comparable:
