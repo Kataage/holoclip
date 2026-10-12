@@ -1321,6 +1321,36 @@ complete. GitHub Linux/Windows CI exercises only synthetic fixtures
 and never renders owner footage. Use the PR #254 doctor and #253 pilot
 to audit any locally remaining prerequisites and measured sidecars.
 
+### B3 boundary hypotheses from corroborated source-clock and edited ASR hints (PR #259)
+
+`uv run holoclip render-three-way-existing-media-review-batch` now includes
+`b3_boundary_repair_hints` for each SHA-verified complete A/B/B2 case.
+This is an additional **preview-only** field in the existing command, not a
+render command, revision of the original video, or a new operator setup step.
+
+A B3 hint is considered **only when both** of these hold: the active B2
+editing boundary cuts across a timed source-ASR utterance, and an independently
+re-observed *finished B2 audio* ASR text/timing warning is close to that
+boundary. The latter is a contextual alert, **not proof** that it corresponds
+to the particular source-ASR utterance crossing the boundary.
+
+The proposed outer boundary is the source-ASR utterance start/end, subject
+to strict limits: outward extension only, no overlap with other cuts in the
+same source, at most 2 seconds beyond B2 and at most 8 seconds total
+extension over A. A canonical single-cut timeline is reconstructed and
+fingerprinted; at most two bounded alternatives are reported. The existing
+A/B/B2 canonical media/evidence gates still apply. Nothing is downloaded,
+remixed, rendered, transcribed or published.
+
+If the independent edited-audio ASR receipt is not already present, the
+field reports `LOCAL_B3_EDITED_AUDIO_ASR_UNMEASURED` with
+zero proposals rather than inventing confidence. If no source-utterance cut
+and nearby warning support an outward extension, it similarly abstains.
+Proposals remain explicitly **unrendered**, with no quality, audible-speech
+completeness, humor, or safety certification and `ready=false`.
+Any real B3 render, listening comparison, and adoption will require a
+separate guarded workflow and verified real-video evaluation.
+
 ### Read-only join of existing edited-audio ASR evidence (PR #258)
 
 `uv run holoclip render-three-way-existing-media-review-batch` now
