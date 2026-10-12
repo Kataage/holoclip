@@ -229,3 +229,34 @@ def test_cli_default_and_denied_execution(tmp_path, monkeypatch):
     denied = CliRunner().invoke(cli.app, [*argv, "--execute"])
     assert denied.exit_code == 6, denied.stdout
     assert json.loads(denied.stdout)["ready"] is False
+
+
+
+def test_false_success_without_stage_file_cannot_claim_technical_parity(
+    tmp_path, monkeypatch,
+):
+    options, _, _, _ = _case(tmp_path, monkeypatch)
+    _mock_stages(monkeypatch)
+    expected = finish.run_existing_b3_matched_finishing(**options)
+    if expected["baseline_caption_expected"]:
+        def bogus_caption(timeline, sources, *, transcript_root, mp4_output):
+            return {
+                "status": _SUCCESS["caption"],
+                "output_sha256": "0" * 64, "cue_count": 1,
+                "dropped_cue_count": 0,
+            }
+        monkeypatch.setattr(finish, "export_cut_aligned_srt", bogus_caption)
+    elif expected["baseline_audio_leveling_expected"]:
+        def bogus_audio(*, mp4_output, video_sha256, timeline):
+            return {
+                "status": _SUCCESS["audio"],
+                "output_sha256": "0" * 64, "max_abs_gain_db": 1.0,
+            }
+        monkeypatch.setattr(finish, "level_preview_audio", bogus_audio)
+    else:
+        pytest.skip("baseline has no successful caption/audio stage")
+    with pytest.raises(ValueError, match="STAGE_NOT_CREATED|STAGE_HASH_INVALID"):
+        finish.run_existing_b3_matched_finishing(
+            **options, execute=True, approve_local_preview=True,
+        )
+    assert not list(options["preview_root"].rglob("*-speechb3-*.matched.json"))
