@@ -32,7 +32,6 @@ from holoclip.render_same_source_semantic_review import (
 from holoclip.render_same_source_transcript_context import _read_transcript
 from holoclip.render_source_queue import DEFAULT_QUEUE
 from holoclip.render_source_resolver import _canonical_assets
-from holoclip.render_three_way_existing_media_autopilot import _exclusive_run_lock
 from holoclip.render_three_way_existing_media_pilot import _completed_jobs
 
 VERSION = "holoclip-b2-b3-finished-audio-cross-asr-v1"
