@@ -104,6 +104,13 @@ def inspect_local_prerequisites(
                     "BLOCKED_UNVERIFIED", reason="BASELINE_OR_AB_PROPOSAL_UNVERIFIED")
     verified.append("CANONICAL_SOURCE_AND_AB_PROPOSAL")
     if _both_absent(trial["output"], trial["receipt"]):
+        matched_path = _no_links(trial["output"].with_name(
+            f"{trial['output'].stem}.matched.json"
+        ))
+        if matched_path.exists() or _unsafe_existing_stages(trial["output"]):
+            return _row(job_id, proposal_index, refinement_index,
+                        "BLOCKED_UNVERIFIED", verified=tuple(verified),
+                        reason="B_DESCENDANTS_EXIST_WITHOUT_RENDER_PROOF")
         return _row(job_id, proposal_index, refinement_index,
                     "RENDER_B", verified=tuple(verified))
     if not trial["output"].is_file() or not trial["receipt"].is_file():
@@ -142,6 +149,13 @@ def inspect_local_prerequisites(
                     verified=tuple(verified), reason="B2_ASR_OR_HOLDOUT_UNVERIFIED")
     verified.append("SOURCE_ASR_B2_REFINEMENT")
     if _both_absent(b2["output"], b2["receipt"]):
+        leftover_receipt = _no_links(b2["output"].with_name(
+            f"{b2['output'].stem}.matched.json"
+        ))
+        if leftover_receipt.exists() or _unsafe_existing_stages(b2["output"]):
+            return _row(job_id, proposal_index, refinement_index,
+                        "BLOCKED_UNVERIFIED", verified=tuple(verified),
+                        reason="B2_DESCENDANTS_EXIST_WITHOUT_RENDER_PROOF")
         return _row(job_id, proposal_index, refinement_index,
                     "RENDER_B2", verified=tuple(verified))
     if not b2["output"].is_file() or not b2["receipt"].is_file():
