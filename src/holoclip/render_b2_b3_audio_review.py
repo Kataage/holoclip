@@ -209,12 +209,26 @@ def _review(basis: dict, receipt: dict, audio_sha: str) -> dict:
         ))
     b2_samples = qa["variants"]["b2"]["edge_audio_samples"]
     b3_samples = qa["variants"]["b3"]["edge_audio_samples"]
-    if (not isinstance(b2_samples, list) or not isinstance(b3_samples, list)
-            or len(b2_samples) != len(b3_samples)):
-        raise ValueError("LOCAL_B2_B3_REVIEW_AUDIO_WINDOWS_CHANGED")
-    for old, new in zip(b2_samples, b3_samples):
-        if old["kind"] != new["kind"]:
-            raise ValueError("LOCAL_B2_B3_REVIEW_AUDIO_WINDOW_KIND_CHANGED")
+    if not isinstance(b2_samples, list) or not isinstance(b3_samples, list):
+        raise ValueError("LOCAL_B2_B3_REVIEW_AUDIO_WINDOWS_INVALID")
+    windows = {}
+    for role, samples in (("b2", b2_samples), ("b3", b3_samples)):
+        mapped = {}
+        for sample in samples:
+            if (not isinstance(sample, dict)
+                    or sample.get("kind") not in {
+                        "BEFORE_EDIT_EDGE_NOT_SPEECH_PROOF",
+                        "AFTER_EDIT_EDGE_NOT_SPEECH_PROOF",
+                    }
+                    or sample["kind"] in mapped):
+                raise ValueError("LOCAL_B2_B3_REVIEW_AUDIO_WINDOW_KIND_INVALID")
+            mapped[sample["kind"]] = sample
+        windows[role] = mapped
+    # A cut touching the video start/end can lack one side of the probe.
+    # Missing sides are *not comparable*, rather than a silent failure.
+    unmatched_kinds = sorted(set(windows["b2"]) ^ set(windows["b3"]))
+    for kind in sorted(set(windows["b2"]) & set(windows["b3"])):
+        old, new = windows["b2"][kind], windows["b3"][kind]
         if (new["near_silent_energy_hint"] is True
                 and old["near_silent_energy_hint"] is False):
             tasks.append(_task(
@@ -246,6 +260,7 @@ def _review(basis: dict, receipt: dict, audio_sha: str) -> dict:
         "finished_mp4_sha256": _asr_preview(basis)["finished_mp4_sha256"],
         "comparison": receipt["comparison"],
         "technical_signal_counts": tech,
+        "not_comparable_audio_edge_window_kinds": unmatched_kinds,
         "review_target_count": len(tasks),
         "high_review_count": sum(t["priority"] == "HIGH_REVIEW" for t in tasks),
         "normal_review_count": sum(t["priority"] == "NORMAL_REVIEW" for t in tasks),
