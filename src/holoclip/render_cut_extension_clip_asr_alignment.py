@@ -144,6 +144,10 @@ def temporal_asr_review(
                       if nearby else "NO_EDITED_ASR_NEAR_EXPECTED_TIME")
         elif chosen[0] > _MAX_SKEW:
             status = "TEXT_MATCH_FAR_FROM_SOURCE_CLOCK"
+        elif source_text not in chosen[3]["text"]:
+            # A near-match containing only a prefix/suffix is a possible
+            # clipped utterance, not positive evidence of complete speech.
+            status = "PARTIAL_ASR_TEXT_OVERLAP_REVIEW"
         else:
             # Multiple plausible positions can be source repetitions,
             # recognizer duplication, or unrelated similar conversation.
@@ -187,6 +191,7 @@ def temporal_asr_review(
     ]
     warnings = {
         "SHORT_TEXT_AMBIGUOUS_REVIEW",
+        "PARTIAL_ASR_TEXT_OVERLAP_REVIEW",
         "LOW_ASR_TEXT_OVERLAP_AT_EXPECTED_TIME",
         "NO_EDITED_ASR_NEAR_EXPECTED_TIME",
         "TEXT_MATCH_FAR_FROM_SOURCE_CLOCK",
