@@ -1206,6 +1206,46 @@ remains mandatory. CI uses offline mocked ASR/media and Japanese
 synthetic examples; actual footage listening and independent validation
 are still required.
 
+### Batch pilot from existing finished local A/B/B2 media (PR #253)
+
+`uv run holoclip render-three-way-existing-media-pilot` is the
+**no-manual-reference-data** route for owner-local measurements already
+supported by PR #247–#252. It discovers up to **2** (at most 4 via
+`--max-jobs`) existing `COMPLETE` source jobs in the original
+SQLite queue. Only source-identity/holdout-approved, fully finished
+and SHA-pinned A/B/B2 triplets can be used. No actual media is downloaded
+or rendered. The discovery command is default read-only: it reports
+which completed triplets could support a technical/voice-energy scan.
+
+With explicit `--execute`, the pilot uses the existing FFmpeg technical
+diagnostics for A/B/B2, followed by bounded **finished-MP4 audio energy
+samples** and preserves their previous create-only local JSON receipts.
+Existing receipts are revalidated against original source ASR, current
+MP4/SRT hashes and matched A/B/B2 lineage; there is no overwrite,
+silent repair or automatic fresh scan of an untrusted existing receipt.
+Partial runs with a valid technical report can resume the acoustic step.
+Results are concise counts and opaque job IDs; **no ASR words, local
+paths or media bytes** are returned. Automatic discovery is bounded
+and does not initialize a missing queue. The command never runs yt-dlp,
+requests remote ASR/LLM, uploads media, installs tools, publishes or
+chooses a variant. For a specific existing source job use `--job-id`.
+`--proposal-index` and `--refinement-index` can select an existing
+alternate (both default to zero); no new B/B2 renders are generated.
+
+**Distinguish real host media from CI fixtures:** GitHub Actions has
+no owner-local footage. Its offline deterministic fixture runs verify
+the orchestration and failure modes, not perceptual or visual/audio
+content accuracy. Running `--execute` on a machine with a genuine
+finished triplet measures that actual local media and adds source-linked
+evidence, but black frames, audio dBFS and subtitle flags are **technical
+hints only**, never proof of creative quality. The independent public
+ASR flow in PR #251 remains separate and explicit to avoid involuntary
+uploads. Real footage may not yet be locally available; such jobs
+are skipped rather than invoking yt-dlp or fabricating results.
+There is no automatic winner, edit adoption or upload; `ready=false`.
+See `docs/roadmap.md` for pending real-world listening, context and
+viewer-quality qualification.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
