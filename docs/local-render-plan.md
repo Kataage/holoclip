@@ -1158,6 +1158,54 @@ Linux/Windows CI checks synthetic videos with mock FFmpeg/ASR, not real
 Hololive data or provider access. Production creative and audible
 qualification remains unfinished.
 
+### Time-anchored Japanese ASR discrepancy review for A/B/B2 (PR #252)
+
+The existing `uv run holoclip render-cut-extension-three-way-clip-asr
+--execute` (PR #251) now attaches a **time-local, source-evidence-cited
+review** for each independently recognized finished-clip utterance.
+The input remains the same limited crop of each already finished A/B/B2
+MP4, the same zero-cost-only public-data-gated ASR route, and the
+source-ASR segments that are fully contained within the source-aligned
+changed-cut focus. No additional upload, downloader, GPU, Docker or
+human-prepared annotation data is required.
+
+Instead of assessing only a concatenated transcript, Holoclip converts
+each ASR observation's crop-relative timestamp to the video's **output
+clock**, then compares it to each source-ASR citation's expected output
+start/end. A phrase split by the ASR into two adjacent observations may
+be matched as a bounded two-segment window. A single observation may
+explain two distinct source citations; it is never force-matched
+one-to-one. The result records source evidence ID, both clock
+intervals, segment number(s), an approximate character-level similarity
+and midpoint time skew. Its suggested review statuses distinguish:
+- approximate text agreement at the expected time;
+- *possible* utterance truncation/partial text;
+- text agreement at a surprisingly distant playback time;
+- repeated plausible text occurrences (ambiguous);
+- short Japanese acknowledgments that cannot be reliably resolved;
+- low textual overlap, absent recognized text, or independent ASR
+  segments without a corresponding sampled source reference.
+
+The bounded algorithm is deterministic and exports **no spoken words**
+or arbitrary local file paths. It tolerates Japanese without spaces,
+punctuation/width differences and segmentation discrepancies. Every
+timestamp is checked to stay within the canonical cropped video clock.
+The original #251 immutable evidence, holdout/ASR lineage, output MP4
+hashes and source-SRT proofs still fail closed if stale. The preview
+remains fully offline and provider-free. A report created by an earlier
+#251 version is not silently rewritten; the new result uses the
+version 2 schema and retains create-only output semantics.
+
+None of the flags prove an actual dropped or repeated spoken phrase.
+Two ASR passes can hallucinate the same words or disagree because
+of laughter, BGM and compression; ASR time stamps are segment clocks,
+**not word-level forced alignment**. Observed segment count, warning
+count and text similarity are never used to select the "best" A/B/B2,
+auto-edit, publish or claim that a joke landed. `ready=false`
+remains mandatory. CI uses offline mocked ASR/media and Japanese
+synthetic examples; actual footage listening and independent validation
+are still required.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
