@@ -16,7 +16,7 @@ from holoclip.render_cut_extension_finish_ab import (
 from holoclip.render_cut_extension_speech_audit import _load_matched
 from holoclip.render_cut_extension_speech_b2 import prepare_speech_b2_preview
 from holoclip.render_cut_extension_speech_b2_finish import (
-    _b2_receipt, prepare_speech_b2_finishing,
+    _b2_receipt,
 )
 from holoclip.render_cut_extension_three_way_diagnostics import (
     _finished_b2_receipt, _source_evidence, prepare_three_way_diagnostics,
@@ -74,7 +74,7 @@ def _both_absent(left: Path, right: Path) -> bool:
     return not _no_links(left).exists() and not _no_links(right).exists()
 
 
-def _unsafe_existing_stages(base: Path, stages: dict) -> bool:
+def _unsafe_existing_stages(base: Path) -> bool:
     """An interrupted stage is not a fresh candidate for implicit rewrite."""
     paths = _stage_paths(base)
     return any(paths[stage].exists() for stage in ("audio", "caption", "burnin"))
@@ -117,7 +117,7 @@ def inspect_local_prerequisites(
                     verified=tuple(verified), reason="B_MEDIA_OR_SOURCE_PROOF_UNTRUSTED")
     verified.append("B_RENDER_QA")
     if not matched["matched_receipt"].exists():
-        if _unsafe_existing_stages(trial["output"], matched["baseline_stages"]):
+        if _unsafe_existing_stages(trial["output"]):
             return _row(job_id, proposal_index, refinement_index,
                         "BLOCKED_UNVERIFIED", verified=tuple(verified),
                         reason="B_FINISHING_FILES_PARTIAL_WITHOUT_RECEIPT")
@@ -158,7 +158,7 @@ def inspect_local_prerequisites(
         b2["output"].with_name(f"{b2['output'].stem}.matched.json")
     )
     if not finish_path.exists():
-        if _unsafe_existing_stages(b2["output"], matched["baseline_stages"]):
+        if _unsafe_existing_stages(b2["output"]):
             return _row(job_id, proposal_index, refinement_index, "BLOCKED_UNVERIFIED",
                         verified=tuple(verified),
                         reason="B2_FINISHING_FILES_PARTIAL_WITHOUT_RECEIPT")
