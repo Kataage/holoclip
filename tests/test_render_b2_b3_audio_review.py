@@ -229,3 +229,51 @@ def test_cli_default_missing_and_valid_saved_asr(tmp_path, monkeypatch):
     denied = CliRunner().invoke(cli.app, [*argv, "--save"])
     assert denied.exit_code == 6
     assert json.loads(denied.stdout)["ready"] is False
+
+
+
+def test_video_edge_missing_probe_side_is_uncomparable_not_a_speech_failure(
+    monkeypatch,
+):
+    def signals(kind):
+        return {
+            "technical_diagnostic": {
+                "flag_count": 0, "black_interval_count": 0,
+                "freeze_interval_count": 0,
+            },
+            "edge_audio_samples": [{
+                "kind": kind, "output_start_seconds": 0.,
+                "near_silent_energy_hint": True,
+            }],
+        }
+    monkeypatch.setattr(review, "_four_way", lambda context: ({
+        "variants": {
+            "b2": signals("BEFORE_EDIT_EDGE_NOT_SPEECH_PROOF"),
+            "b3": signals("AFTER_EDIT_EDGE_NOT_SPEECH_PROOF"),
+        },
+    }, "f" * 64))
+    monkeypatch.setattr(review, "_asr_preview", lambda basis: {
+        "finished_mp4_sha256": {"b2": "a" * 64, "b3": "b" * 64},
+    })
+    basis = {
+        "context": {"job_id": "job", "trial_id": "trial",
+                    "b2_id": "b2", "b3_id": "b3",
+                    "source_cut_index": 0, "candidate_index": 0},
+        "four_way_sha256": "f" * 64, "source_sha256": "c" * 64,
+        "references": {"b2": [], "b3": []},
+    }
+    receipt = {
+        "variants": {
+            "b2": {"temporal_asr_review": {"source_utterance_alignment": []}},
+            "b3": {"temporal_asr_review": {"source_utterance_alignment": []}},
+        },
+        "comparison": {"no_winner": True},
+    }
+    row = review._review(basis, receipt, "d" * 64)
+    assert row["review_target_count"] == 0
+    assert set(row["not_comparable_audio_edge_window_kinds"]) == {
+        "BEFORE_EDIT_EDGE_NOT_SPEECH_PROOF",
+        "AFTER_EDIT_EDGE_NOT_SPEECH_PROOF",
+    }
+    assert row["no_targets_is_not_proof_of_speech_completeness"] is True
+    assert row["ready"] is False
