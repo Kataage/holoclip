@@ -22,18 +22,32 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install
+        # Apt mirrors / pip indexes can stall before any test starts. Bound
+        # hosted CI setup; fail closed instead of consuming runner time forever.
+        timeout-minutes: 8
         run: |
+          required_packages=()
           if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
-            sudo apt-get update -qq
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
+            required_packages+=(ffmpeg)
           fi
           if [ ! -f /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc ]; then
-            sudo apt-get update -qq
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fonts-noto-cjk
+            required_packages+=(fonts-noto-cjk)
+          fi
+          if (("${#required_packages[@]}" > 0)); then
+            echo "Installing missing system dependencies: ${required_packages[*]}"
+            sudo timeout --signal=TERM --kill-after=5s 120s \
+              apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 \
+              -o Acquire::https::Timeout=20 update -qq
+            sudo env DEBIAN_FRONTEND=noninteractive \
+              timeout --signal=TERM --kill-after=5s 180s \
+              apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 \
+              -o Acquire::https::Timeout=20 install -y -qq "${required_packages[@]}"
           fi
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
-          python -m pip install -e ".[dev,media]"
+          echo "Installing Python dev/media dependencies (bounded)"
+          timeout --signal=TERM --kill-after=5s 240s \
+            python -m pip install --retries 2 --timeout 30 -e ".[dev,media]"
       - name: Ruff
         run: ruff check .
       - name: Pytest
