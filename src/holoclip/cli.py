@@ -212,6 +212,7 @@ from holoclip.render_b2_b3_finished_audio_asr import (
     prepare_b2_b3_audio_asr, _public as preview_b2_b3_audio_asr,
     observe_b2_b3_audio_asr,
 )
+from holoclip.render_b2_b3_audio_review import run_b2_b3_review
 from holoclip.render_cut_extension_three_way_acoustic import (
     prepare_three_way_acoustic, run_three_way_acoustic,
 )
@@ -1614,6 +1615,38 @@ def render_three_way_existing_media_autopilot_command(
     except (ValueError, TypeError, OSError, UnicodeError, sqlite3.Error):
         typer.echo(json.dumps({
             "status": "LOCAL_EXISTING_MEDIA_AUTOPILOT_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6)
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+
+@app.command("render-b2-b3-audio-review")
+def render_b2_b3_audio_review_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    job_id: str | None = typer.Option(None, "--job-id"),
+    proposal_index: int = typer.Option(0, "--proposal-index", min=0, max=1),
+    refinement_index: int = typer.Option(0, "--refinement-index", min=0, max=1),
+    candidate_index: int = typer.Option(0, "--candidate-index", min=0, max=1),
+    save: bool = typer.Option(False, "--save", help="Write a new immutable text-free review plan."),
+) -> None:
+    """Prioritized, unverified B2/B3 ASR/technical review, no ASR requests."""
+    try:
+        report = run_b2_b3_review(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, job_id=job_id,
+            proposal_index=proposal_index, refinement_index=refinement_index,
+            candidate_index=candidate_index, save=save,
+        )
+    except (ValueError, TypeError, OSError, UnicodeError, sqlite3.Error):
+        typer.echo(json.dumps({
+            "status": "LOCAL_B2_B3_AUDIO_REVIEW_BLOCKED",
             "ready": False, "production_ready": False,
             "publication_performed": False,
         }))
