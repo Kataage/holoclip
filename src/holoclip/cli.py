@@ -248,7 +248,7 @@ from holoclip.providers.llm.nvidia_nim import (
     NvidiaNimAuthorizationError,
     NvidiaNimTimeoutError,
 )
-from holoclip.providers.runtime import MeshLLMClient, MeshEmbeddingClient, RoutingSettings, ProviderRuntime
+from holoclip.providers.runtime import MeshLLMClient, MeshEmbeddingClient, MeshTranscriber, RoutingSettings, ProviderRuntime
 from holoclip.providers.mesh import Capability, ExecutionMode, MeshDeferred
 from holoclip.providers.cost import CostPolicyError
 from holoclip.repository import SQLiteCanonicalRepository
