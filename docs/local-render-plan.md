@@ -1321,6 +1321,42 @@ complete. GitHub Linux/Windows CI exercises only synthetic fixtures
 and never renders owner footage. Use the PR #254 doctor and #253 pilot
 to audit any locally remaining prerequisites and measured sidecars.
 
+### B3 matched optional audio and caption finishing (PR #261)
+
+After the guarded B3 MP4 render in PR #260, use:
+
+`uv run holoclip render-three-way-b3-matched-finishing`
+
+This is a **read-only** examination of the existing B3 technical QA receipt,
+current source-ASR and edited-audio ASR hashes, canonical A/B/B2 source
+and finished MP4s, and already observed baseline A/B/B2 finishing stages.
+It does not start FFmpeg or rewrite any video.
+
+`uv run holoclip render-three-way-b3-matched-finishing --execute --approve-local-preview`
+
+This separately authorizes B3-only audio leveling, source-ASR SRT export,
+and subtitle burn-in **only for stages that were successful on the
+existing A/B/B2 comparison**. B3 follows identical optional processing
+types, not a bespoke or favored variant. Newly created B3 sibling assets
+(`.leveled.mp4`, `.srt`,
+`.captioned.mp4`) and a distinct
+`.matched.json` receipt are create-only. Any pre-existing
+target or stale lock blocks execution; no user files are overwritten.
+
+Before and after optional stage execution, the source, finished A/B/B2
+and B3 technical receipt are verified again and sibling stage hashes are
+checked. The matched receipt is issued only if predecessor assets remain
+unchanged and the output is checked for SHA, stream and duration. Optional
+stage failures are recorded as **incomplete, not comparable**, never as
+an improved edit. A/B/B2, the source MP4, and raw B3 all remain untouched.
+
+This ensures *treatment parity* with A/B/B2, **not** timing or linguistic
+correctness, real speech completeness, a humorous payoff, or an independent
+four-way acoustics/visual assessment. Actual B3 vs B2 acoustic measurement
+and creative human/independent evaluation remain pending. `ready=false`
+and publication never occurs. CI uses synthetic assets and mock encoding;
+owner-PC video must still be qualified.
+
 ### Guarded one-candidate B3 local render and basic QA (PR #260)
 
 After PR #259 identifies a supported unrendered B3 boundary hint, use:
