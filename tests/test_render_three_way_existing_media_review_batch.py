@@ -147,3 +147,32 @@ def test_cli_preview_and_opt_in_save(tmp_path, monkeypatch):
     saved = CliRunner().invoke(cli.app, [*argv, "--save"])
     assert saved.exit_code == 0, saved.stdout
     assert json.loads(saved.stdout)["new_review_receipt_count"] == 1
+
+
+def test_batch_continues_past_untrusted_completed_job(tmp_path, monkeypatch):
+    options, _, _, _ = _completed(tmp_path, monkeypatch)
+    actual = options["job_id"]
+    missing = "renderqueue_" + "0" * 32
+    monkeypatch.setattr(batch, "_completed_jobs",
+                        lambda queue, *, job_id, max_jobs: ([actual, missing], 2))
+    result = batch.run_existing_media_review_batch(**options, max_jobs=2)
+    assert result["selected_job_count"] == 2
+    assert result["cases"][0]["review_target_count"] >= 3
+    assert result["cases"][1]["status"] in {
+        "LOCAL_REVIEW_BATCH_PREREQUISITE_INCOMPLETE",
+        "LOCAL_REVIEW_BATCH_INPUT_OR_LOCK_BLOCKED",
+    }
+    assert result["total_unrated_review_target_count"] == (
+        result["cases"][0]["review_target_count"]
+    )
+    assert result["ready"] is False
+
+
+def test_stale_acoustic_measurement_blocks_saved_review(tmp_path, monkeypatch):
+    options, _, _, _ = _completed(tmp_path, monkeypatch)
+    source = acoustic.prepare_three_way_acoustic(**options)["receipt"]
+    source.write_bytes(b"stale source audio evidence")
+    result = batch.run_existing_media_review_batch(**options, save=True)
+    assert result["new_review_receipt_count"] == 0
+    assert result["cases"][0]["review_target_count"] == 0
+    assert not list(options["preview_root"].rglob("*.three-way-review.json"))
