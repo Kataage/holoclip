@@ -1321,6 +1321,51 @@ complete. GitHub Linux/Windows CI exercises only synthetic fixtures
 and never renders owner footage. Use the PR #254 doctor and #253 pilot
 to audit any locally remaining prerequisites and measured sidecars.
 
+### Guarded one-candidate B3 local render and basic QA (PR #260)
+
+After PR #259 identifies a supported unrendered B3 boundary hint, use:
+
+`uv run holoclip render-three-way-b3-local-preview`
+
+By default this is read-only: it checks A/B/B2 completed technical and
+acoustic evidence, SHA-pinned original source, the existing opt-in edited
+audio-ASR receipt, and the supported B3 cut hint. It returns the isolated
+B3 output filename and expected duration. If the source/edited-audio
+evidence does not justify a B3 proposal, it reports no eligible candidate
+and creates no output.
+
+To **explicitly authorize exactly one new local MP4** (no automatic
+publishing or edit adoption):
+
+`uv run holoclip render-three-way-b3-local-preview --execute --approve-local-preview`
+
+`--job-id`, `--proposal-index`,
+`--refinement-index`, and `--candidate-index 0|1`
+are supported for selecting an existing source job and a proposed
+alternative. Every execution acquires the same create-only per-job
+lock as the A/B/B2 autopilot. Stale locks are not stolen. The candidate
+is reconstructed from current evidence both before and after local render.
+FFmpeg produces a *new* deterministic B3-named file via the existing
+source-permission-gated renderer, followed by basic A/V stream,
+duration and hash checks. A separate immutable JSON receipt records
+A/B/B2/B3 durations and the current canonical lineage, without
+transcript text or local machine paths.
+
+A/B/B2 assets are never replaced. A previous B3 MP4 or sidecar is
+never overwritten or silently resumed. An unexpected interruption may
+leave a B3-only technical preview without a completed receipt; it must
+be reviewed manually rather than trusted or automatically deleted.
+
+**Important limitations:** this is a technically valid, unprocessed
+B3 trial, **not** matched B3 caption/audio finishing, four-way
+visual or acoustic quality evaluation, audible speech verification,
+creative quality improvement, or production approval. The detailed
+B3-versus-B2 audio/visual comparison and independently listened
+evaluation remain future stages. Always `ready=false`
+and no automatic variant selection, publication or network retrieval.
+Hosted CI uses synthetic source files and mocked render where required,
+not real owner-PC footage.
+
 ### B3 boundary hypotheses from corroborated source-clock and edited ASR hints (PR #259)
 
 `uv run holoclip render-three-way-existing-media-review-batch` now includes
