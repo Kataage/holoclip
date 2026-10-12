@@ -1321,6 +1321,26 @@ complete. GitHub Linux/Windows CI exercises only synthetic fixtures
 and never renders owner footage. Use the PR #254 doctor and #253 pilot
 to audit any locally remaining prerequisites and measured sidecars.
 
+### Same-source ASR-clock preservation comparison (PR #257)
+
+The same `render-three-way-existing-media-review-batch` command
+now includes `source_asr_coverage` per fully verified job,
+without needing another CLI invocation. It inspects the **same original
+source-clock utterance intervals** around the altered edit boundary for A,
+B and B2. It counts intervals wholly included by one edit segment, partially
+included, excluded, and ambiguous when multiple cuts overlap. The paired
+deltas expose newly wholly included intervals and possible B2 regressions,
+using SHA-tied pseudonymous evidence identifiers, bounded source timecodes
+and no transcript text.
+
+This is an **offline timing signal**, not independent listening verification,
+a missing-words verdict, natural pacing, payoff success, or a quality
+ranking. Split/repeated intervals stay ambiguous; no variant is adopted or
+published. The local ASR/source/MP4 lineage is checked before and after
+collection; missing or changed evidence stops the case. Existing immutable
+review receipts retain their schema; this read-only signal is computed from
+the present canonical assets each time, and rechecked when saving.
+
 ### Batch post-QA editorial review target preparation (PR #256)
 
 After PR #255's six local stages reach "EVIDENCE_COMPLETE", run:

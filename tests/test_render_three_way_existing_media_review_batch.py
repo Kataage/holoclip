@@ -176,3 +176,57 @@ def test_stale_acoustic_measurement_blocks_saved_review(tmp_path, monkeypatch):
     assert result["new_review_receipt_count"] == 0
     assert result["cases"][0]["review_target_count"] == 0
     assert not list(options["preview_root"].rglob("*.three-way-review.json"))
+
+
+
+def test_paired_source_asr_coverage_is_attached_without_text(tmp_path, monkeypatch):
+    options, _, media, asr = _completed(tmp_path, monkeypatch)
+    baseline = media.read_bytes(), asr.read_bytes()
+    result = batch.run_existing_media_review_batch(**options)
+    coverage = result["cases"][0]["source_asr_coverage"]
+    assert coverage["status"] == "LOCAL_SOURCE_ASR_EDIT_CLOCK_COVERAGE_NOT_HEARD_SPEECH"
+    assert coverage["source_asr_sha256"] and len(coverage["source_asr_sha256"]) == 64
+    assert set(coverage["boundary_source_seconds_by_variant"]) == {"a", "b", "b2"}
+    assert isinstance(coverage["paired_coverage_deltas"]["b2_gains_full_vs_b"], int)
+    assert coverage["asr_text_included"] is False
+    assert coverage["source_asr_audio_verified"] is False
+    assert coverage["best_variant"] is None and coverage["ready"] is False
+    assert (media.read_bytes(), asr.read_bytes()) == baseline
+    serialized = json.dumps(coverage, ensure_ascii=False)
+    assert "まだ発話は続いている" not in serialized
+    assert str(tmp_path) not in serialized
+
+
+def test_source_clock_category_is_conservative_for_partial_and_repeated():
+    from types import SimpleNamespace
+    from holoclip.render_three_way_speech_coverage import classify_source_clock_interval
+
+    s = SimpleNamespace(start=3.0, end=5.0)
+    def cut(a, b):
+        return SimpleNamespace(source_start=a, source_end=b)
+    assert classify_source_clock_interval(s, [cut(2, 6)]) == (
+        "ASR_INTERVAL_INSIDE_SINGLE_EDIT_SEGMENT"
+    )
+    assert classify_source_clock_interval(s, [cut(2, 4)]) == (
+        "ASR_INTERVAL_PARTLY_IN_EDIT"
+    )
+    assert classify_source_clock_interval(s, [cut(5.2, 9)]) == (
+        "ASR_INTERVAL_OUTSIDE_EDIT"
+    )
+    assert classify_source_clock_interval(s, [cut(2, 4), cut(4, 6)]) == (
+        "MULTIPLE_SOURCE_EDIT_OVERLAPS_UNVERIFIED"
+    )
+    assert classify_source_clock_interval(s, [cut(2, 6), cut(3, 4)]) == (
+        "MULTIPLE_SOURCE_EDIT_OVERLAPS_UNVERIFIED"
+    )
+
+
+def test_invalid_asr_identity_or_changed_evidence_blocks_saved_review(
+    tmp_path, monkeypatch,
+):
+    options, _, _, asr = _completed(tmp_path, monkeypatch)
+    asr.write_text('{"segments":[]}', encoding="utf-8")
+    result = batch.run_existing_media_review_batch(**options, save=True)
+    assert result["cases"][0]["review_target_count"] == 0
+    assert result["new_review_receipt_count"] == 0
+    assert not list(options["preview_root"].rglob("*.three-way-review.json"))

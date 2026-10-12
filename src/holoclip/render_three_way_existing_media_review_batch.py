@@ -16,6 +16,7 @@ from holoclip.render_cut_extension_three_way_triage import (
 from holoclip.render_three_way_existing_media_autopilot import _exclusive_run_lock
 from holoclip.render_three_way_existing_media_pilot import _completed_jobs
 from holoclip.render_three_way_prerequisites import inspect_local_prerequisites
+from holoclip.render_three_way_speech_coverage import compare_source_asr_coverage
 from holoclip.render_human_edit_context import DEFAULT_HUMAN_STORE, DEFAULT_GROWTH_STATE
 from holoclip.render_ready_queue import DEFAULT_PREVIEW_ROOT
 from holoclip.render_same_source_geometry import DEFAULT_TRANSCRIPT_ROOT
@@ -41,6 +42,7 @@ def _empty_case(job_id: str, status: str, *, next_stage: str | None = None,
         "priority_review_windows": [],
         "saved_receipt_verified": False,
         "new_receipt_created": False,
+        "source_asr_coverage": None,
         "human_editorial_qa_completed": False,
         "best_variant": None,
         "ready": False,
@@ -60,7 +62,7 @@ def _verify_existing(path: Path, expected: dict) -> bool:
     return isinstance(existing, dict) and existing == expected
 
 
-def _report_case(job_id: str, plan: dict, *, status: str,
+def _report_case(job_id: str, plan: dict, coverage: dict, *, status: str,
                  existing: bool = False, created: bool = False) -> dict:
     if (plan.get("status") != "LOCAL_THREE_WAY_REVIEW_TARGETS_UNRATED"
             or plan.get("job_id") != job_id
@@ -81,6 +83,7 @@ def _report_case(job_id: str, plan: dict, *, status: str,
     result = _empty_case(job_id, status, next_stage="EVIDENCE_COMPLETE")
     result.update({
         "review_target_count": len(rows),
+        "source_asr_coverage": coverage,
         "review_target_counts_by_variant": counts_by_role,
         "review_target_counts_by_kind": dict(sorted(counts_by_kind.items())),
         "priority_review_windows": [
@@ -124,6 +127,7 @@ def _case(*, job_id: str, queue: Path, example_store: Path,
             )
         prepared = prepare_three_way_review(**inputs, max_jobs=40)
         plan = run_three_way_review(prepared, save=False)
+        coverage = compare_source_asr_coverage(prepared, plan)
         target = _no_links(prepared["receipt"])
         if target.exists() or target.is_symlink():
             if not _verify_existing(target, plan):
@@ -132,19 +136,21 @@ def _case(*, job_id: str, queue: Path, example_store: Path,
                     next_stage="EVIDENCE_COMPLETE",
                 )
             return _report_case(
-                job_id, plan,
+                job_id, plan, coverage,
                 status="LOCAL_REVIEW_BATCH_EXISTING_RECEIPT_VERIFIED",
                 existing=True,
             )
         if not save:
             return _report_case(
-                job_id, plan, status="LOCAL_REVIEW_BATCH_READ_ONLY_PREVIEW",
+                job_id, plan, coverage, status="LOCAL_REVIEW_BATCH_READ_ONLY_PREVIEW",
             )
         written = run_three_way_review(prepared, save=True)
-        if written != plan or not _verify_existing(target, plan):
+        if (written != plan or not _verify_existing(target, plan)
+                or compare_source_asr_coverage(prepared, plan) != coverage):
             raise ValueError("LOCAL_REVIEW_BATCH_SAVED_RECEIPT_UNTRUSTED")
         return _report_case(
-            job_id, plan, status="LOCAL_REVIEW_BATCH_NEW_RECEIPT_SAVED_UNRATED",
+            job_id, plan, coverage,
+            status="LOCAL_REVIEW_BATCH_NEW_RECEIPT_SAVED_UNRATED",
             created=True,
         )
 
