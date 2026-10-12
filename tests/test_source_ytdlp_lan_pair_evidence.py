@@ -188,6 +188,10 @@ def test_tampered_or_stale_reports_rejected(tmp_path, monkeypatch, mutation):
     secret = tmp_path / "secret"
     create_coordinator_secret(secret)
     _enroll(monkeypatch, "http://127.0.0.1:18888", secret)
+    monkeypatch.setattr(
+        LanCoordinatorClient, "_call",
+        lambda *args, **kwargs: pytest.fail("offline report validation must never contact LAN"),
+    )
     raw_secret = bytes.fromhex(secret.read_text(encoding="ascii").strip())
     a, b = tmp_path / "a.json", tmp_path / "b.json"
     a.write_text(json.dumps(_offline_signed_pair_report(
