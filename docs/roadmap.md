@@ -218,6 +218,11 @@ This baseline renders **only local A/V previews**; it is not production-ready or
 - [ ] explicit final approval
 
 
+## Windows LAN pairing CI reliability (2026-10-13)
+
+- [x] Split deterministic invalid/expired signed LAN pairing receipt tests from live loopback status RPCs. The negative cases now use locally signed fixture envelopes, with a guard that fails if they invoke the network. This prevents unrelated Windows scheduler stalls or a four-second localhost timeout from hiding receipt-schema validation failures.
+- [x] Retain separate real authenticated localhost integration tests for coordinator status, identity persistence, export/verify behavior and fail-closed coordinator downtime. The production client timeout, signature checks and 20-second shared-IP yt-dlp access gate have **not** been relaxed. A successful offline negative test does not certify a physical two-PC LAN deployment.
+
 ## Quality rule
 
 Do not advance a phase merely because the pipeline executes. Each phase must demonstrate that
