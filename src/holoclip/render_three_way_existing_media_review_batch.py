@@ -18,6 +18,7 @@ from holoclip.render_three_way_existing_media_pilot import _completed_jobs
 from holoclip.render_three_way_prerequisites import inspect_local_prerequisites
 from holoclip.render_three_way_speech_coverage import compare_source_asr_coverage
 from holoclip.render_three_way_existing_clip_asr_join import join_saved_edited_asr
+from holoclip.render_three_way_b3_boundary_hints import propose_guarded_b3_boundaries
 from holoclip.render_human_edit_context import DEFAULT_HUMAN_STORE, DEFAULT_GROWTH_STATE
 from holoclip.render_ready_queue import DEFAULT_PREVIEW_ROOT
 from holoclip.render_same_source_geometry import DEFAULT_TRANSCRIPT_ROOT
@@ -45,6 +46,7 @@ def _empty_case(job_id: str, status: str, *, next_stage: str | None = None,
         "new_receipt_created": False,
         "source_asr_coverage": None,
         "existing_edited_audio_asr": None,
+        "b3_boundary_repair_hints": None,
         "human_editorial_qa_completed": False,
         "best_variant": None,
         "ready": False,
@@ -64,7 +66,8 @@ def _verify_existing(path: Path, expected: dict) -> bool:
     return isinstance(existing, dict) and existing == expected
 
 
-def _report_case(job_id: str, plan: dict, coverage: dict, edited_asr: dict, *, status: str,
+def _report_case(job_id: str, plan: dict, coverage: dict, edited_asr: dict,
+                 b3_hints: dict, *, status: str,
                  existing: bool = False, created: bool = False) -> dict:
     if (plan.get("status") != "LOCAL_THREE_WAY_REVIEW_TARGETS_UNRATED"
             or plan.get("job_id") != job_id
@@ -87,6 +90,7 @@ def _report_case(job_id: str, plan: dict, coverage: dict, edited_asr: dict, *, s
         "review_target_count": len(rows),
         "source_asr_coverage": coverage,
         "existing_edited_audio_asr": edited_asr,
+        "b3_boundary_repair_hints": b3_hints,
         "review_target_counts_by_variant": counts_by_role,
         "review_target_counts_by_kind": dict(sorted(counts_by_kind.items())),
         "priority_review_windows": [
@@ -138,6 +142,9 @@ def _case(*, job_id: str, queue: Path, example_store: Path,
                 job_id, "LOCAL_REVIEW_BATCH_EDITED_ASR_RECEIPT_UNTRUSTED",
                 next_stage="EVIDENCE_COMPLETE",
             )
+        b3_hints = propose_guarded_b3_boundaries(
+            prepared=prepared, plan=plan, coverage=coverage, edited_asr=edited_asr,
+        )
         target = _no_links(prepared["receipt"])
         if target.exists() or target.is_symlink():
             if not _verify_existing(target, plan):
@@ -146,22 +153,26 @@ def _case(*, job_id: str, queue: Path, example_store: Path,
                     next_stage="EVIDENCE_COMPLETE",
                 )
             return _report_case(
-                job_id, plan, coverage, edited_asr,
+                job_id, plan, coverage, edited_asr, b3_hints,
                 status="LOCAL_REVIEW_BATCH_EXISTING_RECEIPT_VERIFIED",
                 existing=True,
             )
         if not save:
             return _report_case(
-                job_id, plan, coverage, edited_asr,
+                job_id, plan, coverage, edited_asr, b3_hints,
                 status="LOCAL_REVIEW_BATCH_READ_ONLY_PREVIEW",
             )
         written = run_three_way_review(prepared, save=True)
         if (written != plan or not _verify_existing(target, plan)
                 or compare_source_asr_coverage(prepared, plan) != coverage
-                or join_saved_edited_asr(inputs=inputs, coverage=coverage) != edited_asr):
+                or join_saved_edited_asr(inputs=inputs, coverage=coverage) != edited_asr
+                or propose_guarded_b3_boundaries(
+                    prepared=prepared, plan=plan, coverage=coverage,
+                    edited_asr=edited_asr,
+                ) != b3_hints):
             raise ValueError("LOCAL_REVIEW_BATCH_SAVED_RECEIPT_UNTRUSTED")
         return _report_case(
-            job_id, plan, coverage, edited_asr,
+            job_id, plan, coverage, edited_asr, b3_hints,
             status="LOCAL_REVIEW_BATCH_NEW_RECEIPT_SAVED_UNRATED",
             created=True,
         )
@@ -223,6 +234,10 @@ def run_existing_media_review_batch(
             row["existing_edited_audio_asr"] is not None
             and row["existing_edited_audio_asr"]["existing_audio_asr_receipt_checked"]
             for row in cases
+        ),
+        "unrendered_b3_boundary_hypothesis_count": sum(
+            row["b3_boundary_repair_hints"]["proposed_count"]
+            for row in cases if row["b3_boundary_repair_hints"] is not None
         ),
         "total_unrated_review_target_count": sum(
             row["review_target_count"] for row in cases
