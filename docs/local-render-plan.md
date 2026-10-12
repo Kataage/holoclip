@@ -1321,6 +1321,34 @@ complete. GitHub Linux/Windows CI exercises only synthetic fixtures
 and never renders owner footage. Use the PR #254 doctor and #253 pilot
 to audit any locally remaining prerequisites and measured sidecars.
 
+### Batch post-QA editorial review target preparation (PR #256)
+
+After PR #255's six local stages reach "EVIDENCE_COMPLETE", run:
+
+`uv run holoclip render-three-way-existing-media-review-batch`
+
+This default is **read-only**: it enumerates one already-completed queue job
+(or up to four with `--max-jobs 4`) without downloading sources,
+calling models, decoding media, or creating a receipt. It requires canonical
+SHA-verified A/B/B2 finished video plus both measured technical and acoustic
+reports. Incomplete/stale jobs are listed as blockers, not silently repaired.
+
+`--save` creates **only missing** per-job unrated review-target
+JSON files, using the existing source-aligned triage implementation. Each job
+is rechecked under the same owner-only exclusive lock used by the autopilot.
+Repeated runs independently reconstruct the canonical review plan and verify
+the **entire** existing saved receipt, rejecting tampered or stale reports
+without overwriting them. Returned data contains bounded A/B/B2 time windows,
+technical warning types and counts, but never raw transcript content,
+machine-local paths or media bytes.
+
+This reduces repeated CLI invocations and makes practical human/editorial
+review windows available after local qualification scans. It **does not**
+prove setup/payoff comprehension, dialogue correctness or comedy quality.
+The returned targets are questions, not ratings; no automatic winner, upload
+or publishability claim is made. CI validates synthetic local fixtures only;
+actual owner-PC footage remains unqualified until run and evaluated there.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
