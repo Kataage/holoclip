@@ -1321,6 +1321,46 @@ complete. GitHub Linux/Windows CI exercises only synthetic fixtures
 and never renders owner footage. Use the PR #254 doctor and #253 pilot
 to audit any locally remaining prerequisites and measured sidecars.
 
+### Source-pinned B2/B3 audio review priorities (PR #265)
+
+After existing PR #264's **explicitly approved** short ASR observation is
+saved, inspect the already finished B2/B3 evidence using:
+
+`uv run holoclip render-b2-b3-audio-review`
+
+This is **read-only**: no decoding, additional ASR, model/provider call,
+media creation, network access or uploaded words. It rechecks the current
+source transcript, finished-media hashes, four-way technical/acoustic receipt,
+and the saved B2/B3 ASR alignment receipt. If the ASR observation does not
+exist, it reports `ASR_NOT_MEASURED`/unknown rather than
+zero findings or a passing quality decision. Unsupported/tampered/stale
+alignments fail closed. A saved ASR receipt has integrity-bound lineage
+but is **not cryptographically signed** and cannot establish ground truth.
+
+When ASR evidence exists, the command produces **unrated, prioritized
+review targets** for: new B3 ASR textual warning on a shared source-ID
+utterance, warnings in both variants, only-in-B2/only-in-B3 source-ASR
+intervals, decreased warnings still requiring listening, more B3 technical
+flags, and B3 edit-boundary near-silent energy compared to B2. Every target
+has an unverified evidence ID and source/output clock where available,
+with no transcript text. Priority is *triage order only*, never a
+clip ranking or proof of audible speech, naturally preserved sentence
+endings, continuity or comedy.
+
+To persist a **new immutable** JSON review plan, use:
+
+`uv run holoclip render-b2-b3-audio-review --save`
+
+It re-verifies the source, four-way QA, ASR receipt and all media lineage
+again before create-only writing. Existing files are never overwritten.
+This step never requests public-data classification because no audio is
+sent; actual independent ASR continues to require the separate opt-in
+command from PR #264.
+
+Always `ready=false`, no auto winner, edit adoption or
+publication. Real footage and a hearing-based/editorial evaluation remain
+unqualified.
+
 ### Independent finished B2/B3 audio-ASR cross-check (PR #264)
 
 After PR #262 has measured **all four** finished videos and saved an immutable
