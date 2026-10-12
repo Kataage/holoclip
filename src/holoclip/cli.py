@@ -201,6 +201,7 @@ from holoclip.render_cut_extension_three_way_dialogue import (
 )
 from holoclip.render_three_way_existing_media_pilot import run_existing_media_pilot
 from holoclip.render_three_way_prerequisites import inspect_existing_media_prerequisites
+from holoclip.render_three_way_existing_media_autopilot import run_existing_media_autopilot
 from holoclip.render_cut_extension_three_way_acoustic import (
     prepare_three_way_acoustic, run_three_way_acoustic,
 )
@@ -1567,6 +1568,47 @@ def render_ab_human_context_command(
 
 
 
+
+
+@app.command("render-three-way-existing-media-autopilot")
+def render_three_way_existing_media_autopilot_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    job_id: str | None = typer.Option(None, "--job-id"),
+    max_jobs: int = typer.Option(1, "--max-jobs", min=1, max=4),
+    proposal_index: int = typer.Option(0, "--proposal-index", min=0, max=1),
+    refinement_index: int = typer.Option(0, "--refinement-index", min=0, max=1),
+    max_steps: int = typer.Option(6, "--max-steps", min=1, max=6),
+    execute: bool = typer.Option(
+        False, "--execute", help="Run bounded canonical offline A/B/B2 steps.",
+    ),
+    approve_local_preview: bool = typer.Option(
+        False, "--approve-local-preview",
+        help="Permit create-only local renders/finishing; never automatic publishing.",
+    ),
+) -> None:
+    """Resume approved local A/B/B2 steps from verified canonical checkpoints."""
+    try:
+        report = run_existing_media_autopilot(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, job_id=job_id,
+            max_jobs=max_jobs, proposal_index=proposal_index,
+            refinement_index=refinement_index,
+            max_steps=max_steps, execute=execute,
+            approve_local_preview=approve_local_preview,
+        )
+    except (ValueError, TypeError, OSError, UnicodeError, sqlite3.Error):
+        typer.echo(json.dumps({
+            "status": "LOCAL_EXISTING_MEDIA_AUTOPILOT_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6)
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
 
 @app.command("render-three-way-existing-media-doctor")
