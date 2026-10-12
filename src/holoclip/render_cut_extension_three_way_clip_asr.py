@@ -66,9 +66,10 @@ def _normalize(value: str) -> str:
 def _safe_asr(value: object) -> str:
     if not isinstance(value, str):
         raise ValueError("LOCAL_CLIP_ASR_TEXT_INVALID")
+    if any(unicodedata.category(c) in {"Cc", "Cs", "Cf"} for c in value):
+        raise ValueError("LOCAL_CLIP_ASR_TEXT_INVALID")
     normalized = " ".join(value.split())
-    if (not normalized or len(normalized) > _MAX_TEXT
-            or any(unicodedata.category(c) in {"Cc", "Cs", "Cf"} for c in normalized)):
+    if not normalized or len(normalized) > _MAX_TEXT:
         raise ValueError("LOCAL_CLIP_ASR_TEXT_INVALID")
     return normalized
 
