@@ -154,6 +154,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Bounded local source-ASR context evidence for A/B/B2 and opt-in public-data-only zero-cost model hypotheses with exact quotes and strict no-quality-promotion gates (real hearing/creative validation still pending)
 - [x] Bounded real local audio energy measurements at source-ASR and edit-focus output clocks for finished A/B/B2; SHA rechecks and immutable technical-only receipt, no speech/text or quality promotion
 - [x] Second-pass transcription of tightly cropped real edited A/B/B2 audio using existing public-data-only zero-cost ASR route, source-ASR overlap review hints and SHA-pinned immutable evidence (word correctness, omission and duplication still unverified)
+- [x] Per-utterance Japanese source-ASR vs edited-audio ASR output-clock alignment: split/coalesced segments, possible partial/truncated text, repeat-like ambiguity and drift warnings only (no missing-word certification)
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion
