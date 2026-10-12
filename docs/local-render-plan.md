@@ -1321,6 +1321,43 @@ complete. GitHub Linux/Windows CI exercises only synthetic fixtures
 and never renders owner footage. Use the PR #254 doctor and #253 pilot
 to audit any locally remaining prerequisites and measured sidecars.
 
+### Four-way video/audio technical comparison (PR #262)
+
+With finished A/B/B2 **and separately approved B3 matched finishing**
+already present, inspect one selected existing job using:
+
+`uv run holoclip render-four-way-existing-media-diagnostics`
+
+The default is **read-only** and does not start any video or audio decoders.
+It checks all four existing versions, hash-pinned source ASR, A/B/B2 technical
+and acoustic prerequisites, independent edited-audio ASR source lineage,
+the guarded B3 render receipt, and the SHA-verified B3 matched processing
+receipt. Missing or tampered evidence blocks the comparison.
+
+To **explicitly authorize a bounded local technical and audio scan**:
+
+`uv run holoclip render-four-way-existing-media-diagnostics --execute --approve-local-preview`
+
+The four already finished MP4s are analyzed with the same existing
+frame-event, subtitle-rate and volume-diagnostic backend. Additional
+bounded (at most 0.6 seconds each) audio-energy probes are measured just
+before/after the changed cut boundary in each variant's *output clock*.
+The resulting immutable, create-only, text-free
+`.four-way-diagnostics.json` records media/receipt hashes,
+the measured flags and local energy observations, and explicit B3-minus-B2
+technical-count differences. Every parent video/stage/receipt and the source
+ASR is rechecked after decoding; an altered or missing asset fails closed.
+No original, prior output or B3 file is overwritten.
+
+**Important:** These output-clock windows are relative edit-boundary
+positions, **not** a claim of the same phoneme, spoken words, or source-clock
+context in each variant. Lower energy or fewer black/freeze/video/subtitle
+flags alone are not proof of speech completeness or improved comedy.
+This analysis does not rank clips, automatically adopt B3, perform remote
+inference or publish. Independent listening, actual spoken-words review,
+creative quality and real owner-PC media qualification remain pending.
+Always `ready=false`.
+
 ### B3 matched optional audio and caption finishing (PR #261)
 
 After the guarded B3 MP4 render in PR #260, use:
