@@ -1283,6 +1283,44 @@ the doctor. The #253 one-command `--execute` automatically handles
 the final technical/acoustic measurement stages when a finished triplet
 is available. GitHub CI exercises only offline synthetic files.
 
+### Guarded offline A/B/B2 one-command stage executor (PR #255)
+
+`uv run holoclip render-three-way-existing-media-autopilot` uses the
+read-only PR #254 prerequisite doctor to choose the **next canonical
+already supported offline step**, and defaults to **preview-only**
+inventory. Its output gives each completed job's first/final stage,
+executed stage names and a bounded step count without raw source ASR,
+local paths, or media bytes.
+
+`--execute` permits at most six new-only local processing stages in
+total (by default one selected job, `--max-jobs` max four). This
+includes existing `RENDER_B`, `FINISH_AB`, `RENDER_B2`,
+`FINISH_B2`, `MEASURE_TECHNICAL`, and `MEASURE_ACOUSTIC`
+actions. **Any rendering or finishing** requires the further explicit
+`--approve-local-preview`; measurement-only stages do not.
+Both options are required for an end-to-end production of isolated
+*unqualified preview videos* from an already finished original stream.
+Use `--max-steps 1` to execute one bounded step at a time.
+
+Each stage is re-derived from the existing queue, verified source ASR,
+holdout/reference evidence and SHA-256-linked output before and after.
+An exclusive create-only per-job local lock blocks competing autopilot
+runs; a stale lock is not silently removed. The executor never repairs
+an existing file or overwrites a prior sidecar, and stopped or partial
+stages cannot be skipped. Restarting the command after a safe stage
+reuses the completed evidence automatically. If no verified source
+proposal/B2 refinement exists, or if a file is stale/ambiguous, it
+stops rather than inventing a candidate. It never runs yt-dlp, contacts
+external LLM/ASR, mutates the original baseline or publishes.
+
+**This is offline workflow completion, not autonomous editorial
+qualification.** B and B2 are only render/QA experiments,
+independent source text semantics and human-quality judgments remain
+unverified, `ready=false` even when technical/acoustic evidence is
+complete. GitHub Linux/Windows CI exercises only synthetic fixtures
+and never renders owner footage. Use the PR #254 doctor and #253 pilot
+to audit any locally remaining prerequisites and measured sidecars.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
