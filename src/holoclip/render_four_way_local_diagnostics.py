@@ -195,7 +195,9 @@ def _public(context: dict) -> dict:
                 "base_sha256": roles[role]["base_sha256"],
                 "final_sha256": roles[role]["final_sha256"],
                 "technical_diagnostic": None,
-                "edge_audio_samples": context["audio_windows"][role],
+                "edge_audio_samples": [
+                    dict(sample) for sample in context["audio_windows"][role]
+                ],
             } for role in _ROLES
         },
         "comparison": None,
