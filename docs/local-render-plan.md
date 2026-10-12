@@ -1246,6 +1246,43 @@ There is no automatic winner, edit adoption or upload; `ready=false`.
 See `docs/roadmap.md` for pending real-world listening, context and
 viewer-quality qualification.
 
+### Read-only prerequisite doctor for existing A/B/B2 footage (PR #254)
+
+Run `uv run holoclip render-three-way-existing-media-doctor` on
+the local Windows machine. The command scans at most two completed queue
+jobs by default (up to four with `--max-jobs`), using the existing
+trusted local human-reference/holdout/source-ASR records and the current
+SHA-linked media/receipt chain. Unlike the #253 pilot, it explains the
+**first missing verified stage** instead of returning a generic
+"triplet not qualified" result.
+
+Its possible outcomes are `RENDER_B`, `FINISH_AB`,
+`NO_VERIFIED_B2_REFINEMENT`, `RENDER_B2`, `FINISH_B2`,
+`MEASURE_TECHNICAL`, `MEASURE_ACOUSTIC`,
+`EVIDENCE_COMPLETE`, `NO_VERIFIED_AB_PROPOSAL`, and
+`BLOCKED_UNVERIFIED`. A known safe next-stage command name is included
+only if the entire preceding chain is present, current, identity-pinned,
+and valid; no options or local paths are automatically interpolated.
+The B and B2 steps require the existing command's explicit local-preview
+approval. Stale/partial output files, including descendants left behind
+after an interrupted render or finishing attempt, are blocked rather than
+described as "not yet generated." Missing/unsafe source data and absent
+speech-completion proposals are **not** manufactured as valid candidates.
+
+The doctor does not execute any recommended command: no yt-dlp,
+local rendering, media frame decoding, network APIs, file repair or
+publishing. It uses the same bounded queue discovery as #253; it only
+reports verified stage names and counts, opaque job IDs, and bounded
+fixed reason codes. Unmodified local reports remain unsigned measurement
+records, not independent editorial/semantic truth. Even
+`EVIDENCE_COMPLETE` means **technical+acoustic sidecar evidence
+only**, not that a joke landed or the cut is ready to publish.
+`ready=false` and blocked auto adoption/publication are invariant.
+Run each recommended local command explicitly (see above), then rerun
+the doctor. The #253 one-command `--execute` automatically handles
+the final technical/acoustic measurement stages when a finished triplet
+is available. GitHub CI exercises only offline synthetic files.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
