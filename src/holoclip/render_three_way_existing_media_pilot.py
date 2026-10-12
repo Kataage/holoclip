@@ -18,6 +18,8 @@ from holoclip.render_cut_extension_three_way_diagnostics import (
 )
 from holoclip.render_cut_extension_three_way_triage import _load_diagnostics
 from holoclip.render_plan import _no_links
+from holoclip.render_human_edit_context import DEFAULT_HUMAN_STORE, DEFAULT_GROWTH_STATE
+from holoclip.render_same_source_geometry import DEFAULT_TRANSCRIPT_ROOT
 from holoclip.render_source_queue import DEFAULT_QUEUE, _connect
 
 VERSION = "holoclip-three-way-existing-media-pilot-v1"
@@ -101,7 +103,7 @@ def _existing_acoustic(prepared: dict, observed: dict, diagnostic: dict) -> dict
             raise ValueError("LOCAL_PILOT_ACOUSTIC_MEDIA_CHANGED")
         for sample in item["audio_samples"]:
             if (not isinstance(sample, dict)
-                    or sample.get("near_silent_energy_hint") not in (True, False)
+                    or type(sample.get("near_silent_energy_hint")) is not bool
                     or type(sample.get("mean_dbfs")) not in (int, float)
                     or type(sample.get("peak_dbfs")) not in (int, float)
                     or not -100 <= sample["mean_dbfs"] <= 6
@@ -194,10 +196,10 @@ def _case(
 
 
 def run_existing_media_pilot(
-    *, queue: Path = DEFAULT_QUEUE, example_store: Path = Path("data/examples/human-clips.jsonl"),
-    growth_state: Path = Path("data/examples/growth-state.json"),
+    *, queue: Path = DEFAULT_QUEUE, example_store: Path = DEFAULT_HUMAN_STORE,
+    growth_state: Path = DEFAULT_GROWTH_STATE,
     preview_root: Path = Path("data/render-previews"),
-    transcript_root: Path = Path("data/transcripts"),
+    transcript_root: Path = DEFAULT_TRANSCRIPT_ROOT,
     job_id: str | None = None, max_jobs: int = 2,
     proposal_index: int = 0, refinement_index: int = 0,
     execute: bool = False,
@@ -250,7 +252,7 @@ def run_existing_media_pilot(
             "LOCAL_PILOT_EXISTING_MEDIA_SCAN_RECORDED_UNQUALIFIED" if execute
             else "LOCAL_PILOT_EXISTING_MEDIA_INVENTORY_ONLY"
         ),
-        "local_queue_present": _connect(queue, create=False) is not None,
+        "local_queue_present": queue.is_file(),
         "completed_queue_jobs_matching_filter": total,
         "selected_job_count": len(candidates),
         "cases": results,
