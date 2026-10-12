@@ -136,7 +136,20 @@ def test_corrupted_evidence_fails_closed_and_never_repairs_or_overwrites(
     file.write_bytes(b"corrupted on local disk")
     previous = file.read_bytes()
     result = _run(params, jid, proposal, execute=True)
-    assert result["cases"][0]["status"] == "LOCAL_PILOT_EVIDENCE_REJECTED_OR_SCAN_FAILED"
+    assert result["cases"][0]["status"] in {
+        "LOCAL_PILOT_TRIPLET_NOT_QUALIFIED_OR_MISSING",
+        "LOCAL_PILOT_EVIDENCE_REJECTED_OR_SCAN_FAILED",
+    }
+    # Damaged source ASR fails during triple verification; damaged
+    # *existing* sidecars fail later during strict reuse verification.
+    if mutate == "asr":
+        assert result["cases"][0]["status"] == (
+            "LOCAL_PILOT_TRIPLET_NOT_QUALIFIED_OR_MISSING"
+        )
+    else:
+        assert result["cases"][0]["status"] == (
+            "LOCAL_PILOT_EVIDENCE_REJECTED_OR_SCAN_FAILED"
+        )
     assert result["completed_technical_and_audio_case_count"] == 0
     assert file.read_bytes() == previous
     assert result["ready"] is False
