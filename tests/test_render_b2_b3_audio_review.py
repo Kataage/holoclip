@@ -161,6 +161,7 @@ def test_review_can_rank_specific_asr_and_technical_hints_without_winner(monkeyp
             },
             "edge_audio_samples": [
                 {"kind": "BEFORE_EDIT_EDGE_NOT_SPEECH_PROOF",
+                 "output_start_seconds": 1.0,
                  "near_silent_energy_hint": False},
             ],
         },
@@ -171,6 +172,7 @@ def test_review_can_rank_specific_asr_and_technical_hints_without_winner(monkeyp
             },
             "edge_audio_samples": [
                 {"kind": "BEFORE_EDIT_EDGE_NOT_SPEECH_PROOF",
+                 "output_start_seconds": 1.3,
                  "near_silent_energy_hint": True},
             ],
         },
@@ -180,6 +182,8 @@ def test_review_can_rank_specific_asr_and_technical_hints_without_winner(monkeyp
         "context": {"job_id": "case", "trial_id": "trial", "b2_id": "b2",
                     "b3_id": "b3", "source_cut_index": 0, "candidate_index": 0},
         "four_way_sha256": "f" * 64, "source_sha256": "a" * 64,
+        "focus": {"b2": {"output_start_seconds": 1.0},
+                  "b3": {"output_start_seconds": 1.3}},
         "references": {"b2": b2_refs, "b3": b3_refs},
     }
     # Only public SHA fields are needed for the mocked evidence summary.
