@@ -345,3 +345,181 @@ def test_edited_asr_join_can_save_review_without_automatically_retranscribing(
     )
     assert second["new_review_receipt_count"] == 0
     assert receipt.read_bytes() == before
+
+
+
+def test_missing_edited_audio_asr_never_fabricates_b3_repair(tmp_path, monkeypatch):
+    options, _, media, source_asr = _completed(tmp_path, monkeypatch)
+    baseline = media.read_bytes(), source_asr.read_bytes()
+    report = batch.run_existing_media_review_batch(**options)
+    hints = report["cases"][0]["b3_boundary_repair_hints"]
+    assert hints["status"] == "LOCAL_B3_EDITED_AUDIO_ASR_UNMEASURED"
+    assert hints["proposed_count"] == 0
+    assert report["unrendered_b3_boundary_hypothesis_count"] == 0
+    assert hints["renders_performed"] == 0
+    assert hints["automatic_adoption_allowed"] is False
+    assert hints["ready"] is False
+    assert (media.read_bytes(), source_asr.read_bytes()) == baseline
+
+
+def test_existing_edited_audio_asr_does_not_force_an_unsupported_b3(
+    tmp_path, monkeypatch,
+):
+    options, _, media, source_asr = _completed(tmp_path, monkeypatch)
+    receipt = _with_saved_clip_asr(options, monkeypatch)
+    baseline = media.read_bytes(), source_asr.read_bytes(), receipt.read_bytes()
+    report = batch.run_existing_media_review_batch(**options, save=True)
+    row = report["cases"][0]
+    hints = row["b3_boundary_repair_hints"]
+    assert hints["status"] in {
+        "LOCAL_B3_NO_NEARBY_EDITED_AUDIO_ASR_WARNING",
+        "LOCAL_B3_NO_SUPPORTED_BOUNDARY_REPAIR",
+        "LOCAL_B3_UNRENDERED_SOURCE_CLOCK_REPAIR_HYPOTHESES",
+    }
+    assert hints["proposed_count"] <= 2
+    assert all(
+        proposal["requires_new_render_and_independent_audio_review"] is True
+        and proposal["asr_warning_is_not_proof_of_this_specific_clipped_utterance"]
+        is True for proposal in hints["proposals"]
+    )
+    assert report["unrendered_b3_boundary_hypothesis_count"] == hints["proposed_count"]
+    assert hints["renders_performed"] == 0
+    assert hints["media_modified"] is False
+    assert hints["best_variant"] is None and hints["ready"] is False
+    assert (media.read_bytes(), source_asr.read_bytes(), receipt.read_bytes()) == baseline
+
+
+def test_b3_extension_clock_rejects_disconnected_or_unbounded_speech():
+    from types import SimpleNamespace
+    from holoclip.render_three_way_b3_boundary_hints import _edge_hypothesis
+
+    def cut(start, end):
+        return SimpleNamespace(source_start=start, source_end=end)
+
+    utterance = SimpleNamespace(start=5.7, end=6.8)
+    safe = _edge_hypothesis(
+        original=cut(0, 4), b2=cut(0, 6),
+        side="EXTEND_END", utterance=utterance,
+    )
+    assert safe["extra_seconds_beyond_b2"] == pytest.approx(.8)
+    assert safe["new_source_end_seconds"] == 6.8
+    assert _edge_hypothesis(
+        original=cut(0, 4), b2=cut(0, 7),
+        side="EXTEND_END", utterance=utterance,
+    ) is None
+    assert _edge_hypothesis(
+        original=cut(0, 4), b2=cut(0, 5),
+        side="EXTEND_END", utterance=SimpleNamespace(start=4.9, end=7.5),
+    ) is None
+    begin = _edge_hypothesis(
+        original=cut(4, 8), b2=cut(2, 8), side="EXTEND_START",
+        utterance=SimpleNamespace(start=1.3, end=2.2),
+    )
+    assert begin["new_source_start_seconds"] == 1.3
+    assert begin["extra_seconds_beyond_b2"] == pytest.approx(.7)
+
+
+def test_positive_b3_hypothesis_needs_partial_source_clock_and_nearby_audio_hint(
+    tmp_path, monkeypatch,
+):
+    from types import SimpleNamespace
+    from holoclip import render_three_way_b3_boundary_hints as repair
+    from holoclip.models import TranscriptSegment
+    import hashlib
+
+    asset = "source-asset"
+    def segment(start, end):
+        return SimpleNamespace(
+            source_start=start, source_end=end,
+            source_asset_id=asset, output_order=0,
+        )
+    def timeline(start, end):
+        return SimpleNamespace(
+            segments=[segment(start, end)], estimated_duration=end-start,
+        )
+
+    a, b, b2 = timeline(0, 4), timeline(0, 5), timeline(0, 6)
+    trial = {"trial_action": "EXTEND_END", "source_cut_index": 0,
+             "trial": b, "original": {
+                 "baseline_timeline": a, "database": tmp_path / "media.sqlite",
+             }}
+    prepared = {"diagnostics": {"finished": {"b2": {
+        "timeline": b2,
+        "prepared": {"trial": trial, "transcript_root": tmp_path},
+    }}}}
+    speech = TranscriptSegment(start=5.7, end=6.8, text="まだ続いている")
+    digest = "1" * 64
+    token = hashlib.sha256(
+        f"{digest}|0|{speech.start:.6f}|{speech.end:.6f}".encode(),
+    ).hexdigest()[:20]
+    coverage = {
+        "status": "LOCAL_SOURCE_ASR_EDIT_CLOCK_COVERAGE_NOT_HEARD_SPEECH",
+        "source_asr_sha256": digest,
+        "source_asr_intervals": [{
+            "source_asr_interval_id": token,
+            "source_start_seconds": 5.7,
+            "source_end_seconds": 6.8,
+            "coverage_by_variant": {
+                "a": "ASR_INTERVAL_OUTSIDE_EDIT",
+                "b": "ASR_INTERVAL_OUTSIDE_EDIT",
+                "b2": "ASR_INTERVAL_PARTLY_IN_EDIT",
+            },
+        }],
+    }
+    plan = {"status": "LOCAL_THREE_WAY_REVIEW_TARGETS_UNRATED",
+            "source_asr_sha256": digest,
+            "review_focus_per_variant": {"b2": {"source_cut_index": 0}}}
+    edited = {
+        "status": "LOCAL_EXISTING_EDITED_ASR_DISCREPANCY_HINTS_UNRATED",
+        "existing_audio_asr_receipt_checked": True,
+        "human_listening_verified": False,
+        "source_asr_coverage_joined": True,
+        "asr_review_hints": [{
+            "variant": "b2", "output_start_seconds": 5.0,
+            "output_end_seconds": 5.6, "requires_audio_listening": True,
+        }],
+    }
+    monkeypatch.setattr(
+        repair, "_canonical_assets",
+        lambda db, ids: {asset: SimpleNamespace(external_id="ABCDEFGHIJK")},
+    )
+    monkeypatch.setattr(
+        repair, "_read_transcript",
+        lambda root, external_id: ([speech], digest, "FILENAME_ONLY_IDENTITY_UNVERIFIED"),
+    )
+    class Rebuilt:
+        estimated_duration = 6.8
+        segments = [segment(0, 6.8)]
+        def model_dump_json(self):
+            return '{"segments":[{"start":0,"end":6.8}]}'
+    monkeypatch.setattr(repair, "_trial_timeline", lambda old, proposal: Rebuilt())
+    result = repair.propose_guarded_b3_boundaries(
+        prepared=prepared, plan=plan, coverage=coverage, edited_asr=edited,
+    )
+    assert result["status"] == "LOCAL_B3_UNRENDERED_SOURCE_CLOCK_REPAIR_HYPOTHESES"
+    assert result["proposed_count"] == 1
+    hypothesis = result["proposals"][0]
+    assert hypothesis["source_asr_interval_id"] == token
+    assert hypothesis["proposed_source_end_seconds"] == 6.8
+    assert hypothesis["extra_seconds_beyond_b2"] == .8
+    assert hypothesis["proposed_timeline_sha256"]
+    assert hypothesis["requires_new_render_and_independent_audio_review"]
+    assert result["renders_performed"] == 0 and result["ready"] is False
+
+    edited["asr_review_hints"] = []
+    blocked = repair.propose_guarded_b3_boundaries(
+        prepared=prepared, plan=plan, coverage=coverage, edited_asr=edited,
+    )
+    assert blocked["proposed_count"] == 0
+    assert blocked["status"] == "LOCAL_B3_NO_NEARBY_EDITED_AUDIO_ASR_WARNING"
+
+    edited["asr_review_hints"] = [{
+        "variant": "b2", "output_start_seconds": 5.0,
+        "output_end_seconds": 5.6, "requires_audio_listening": True,
+    }]
+    coverage["source_asr_intervals"][0]["coverage_by_variant"]["b2"] = (
+        "ASR_INTERVAL_INSIDE_SINGLE_EDIT_SEGMENT"
+    )
+    assert repair.propose_guarded_b3_boundaries(
+        prepared=prepared, plan=plan, coverage=coverage, edited_asr=edited,
+    )["proposed_count"] == 0
