@@ -31,7 +31,7 @@ def _measured(tmp_path, monkeypatch):
 
 
 def test_no_asr_receipt_means_unknown_not_zero_quality_defects(tmp_path, monkeypatch):
-    options, _, source, transcript, edited = _case(tmp_path, monkeypatch)
+    options, source, transcript, edited = _case(tmp_path, monkeypatch)
     original = source.read_bytes(), transcript.read_bytes(), edited.read_bytes()
     monkeypatch.setattr(
         asr, "_read_clip", lambda *a, **kw: pytest.fail("review must not decode audio"),
