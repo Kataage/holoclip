@@ -1,7 +1,6 @@
 """Four-way A/B/B2/B3 finished-media diagnostics, entirely offline mock tests."""
 from __future__ import annotations
 
-import hashlib
 import json
 
 import pytest
