@@ -230,3 +230,118 @@ def test_invalid_asr_identity_or_changed_evidence_blocks_saved_review(
     assert result["cases"][0]["review_target_count"] == 0
     assert result["new_review_receipt_count"] == 0
     assert not list(options["preview_root"].rglob("*.three-way-review.json"))
+
+
+
+def test_no_saved_edited_asr_is_unknown_not_good_audio(tmp_path, monkeypatch):
+    options, _, _, _ = _completed(tmp_path, monkeypatch)
+    report = batch.run_existing_media_review_batch(**options)
+    row = report["cases"][0]
+    assert row["status"] == "LOCAL_REVIEW_BATCH_READ_ONLY_PREVIEW"
+    edited = row["existing_edited_audio_asr"]
+    assert edited["status"] == "LOCAL_EDITED_AUDIO_ASR_RECEIPT_NOT_AVAILABLE"
+    assert edited["audio_asr_warnings_by_variant"] == {
+        "a": None, "b": None, "b2": None,
+    }
+    assert report["existing_edited_asr_case_count"] == 0
+    assert edited["human_listening_verified"] is False
+    assert edited["ready"] is False
+
+
+def _with_saved_clip_asr(options, monkeypatch):
+    import asyncio
+    from holoclip import render_cut_extension_three_way_clip_asr as cross
+    from test_render_cut_extension_three_way_clip_asr import _FakeAsr, _fake_extract
+
+    _fake_extract(monkeypatch)
+    monkeypatch.setenv("HOLOCLIP_DATA_CLASS", "public")
+    prepared = cross.prepare_three_way_clip_asr(**options)
+    report = asyncio.run(cross.observe_three_way_clip_asr(
+        prepared, _FakeAsr(texts={
+            "a": "未確認の音声", "b": "まだ発話は続いている",
+            "b2": "違う内容",
+        }),
+    ))
+    assert report["status"] == "LOCAL_CLIP_ASR_TEXTUAL_MISMATCH_HINTS_NOT_VERIFIED_SPEECH"
+    return prepared["receipt"]
+
+
+def test_saved_real_audio_asr_hints_join_read_only_and_without_models(
+    tmp_path, monkeypatch,
+):
+    options, _, media, asr = _completed(tmp_path, monkeypatch)
+    path = _with_saved_clip_asr(options, monkeypatch)
+    original = path.read_bytes(), media.read_bytes(), asr.read_bytes()
+    from holoclip import render_cut_extension_three_way_clip_asr as cross
+    monkeypatch.setattr(
+        cross, "_read_clip",
+        lambda *a, **k: pytest.fail("batch join must not extract audio"),
+    )
+    joined = batch.run_existing_media_review_batch(**options)
+    result = joined["cases"][0]["existing_edited_audio_asr"]
+    assert result["status"] == "LOCAL_EXISTING_EDITED_ASR_DISCREPANCY_HINTS_UNRATED"
+    assert result["existing_audio_asr_receipt_checked"] is True
+    assert result["source_asr_coverage_joined"] is True
+    assert joined["existing_edited_asr_case_count"] == 1
+    assert set(result["audio_asr_warnings_by_variant"]) == {"a", "b", "b2"}
+    assert result["asr_review_hint_count"] == len(result["asr_review_hints"])
+    assert all(row["requires_audio_listening"] is True
+               for row in result["asr_review_hints"])
+    assert result["missing_or_repeated_words_proven"] is False
+    assert result["human_listening_verified"] is False
+    assert result["best_variant"] is None and result["ready"] is False
+    assert joined["new_review_receipt_count"] == 0
+    text = json.dumps(joined, ensure_ascii=False)
+    assert "まだ発話は続いている" not in text
+    assert str(tmp_path) not in text
+    assert (path.read_bytes(), media.read_bytes(), asr.read_bytes()) == original
+
+
+@pytest.mark.parametrize("corruption", [
+    "source_hash", "wrong_variant", "missing_human_flag", "changed_output_clock",
+    "mismatched_count", "false_quality",
+])
+def test_bad_existing_edited_asr_never_autorepaired_or_saved(
+    tmp_path, monkeypatch, corruption,
+):
+    options, _, _, _ = _completed(tmp_path, monkeypatch)
+    path = _with_saved_clip_asr(options, monkeypatch)
+    report = json.loads(path.read_text(encoding="utf-8"))
+    if corruption == "source_hash":
+        report["source_asr_sha256"] = "0" * 64
+    elif corruption == "wrong_variant":
+        report["variants"]["a"] = report["variants"].pop("b")
+    elif corruption == "missing_human_flag":
+        report["variants"]["a"]["human_auditory_check_completed"] = True
+    elif corruption == "changed_output_clock":
+        report["variants"]["a"]["output_focus_start_seconds"] = 100
+    elif corruption == "mismatched_count":
+        report["variants"]["a"]["temporal_asr_review"]["time_anchor_warning_count"] = 999
+    else:
+        report["missing_or_repeated_speech_confirmed"] = True
+    path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    before = path.read_bytes()
+    result = batch.run_existing_media_review_batch(**options, save=True)
+    assert result["cases"][0]["status"] == (
+        "LOCAL_REVIEW_BATCH_EDITED_ASR_RECEIPT_UNTRUSTED"
+    )
+    assert result["new_review_receipt_count"] == 0
+    assert path.read_bytes() == before
+    assert not list(options["preview_root"].rglob("*.three-way-review.json"))
+
+
+def test_edited_asr_join_can_save_review_without_automatically_retranscribing(
+    tmp_path, monkeypatch,
+):
+    options, _, _, _ = _completed(tmp_path, monkeypatch)
+    receipt = _with_saved_clip_asr(options, monkeypatch)
+    before = receipt.read_bytes()
+    first = batch.run_existing_media_review_batch(**options, save=True)
+    assert first["new_review_receipt_count"] == 1
+    assert first["existing_edited_asr_case_count"] == 1
+    second = batch.run_existing_media_review_batch(**options, save=True)
+    assert second["cases"][0]["status"] == (
+        "LOCAL_REVIEW_BATCH_EXISTING_RECEIPT_VERIFIED"
+    )
+    assert second["new_review_receipt_count"] == 0
+    assert receipt.read_bytes() == before

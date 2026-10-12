@@ -1321,6 +1321,30 @@ complete. GitHub Linux/Windows CI exercises only synthetic fixtures
 and never renders owner footage. Use the PR #254 doctor and #253 pilot
 to audit any locally remaining prerequisites and measured sidecars.
 
+### Read-only join of existing edited-audio ASR evidence (PR #258)
+
+`uv run holoclip render-three-way-existing-media-review-batch` now
+also returns `existing_edited_audio_asr` for each complete
+job. The existing #251/#252 opt-in, three-way edited-audio second-pass ASR
+receipt is **read only**. If absent, the new field reports **not measured**
+with unknown warning counts, rather than treating missing evidence as good
+speech or automatically contacting an ASR service.
+
+If the receipt exists, its source-ASR checksum, A/B/B2 finalized video
+checksums, review-plan/diagnostic lineage, original source evidence IDs,
+crop windows, per-utterance ASR timing references, status flags and counters
+are rechecked. Only bounded text-free warning hints are joined with #257's
+source-clock intervals. A malformed or stale saved receipt blocks the job
+without repairing/overwriting the file. Re-running the batch command
+does not decode video, run FFmpeg, request a provider or transmit clips.
+Existing saved review-plan JSON is not rewritten.
+
+These are **possible transcript or timing discrepancies**, not verified
+missing/duplicated words, natural dialogue quality or a ranking of A/B/B2.
+Even a structurally verified old JSON sidecar is not a signed/authenticated
+attestation of actual listening. Human hearing and real unseen-stream
+creative qualification remain outstanding; `ready=false`.
+
 ### Same-source ASR-clock preservation comparison (PR #257)
 
 The same `render-three-way-existing-media-review-batch` command
