@@ -1115,6 +1115,49 @@ Hosted CI mocks bounded FFmpeg samples and tests local SHA consistency
 only, not a real Hololive stream. Actual listening/visual inspection
 and creative qualification are still outstanding.
 
+### Second-pass ASR on actual A/B/B2 edited audio, not missing-speech proof (PR #251)
+
+`uv run holoclip render-cut-extension-three-way-clip-asr` adds the first
+**independently transcribed edited-audio** observations to the A/B/B2
+source-ASR and local MP4 evidence chain. Prerequisites are completed
+A/B/B2 matched finishing (PR #246), all three decoded technical scans
+(PR #247), source-clock editorial worklist (PR #248), source-ASR context
+(PR #249) and the canonical current queue/source data. The command
+re-derives each identity/holdout decision and original/final MP4 and
+stage SHA-256; no uploaded JSON or user-supplied reference data is needed.
+
+The default command is fully local, read-only and transcript-text-free.
+`--execute` requires **`HOLOCLIP_DATA_CLASS=public`**, an existing
+zero-cost-qualified ASR route and working local FFmpeg. It extracts a
+short, fixed **at most 8-second** mono MP3 sample from the same edited
+source-time boundary in each completed A/B/B2 MP4. It uses isolated
+temporary files only; each is deleted after its provider response,
+including on failures. Exactly these edited audio crops—not source
+archive media—are sent to the existing cost-controlled `MeshTranscriber`
+ASR provider. If no zero-cost route, quota or consent is available,
+nothing is uploaded or silently diverted to a paid option. There is
+no Docker, GPU prerequisite or yt-dlp call.
+
+Each provider transcript is length- and timestamp-bounded and compared
+with **only ASR utterances fully contained** in that version's edited
+focus window. Unicode normalization supports Japanese; exact normalized
+containment and a SequenceMatcher text-similarity *proxy* are reported
+per cited source-ASR segment. Low overlap prompts review and can reflect
+truncated speech, missing speech, inaccurate source or edited-ASR text,
+BGM, laughter, a short crop or ordinary recognition noise. Unmatched
+utterances and repetitions are **not independently proved**: neither
+Whisper nor source-ASR is human-verified speech truth. No ASR words,
+local paths or audio bytes are emitted in the new immutable report.
+
+The original source ASR, source reservation/holdout, technical
+diagnostic receipt, MP4s, SRTs and all reference receipts are verified
+again **after** provider inference. Any change, quota/decode error,
+invalid response or existing output file blocks committing the report.
+`ready=false`, no winner, auto-adoption or publication. Hosted
+Linux/Windows CI checks synthetic videos with mock FFmpeg/ASR, not real
+Hololive data or provider access. Production creative and audible
+qualification remains unfinished.
+
 ## Trusted human-edit structural references versus A/B technical evidence (PR #223)
 
 \`uv run holoclip render-ab-human-context\` is **preview-only by default**.
