@@ -202,7 +202,8 @@ def test_source_clock_category_is_conservative_for_partial_and_repeated():
     from holoclip.render_three_way_speech_coverage import classify_source_clock_interval
 
     s = SimpleNamespace(start=3.0, end=5.0)
-    cut = lambda a, b: SimpleNamespace(source_start=a, source_end=b)
+    def cut(a, b):
+        return SimpleNamespace(source_start=a, source_end=b)
     assert classify_source_clock_interval(s, [cut(2, 6)]) == (
         "ASR_INTERVAL_INSIDE_SINGLE_EDIT_SEGMENT"
     )
