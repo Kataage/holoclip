@@ -49,7 +49,7 @@ def test_preview_has_grounded_unrated_targets_without_side_effects(
     assert result["media_decoding_performed"] is False
     assert result["new_review_receipt_count"] == 0
     assert result["ready"] is False and result["auto_winner_selected"] is False
-    assert media.read_bytes(), asr.read_bytes() == before
+    assert (media.read_bytes(), asr.read_bytes()) == before
     assert str(tmp_path) not in json.dumps(result)
     assert "まだ発話は続いている" not in json.dumps(result, ensure_ascii=False)
     review = prepared["receipt"].with_name(
