@@ -4,6 +4,8 @@ No GitHub-hosted media, no physical Windows PC, no network beyond loopback.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import sqlite3
 import threading
@@ -155,36 +157,73 @@ def test_mismatched_coordinator_state_cannot_match_even_with_same_secret(tmp_pat
     assert report["two_host_verified"] is False
 
 
+def _offline_signed_pair_report(*, secret: bytes, role: str, nonce: str) -> dict:
+    """Build a correctly signed test fixture without a flaky loopback RPC.
+
+    This tests *receipt* validation, not coordinator reachability. The other
+    tests in this module exercise the real authenticated loopback broker.
+    """
+    payload = {
+        "version": PAIR_VERSION,
+        "role": role,
+        "observed_at": int(time.time()),
+        "nonce": nonce,
+        "coordinator_instance_id": "a" * 64,
+        "observed_peer_tag": "b" * 64,
+        "gate_code": "AVAILABLE",
+    }
+    return {
+        "payload": payload,
+        "signature": hmac.new(
+            _report_key(secret), _canonical(payload), hashlib.sha256,
+        ).hexdigest(),
+    }
+
+
 @pytest.mark.parametrize("mutation", ["signature", "role", "stale", "future", "unknown", "truncated"])
 def test_tampered_or_stale_reports_rejected(tmp_path, monkeypatch, mutation):
-    with broker(tmp_path) as (url, secret, _):
-        _enroll(monkeypatch, url, secret)
-        a, b = tmp_path / "a.json", tmp_path / "b.json"
-        export_lan_pair_evidence(role="pc-a", output=a)
-        export_lan_pair_evidence(role="pc-b", output=b)
-        doc = json.loads(b.read_text())
-        if mutation == "signature":
-            doc["signature"] = "0" * 64
-        elif mutation == "role":
-            doc["payload"]["role"] = "pc-a"
-        elif mutation == "stale":
-            doc["payload"]["observed_at"] = int(time.time()) - 901
-        elif mutation == "future":
-            doc["payload"]["observed_at"] = int(time.time()) + 91
-        elif mutation == "unknown":
-            doc["payload"]["unexpected"] = "should fail closed"
-        elif mutation == "truncated":
-            b.write_text("{broken")
-        if mutation != "truncated":
-            b.write_text(json.dumps(doc))
-        with pytest.raises(ValueError, match="LAN_PAIR_"):
-            compare_lan_pair_evidence(pc_a=a, pc_b=b)
-        result = CliRunner().invoke(cli.app, [
-            "examples-ytdlp-lan-pair-verify", "--pc-a", str(a), "--pc-b", str(b),
-        ])
-        assert result.exit_code == 6
-        assert json.loads(result.stdout)["ready"] is False
-        assert secret.read_text().strip() not in result.stdout
+    # Malformed/expired offline receipts must be rejected independently of
+    # Windows CI scheduler stalls in unrelated HTTP server threads. Keep
+    # live broker/transport tests above intact rather than extending timeouts.
+    secret = tmp_path / "secret"
+    create_coordinator_secret(secret)
+    _enroll(monkeypatch, "http://127.0.0.1:18888", secret)
+    raw_secret = bytes.fromhex(secret.read_text(encoding="ascii").strip())
+    a, b = tmp_path / "a.json", tmp_path / "b.json"
+    a.write_text(json.dumps(_offline_signed_pair_report(
+        secret=raw_secret, role="pc-a", nonce="a" * 32,
+    )), encoding="utf-8")
+    b.write_text(json.dumps(_offline_signed_pair_report(
+        secret=raw_secret, role="pc-b", nonce="b" * 32,
+    )), encoding="utf-8")
+    # Before mutation, verify the fixture's signature/schema are valid.
+    clean = compare_lan_pair_evidence(pc_a=a, pc_b=b)
+    assert clean["reports_authenticated"] is True
+    assert clean["two_host_verified"] is False
+
+    doc = json.loads(b.read_text(encoding="utf-8"))
+    if mutation == "signature":
+        doc["signature"] = "0" * 64
+    elif mutation == "role":
+        doc["payload"]["role"] = "pc-a"
+    elif mutation == "stale":
+        doc["payload"]["observed_at"] = int(time.time()) - 901
+    elif mutation == "future":
+        doc["payload"]["observed_at"] = int(time.time()) + 91
+    elif mutation == "unknown":
+        doc["payload"]["unexpected"] = "should fail closed"
+    elif mutation == "truncated":
+        b.write_text("{broken", encoding="utf-8")
+    if mutation != "truncated":
+        b.write_text(json.dumps(doc), encoding="utf-8")
+    with pytest.raises(ValueError, match="LAN_PAIR_"):
+        compare_lan_pair_evidence(pc_a=a, pc_b=b)
+    result = CliRunner().invoke(cli.app, [
+        "examples-ytdlp-lan-pair-verify", "--pc-a", str(a), "--pc-b", str(b),
+    ])
+    assert result.exit_code == 6
+    assert json.loads(result.stdout)["ready"] is False
+    assert secret.read_text().strip() not in result.stdout
 
 
 def test_duplicate_and_oversized_reports_fail_closed(tmp_path, monkeypatch):
