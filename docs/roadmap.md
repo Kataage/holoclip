@@ -159,6 +159,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Prerequisite doctor for completed local A/B/B2 evaluations: read-only SHA/ASR/stage checkpoint classification, aggregate blockers, next existing CLI name, interrupted output fail-closed (no auto-render/publish)
 - [x] Explicit, budget-bounded, locally locked autopilot to execute doctor-verified B/B2 renders, matching finishing and technical/audio scans in sequence with create-only outputs, fail-closed on changes (owner-host real footage still pending)
 - [x] Batch finished real-local-media A/B/B2 jobs into source-aligned unrated edit-review targets after SHA-verified technical/acoustic QA; read-only default, owner-only create-only resume, no automatic winner (real creative qualification pending)
+- [x] Compare the exact same source-ASR-clock utterance intervals at changed A/B/B2 cut edges, with conservative full/partial/absent/ambiguous classification and paired gains/losses; read-only, no creative rank or speech proof
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion
