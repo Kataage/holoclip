@@ -17,6 +17,7 @@ import unicodedata
 from pathlib import Path
 
 from holoclip.models import TranscriptSegment
+from holoclip.render_cut_extension_clip_asr_alignment import temporal_asr_review
 from holoclip.render_cut_extension_three_way_acoustic import (
     _context as _verified_context,
     prepare_three_way_acoustic,
@@ -27,7 +28,7 @@ from holoclip.render_same_source_semantic_review import (
     save_semantic_review, validate_semantic_output,
 )
 
-VERSION = "holoclip-three-way-independent-clip-asr-review-v1"
+VERSION = "holoclip-three-way-independent-clip-asr-review-v2"
 _ROLES = ("a", "b", "b2")
 _MAX_SECONDS = 8.0
 _MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -108,7 +109,11 @@ def _evidence_for_focus(excerpts: list[dict], window: dict) -> list[dict]:
         text = _safe_asr(item["unverified_asr_text"])
         normalized = _normalize(text)
         if normalized:
-            matched.append({"id": item["evidence_id"], "text": normalized})
+            matched.append({
+                "id": item["evidence_id"], "text": normalized,
+                "output_start_seconds": item["output_start_seconds"],
+                "output_end_seconds": item["output_end_seconds"],
+            })
     return matched
 
 
@@ -238,15 +243,21 @@ async def observe_three_way_clip_asr(prepared: dict, transcriber) -> dict:
                 raise ValueError("LOCAL_CLIP_ASR_VIDEO_CHANGED_DURING_EXTRACT")
             segments = await transcriber.transcribe_file(audio)
             heard, count = _segments(segments, end - start)
+            expected = _evidence_for_focus(
+                pack["variants"][role]["excerpts"], window,
+            )
+            temporal = temporal_asr_review(
+                expected=expected, heard=segments,
+                output_focus_start_seconds=start,
+                output_focus_end_seconds=end, normalize=_normalize,
+            )
             role_results[role] = {
                 "output_focus_start_seconds": start,
                 "output_focus_end_seconds": end,
                 **_compare_observation(
-                    source=_evidence_for_focus(
-                        pack["variants"][role]["excerpts"], window,
-                    ),
-                    output_asr=heard, output_segment_count=count,
+                    source=expected, output_asr=heard, output_segment_count=count,
                 ),
+                "temporal_asr_review": temporal,
                 "model_provenance": _safe_provenance(
                     getattr(transcriber, "last_provenance", None)
                 ),
