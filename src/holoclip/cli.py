@@ -201,11 +201,17 @@ from holoclip.render_cut_extension_three_way_dialogue import (
 )
 from holoclip.render_three_way_existing_media_pilot import run_existing_media_pilot
 from holoclip.render_three_way_prerequisites import inspect_existing_media_prerequisites
-from holoclip.render_three_way_existing_media_autopilot import run_existing_media_autopilot
+from holoclip.render_three_way_existing_media_autopilot import (
+    run_existing_media_autopilot, _exclusive_run_lock,
+)
 from holoclip.render_three_way_existing_media_review_batch import run_existing_media_review_batch
 from holoclip.render_three_way_b3_local_render import run_existing_b3_preview
 from holoclip.render_three_way_b3_matched_finishing import run_existing_b3_matched_finishing
 from holoclip.render_four_way_local_diagnostics import run_four_way_diagnostics
+from holoclip.render_b2_b3_finished_audio_asr import (
+    prepare_b2_b3_audio_asr, _public as preview_b2_b3_audio_asr,
+    observe_b2_b3_audio_asr,
+)
 from holoclip.render_cut_extension_three_way_acoustic import (
     prepare_three_way_acoustic, run_three_way_acoustic,
 )
@@ -1612,6 +1618,58 @@ def render_three_way_existing_media_autopilot_command(
             "publication_performed": False,
         }))
         raise typer.Exit(6)
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+
+@app.command("render-b2-b3-finished-audio-asr")
+def render_b2_b3_finished_audio_asr_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    job_id: str | None = typer.Option(None, "--job-id"),
+    proposal_index: int = typer.Option(0, "--proposal-index", min=0, max=1),
+    refinement_index: int = typer.Option(0, "--refinement-index", min=0, max=1),
+    candidate_index: int = typer.Option(0, "--candidate-index", min=0, max=1),
+    execute: bool = typer.Option(
+        False, "--execute", help="Run two new finished-audio crops through the zero-cost ASR route.",
+    ),
+    approve_audio_asr: bool = typer.Option(
+        False, "--approve-audio-asr", help="Required with --execute; local crop audio may leave this PC.",
+    ),
+) -> None:
+    """Bounded B2/B3 ASR cross-check; no claim of verified speech or clip quality."""
+    try:
+        if execute and not approve_audio_asr:
+            raise ValueError("LOCAL_B2_B3_ASR_EXPLICIT_APPROVAL_REQUIRED")
+        if execute and os.getenv("HOLOCLIP_DATA_CLASS") != "public":
+            raise ValueError("LOCAL_B2_B3_ASR_EXPLICIT_PUBLIC_DATA_REQUIRED")
+        basis = prepare_b2_b3_audio_asr(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, job_id=job_id,
+            proposal_index=proposal_index, refinement_index=refinement_index,
+            candidate_index=candidate_index,
+        )
+        if basis.get("status") == "LOCAL_B2_B3_ASR_NO_COMPLETED_JOB":
+            report = basis
+        elif not execute:
+            report = preview_b2_b3_audio_asr(basis)
+        else:
+            validate_semantic_output(basis["receipt"])
+            async def _scan():
+                async with MeshTranscriber() as provider:
+                    return await observe_b2_b3_audio_asr(basis, provider)
+            with _exclusive_run_lock(preview_root, basis["context"]["job_id"]):
+                report = asyncio.run(_scan())
+    except Exception as exc:
+        typer.echo(json.dumps({
+            "status": "LOCAL_B2_B3_AUDIO_ASR_BLOCKED",
+            "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6) from exc
     typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
 

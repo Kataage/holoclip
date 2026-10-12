@@ -1321,6 +1321,47 @@ complete. GitHub Linux/Windows CI exercises only synthetic fixtures
 and never renders owner footage. Use the PR #254 doctor and #253 pilot
 to audit any locally remaining prerequisites and measured sidecars.
 
+### Independent finished B2/B3 audio-ASR cross-check (PR #264)
+
+After PR #262 has measured **all four** finished videos and saved an immutable
+four-way technical/audio diagnostic, use this single existing-job command:
+
+`uv run holoclip render-b2-b3-finished-audio-asr`
+
+By default, it **only checks local saved files**: A/B/B2 source/edit
+lineage, B3 matched-finishing SHA, completed four-way diagnostic receipt,
+current source transcript, and exact finished B2/B3 MP4s. It reports the
+source-clock fully contained utterances and bounded focus clocks for each
+variant without decoding audio, uploading any file, exporting words, or
+creating a receipt. A missing, stale, corrupted or unsigned/untrusted prior
+artifact fails closed; a JSON receipt cannot by itself prove real hearing.
+
+**Opt-in execution** requires both an explicit flag and data classification:
+
+`HOLOCLIP_DATA_CLASS=public uv run holoclip render-b2-b3-finished-audio-asr --execute --approve-audio-asr`
+
+On Windows PowerShell set the environment variable in the current process
+first. The owner must explicitly classify the source as shareable public data:
+finished **audio snippets may be transmitted to the configured no-cost
+ASR provider**. A 3–5 second bounded local crop around the matching
+edited source seam of **each** finished B2/B3 clip is temporarily
+extracted; crops are removed on return or failure. There are no source
+downloads, no change to original MP4s, no LLM creative judge and no
+automatic retries on quota failures. Only a new immutable text-free JSON
+receipt is saved after both ASR requests, source/MP4 hashes and the
+four-way QA evidence are rechecked.
+
+The comparison records (a) source-ASR clock utterances **newly fully
+included in B3** rather than B2, and (b) increased/decreased time-local
+**ASR-to-ASR textual warning hints for utterances present in both**.
+Different recognition or ASR segmentation can change these counts.
+Newly included *source-ASR* words are not proven audible, no missing
+words/repeated words are independently demonstrated and fewer warnings
+do not certify better dialogue, humor, continuity or technical/creative
+readiness. `ready=false`; no winning variant, adoption
+or automatic publication. Real owner-host video still needs listening
+and held-out editorial-quality qualification.
+
 ### Four-way video/audio technical comparison (PR #262)
 
 With finished A/B/B2 **and separately approved B3 matched finishing**
