@@ -101,11 +101,13 @@ def _saved_audio_asr(basis: dict) -> tuple[dict, str] | None:
             if not isinstance(aligned_row, dict):
                 raise ValueError("LOCAL_B2_B3_REVIEW_ALIGNMENT_INVALID")
             identity = aligned_row.get("source_evidence_id")
-            if identity not in expected_by_id or identity in seen:
+            if (type(identity) is not str or identity not in expected_by_id
+                    or identity in seen):
                 raise ValueError("LOCAL_B2_B3_REVIEW_ALIGNMENT_ID_CHANGED")
             seen.add(identity)
             ref = expected_by_id[identity]
-            if (aligned_row.get("status") not in _WARNINGS | {_NO_WARNING}
+            if (type(aligned_row.get("status")) is not str
+                    or aligned_row["status"] not in _WARNINGS | {_NO_WARNING}
                     or aligned_row.get("expected_output_start_seconds")
                     != ref["output_start_seconds"]
                     or aligned_row.get("expected_output_end_seconds")
@@ -199,7 +201,13 @@ def _review(basis: dict, receipt: dict, audio_sha: str) -> dict:
         tech[f"b3_{key}"] = new
         tech[f"b3_minus_b2_{key}"] = new - old
     if tech["b3_minus_b2_flag_count"] > 0:
-        tasks.append(_task("B3_MORE_TECHNICAL_FLAGS_NOT_QUALITY", "HIGH_REVIEW"))
+        tasks.append(_task(
+            "B3_MORE_TECHNICAL_FLAGS_NOT_QUALITY", "HIGH_REVIEW",
+            b2={"output_start_seconds": basis["focus"]["b2"]["output_start_seconds"],
+                "status": None},
+            b3={"output_start_seconds": basis["focus"]["b3"]["output_start_seconds"],
+                "status": None},
+        ))
     b2_samples = qa["variants"]["b2"]["edge_audio_samples"]
     b3_samples = qa["variants"]["b3"]["edge_audio_samples"]
     if (not isinstance(b2_samples, list) or not isinstance(b3_samples, list)
@@ -210,7 +218,13 @@ def _review(basis: dict, receipt: dict, audio_sha: str) -> dict:
             raise ValueError("LOCAL_B2_B3_REVIEW_AUDIO_WINDOW_KIND_CHANGED")
         if (new["near_silent_energy_hint"] is True
                 and old["near_silent_energy_hint"] is False):
-            tasks.append(_task("B3_NEAR_SILENT_ENERGY_AT_EDIT_EDGE", "NORMAL_REVIEW"))
+            tasks.append(_task(
+                "B3_NEAR_SILENT_ENERGY_AT_EDIT_EDGE", "NORMAL_REVIEW",
+                b2={"output_start_seconds": old["output_start_seconds"],
+                    "status": None},
+                b3={"output_start_seconds": new["output_start_seconds"],
+                    "status": None},
+            ))
     tasks.sort(key=lambda t: (
         _PRIORITY[t["priority"]],
         t["source_start_seconds"] if t["source_start_seconds"] is not None else -1,
