@@ -201,7 +201,9 @@ from holoclip.render_cut_extension_three_way_dialogue import (
 )
 from holoclip.render_three_way_existing_media_pilot import run_existing_media_pilot
 from holoclip.render_three_way_prerequisites import inspect_existing_media_prerequisites
-from holoclip.render_three_way_existing_media_autopilot import run_existing_media_autopilot
+from holoclip.render_three_way_existing_media_autopilot import (
+    run_existing_media_autopilot, _exclusive_run_lock,
+)
 from holoclip.render_three_way_existing_media_review_batch import run_existing_media_review_batch
 from holoclip.render_three_way_b3_local_render import run_existing_b3_preview
 from holoclip.render_three_way_b3_matched_finishing import run_existing_b3_matched_finishing
