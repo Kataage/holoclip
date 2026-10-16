@@ -9,7 +9,6 @@ from typer.testing import CliRunner
 
 from holoclip import cli
 from holoclip import render_b2_b3_local_review_pack as pack
-from holoclip import render_b2_b3_finished_audio_asr as asr
 from test_render_b2_b3_audio_review import _measured
 from test_render_cut_extension_mp4_ab import _args
 
@@ -176,10 +175,11 @@ def test_changed_asr_receipt_blocks_decode(tmp_path, monkeypatch):
 
 
 def test_source_clock_projection_respects_omission_and_repetition():
-    cut = lambda lo, hi, order: SimpleNamespace(
-        source_asset_id="source", source_start=lo, source_end=hi,
-        output_order=order,
-    )
+    def cut(lo, hi, order):
+        return SimpleNamespace(
+            source_asset_id="source", source_start=lo, source_end=hi,
+            output_order=order,
+        )
     timeline = SimpleNamespace(segments=[
         cut(10, 15, 0), cut(30, 33, 1),
     ])
