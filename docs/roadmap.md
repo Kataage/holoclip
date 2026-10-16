@@ -167,6 +167,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Independently measure all SHA-pinned finished A/B/B2/B3 videos with the same local technical analyzer and bounded edit-edge audio-energy probes, save an immutable four-way technical report, explicitly abstain from acoustic speech/creative quality ranking
 - [x] Public-data-only, explicitly opted-in independent ASR of short finished B2/B3 audio clips, SHA-pinned to 4-way diagnostics and source ASR; source-ID shared/new comparison with conservative temporal warnings, no word proof or auto rank
 - [x] Source-pinned priority review targets from saved B2/B3 ASR alignment and 4-way QA; missing evidence stays unknown, text-free bounded targets and create-only review plan, no automatic winner
+- [x] Explicitly approved, create-only three-clip source/B2/B3 local playback pack at highest-priority source-clock review event, verified full local source cache and revalidated input hashes, no creative judgement or publication
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion
