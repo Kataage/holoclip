@@ -2557,3 +2557,50 @@ RenderPlan, subtitle/zoom/audio-mix strategies, quality/repair loop and
 approval-gated publishing remain outstanding. Real Hololive footage was
 not run in hosted CI; only synthetic local media is used for integration.
 No production or editor quality readiness is promoted: ready=false.
+
+
+### Three-way editorial evidence triage after local playback (PR #267)
+
+First generate source/B2/B3 short review clips using the existing
+`render-b2-b3-local-review-pack --execute --approve-local-preview` flow,
+then inspect them **offline and read-only** using:
+
+```
+uv run holoclip render-b2-b3-editorial-evidence
+```
+
+Optional `--job-id`, `--proposal-index`, `--refinement-index`,
+`--candidate-index` and `--target-index` select the same deterministic
+target as the playback pack. To save a new immutable evidence receipt,
+explicitly request:
+
+```
+uv run holoclip render-b2-b3-editorial-evidence --save
+```
+
+The command rederives the current source ASR, existing edited-ASR and
+four-way technical lineage, checks every static playback receipt field,
+and separately rehashes all **three short local MP4s**. Missing playback
+clips are reported as not rendered; changed bytes, unsupported receipt
+fields, changed ASR lineage, linked paths, missing or mismatched clips
+and non-create-only destinations fail closed. No new video decoding,
+FFmpeg encode, provider inference, download, transcript export or publish.
+Only the optional `--save` writes a create-only JSON sidecar.
+
+The three evidence dimensions are *speech naturalness* (unverified edited
+ASR hints), *narrative continuity* (source-clock projection / whether
+the selected clock was replaced with an edit-boundary fallback), and
+*payoff completion* (short excerpt durations). Each provides questions
+for a later independent full-video/listening review, and explicitly
+sets `score=null`. The short clips have no verified semantic-story labels.
+The full source video's hash is **reported from the original playback
+receipt but not independently rehashed** by this step. Local clip
+content hashes *are* independently rechecked.
+
+The resulting evidence is a reliable **inspection handoff**, not an
+automated creative-quality evaluation: `automatic_winner=null`,
+`automatic_adoption_allowed=false`, `ready=false` and
+`production_ready=false` remain unconditional. Real finished footage,
+independent human-rated speech/continuity/payoff labels, source-diverse
+holdout checks and calibrated LLM/VLM assessments are still needed
+before automatic ranking or publishing could be contemplated.
