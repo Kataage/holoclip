@@ -1321,6 +1321,54 @@ complete. GitHub Linux/Windows CI exercises only synthetic fixtures
 and never renders owner footage. Use the PR #254 doctor and #253 pilot
 to audit any locally remaining prerequisites and measured sidecars.
 
+### B2/B3 source-context visual + audio review pack (PR #266)
+
+After the locally held B2/B3 ASR discrepancy receipt and PR #265's
+source-pinned priorities are available, inspect the first/highest priority
+unrated target without any media operation:
+
+`uv run holoclip render-b2-b3-local-review-pack`
+
+This is strictly **read-only**. It maps the prioritized source-ASR clock
+target into both B2/B3 output clocks using each canonical cut timeline.
+An interval absent from a version is explicitly marked
+`selected_source_clock_visible=false` and the candidate
+uses that version's local edit seam for comparison, **not** fake
+corresponding utterances. Duplicate source-clock appearances are similarly
+not treated as uniquely aligned. This stage uses local evidence/ASR, no
+source video download, FFmpeg or model/provider request.
+
+To create short local videos to inspect side-by-side, approve exactly one
+target (zero by default):
+
+`uv run holoclip render-b2-b3-local-review-pack --execute --approve-local-preview`
+
+Optionally `--target-index 1` etc (0–19, bounded by the
+available priority list). This requires the **pre-existing full** locally
+cached original stream, whose YouTube ID/source asset identity is
+independently verified. It creates exactly three new independent MP4s:
+source context (~6 seconds), B2 context (~5 seconds) and B3 context
+(~5 seconds), each with original video and audio, at the mapped
+source clock where present or the edit seam where absent. Encoder and
+decoder are fully local. FFmpeg stream decoding may be required, but
+neither source nor B2/B3 original files are rewritten. Completed
+A/B/B2/B3 lineage, source ASR, saved edited ASR and four-way QA are
+rederived/rehash-checked before and after extraction, and each new MP4
+must pass video+audio stream, SHA and duration checks. All three outputs
+and a text-free QA receipt are **create-only** and named per review
+target. In case of a failed write, the command attempts to roll back
+only outputs it created; an existing or orphaned output blocks reruns
+rather than being overwritten.
+
+The outputs are intended for **viewing/listening**, not independent
+proof of which edit sounds more natural, whether words are missing,
+whether an emotionally important setup/payoff is preserved, or which
+variant is more entertaining. A passing pack means only three short
+files were technically created. Nothing is automatically adopted,
+uploaded or published and `ready=false`. Hosted CI runs
+synthetic media/stub encoders only; actual Holo source footage still
+needs independent owner-PC evaluation and permission review.
+
 ### Source-pinned B2/B3 audio review priorities (PR #265)
 
 After existing PR #264's **explicitly approved** short ASR observation is
