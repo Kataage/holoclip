@@ -108,7 +108,7 @@ def test_reject_untrusted_model_json(monkeypatch, data):
 
 
 def test_missing_common_source_reference_abstains(monkeypatch):
-    prepared, state = _prepared(monkeypatch)
+    _, state = _prepared(monkeypatch)
     state["basis"]["references"]["b2"] = [_reference("c" * 20, "別の文")]
     result = dep.prepare_textual_dependency()
     assert result["pair_count"] == 0
