@@ -219,6 +219,7 @@ from holoclip.render_b2_b3_blind_full_study import run_blind_full_study
 from holoclip.render_b2_b3_textual_dependency import (
     prepare_textual_dependency, preview_textual_dependency, infer_textual_dependency,
 )
+from holoclip.render_b2_b3_textual_receipt_audit import audit_textual_receipt
 from holoclip.render_cut_extension_three_way_acoustic import (
     prepare_three_way_acoustic, run_three_way_acoustic,
 )
@@ -1622,6 +1623,42 @@ def render_three_way_existing_media_autopilot_command(
         typer.echo(json.dumps({
             "status": "LOCAL_EXISTING_MEDIA_AUTOPILOT_BLOCKED",
             "ready": False, "production_ready": False,
+            "publication_performed": False,
+        }))
+        raise typer.Exit(6)
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+
+@app.command("render-b2-b3-textual-receipt-audit")
+def render_b2_b3_textual_receipt_audit_command(
+    receipt: Path = typer.Option(..., "--receipt", help="Existing redacted model receipt."),
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    job_id: str | None = typer.Option(None, "--job-id"),
+    proposal_index: int = typer.Option(0, "--proposal-index", min=0, max=1),
+    refinement_index: int = typer.Option(0, "--refinement-index", min=0, max=1),
+    candidate_index: int = typer.Option(0, "--candidate-index", min=0, max=1),
+    target_index: int = typer.Option(0, "--target-index", min=0, max=19),
+    output: Path | None = typer.Option(None, "--output", help="Optional create-only audit JSON."),
+) -> None:
+    """Independently re-audit source-cited B2/B3 AI reports, offline only."""
+    try:
+        report = audit_textual_receipt(
+            receipt, queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, job_id=job_id,
+            proposal_index=proposal_index, refinement_index=refinement_index,
+            candidate_index=candidate_index, target_index=target_index,
+            output=output,
+        )
+    except (ValueError, TypeError, OSError, UnicodeError, sqlite3.Error):
+        typer.echo(json.dumps({
+            "status": "LOCAL_TEXTUAL_RECEIPT_AUDIT_BLOCKED",
+            "ready": False, "production_ready": False,
+            "automatic_adoption_allowed": False,
             "publication_performed": False,
         }))
         raise typer.Exit(6)

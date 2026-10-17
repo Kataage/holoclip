@@ -2653,6 +2653,39 @@ Independent listening, real complete edits, source-diverse holdout review,
 and calibrated accuracy must precede any automatic creative ranking.
 
 
+### Offline re-audit of saved B2/B3 textual-dependency evidence (PR #269)
+
+When an opt-in `render-b2-b3-textual-dependency --execute` has saved its
+**redacted** output, verify it again later without contacting any provider:
+
+```powershell
+uv run holoclip render-b2-b3-textual-receipt-audit --receipt data/render-previews/b2-b3-textual-dependency.json
+```
+
+Use the **same** `--job-id`, `--proposal-index`, `--refinement-index`,
+`--candidate-index` and `--target-index` values as the original review
+when these were non-default. The command rebuilds current playback/ASR
+evidence and rehashes the three short MP4s through the PR #267/268
+prerequisites, validates every redacted receipt field and each quoted
+SHA-256 against a permissible **actual substring** of the current
+sampled local source ASR. Replaced words, stale clips, tampered receipts,
+unknown IDs, missing or extra result rows, malformed provider provenance,
+wrong quote clocks and any `ready=true` or auto-adoption attempt fail
+closed. The normal command makes **no writes** and needs no model quota.
+
+To also store the outcome, specify `--output <new>.json`; that report
+is strictly create-only, rechecks all inputs immediately before save and
+includes only hashes, counts and route metadata (no verbatim ASR).
+
+Cryptographic hashes prove **content consistency**, not the original
+model's honesty, the receipt author's identity or human editorial truth.
+In particular, two ASR phrases with valid hashes can still have no
+meaningful narrative relation, and a phrase missing from the small B2/B3
+focus *sample* may remain elsewhere in the complete edited video. Human
+listening, source-diverse held-out trials, true media-aware evaluation and
+measured creative-quality accuracy remain outstanding. No publishing or
+automatic winner is introduced.
+
 ### Blinded real finished B2/B3 study using full videos (PR #270)
 
 This step addresses a key limitation of the short source/B2/B3 playback pack:
