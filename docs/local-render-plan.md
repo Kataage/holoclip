@@ -2737,3 +2737,46 @@ blinded rating provenance, inter-rater agreement, diverse real source
 holdouts and calibrations remain separate future work. The score fields
 in machine-generated planning evidence remain `null`; automatic winner,
 auto-adoption and production readiness are always blocked.
+
+
+### Ingest completed offline blind review JSON (PR #271)
+
+The complete finished-video study's local `review.html` exports one strictly
+bounded JSON form when a reviewer chooses to enter scores. **No ratings are
+invented**, and this stage does not assert anyone watched the media or that
+the reviewers are independent. To examine zero or more already exported
+forms without writes:
+
+```powershell
+uv run holoclip render-b2-b3-blind-rating-ingest
+uv run holoclip render-b2-b3-blind-rating-ingest --rating "C:\\Users\\example\\Downloads\\blind-review-rating.json"
+```
+
+If the study was created with non-default selection arguments, repeat the
+same `--job-id`, `--proposal-index`, `--refinement-index`,
+`--candidate-index` and `--target-index`. The importer will re-derive
+the SHA-pinned real media, compare the complete anonymous study receipt,
+private slot-role map, offline HTML form and each independent full-length
+reviewer copy, **before** reading ratings. Changed files or provenance
+refuse ingestion rather than manufacturing labels. Up to 20 explicit,
+small local `--rating` files can be supplied (repeat the option), and
+byte-identical submissions cannot be counted twice. JSON allows only
+integer 1–5 scores for each of the three separate dimensions and a
+neutral preference/tie/undecided choice. Unsupported scores, mismatched
+study IDs, invented promotion claims, malformed data and symlink inputs
+fail closed.
+
+To optionally save the resulting neutral-slot summaries, pass
+`--output data/render-previews/new-blind-rating-summary.json`.
+This path must be new: the report is immutable and inputs are
+revalidated inside the per-job lock. The report contains submission
+SHA-256 hashes, anonymous candidate-slot means and preference counts;
+it **never** exposes the B2/B3 assignment, pretends that the scores are
+independent verified human gold, produces an automatic winner, trains a
+model, edits video or publishes content. Zero submissions remain
+`BLIND_RATING_NO_SUBMISSIONS` with no fabricated metrics. Differing
+JSON files do **not** establish different human evaluators, and
+self-reported playback cannot establish that videos were watched.
+Independent reviewer assignment, holdout diversity, rater agreement
+and demonstrated real-world editorial-quality improvement remain P0/P1
+work.
