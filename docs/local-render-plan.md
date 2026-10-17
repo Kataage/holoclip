@@ -2651,3 +2651,56 @@ payoff completion, creative winner and quality metrics remain
 `automatic_adoption_allowed=false` and no publishing are unconditional.
 Independent listening, real complete edits, source-diverse holdout review,
 and calibrated accuracy must precede any automatic creative ranking.
+
+
+### Blinded real finished B2/B3 study using full videos (PR #270)
+
+This step addresses a key limitation of the short source/B2/B3 playback pack:
+five-second edge excerpts cannot establish whether a viewer can follow the
+story or whether the punchline resolves. Instead of generating more arbitrary
+ASR-only audits, use the **existing finished full-length B2 and B3 MP4s**:
+
+```powershell
+uv run holoclip render-b2-b3-blind-full-study
+uv run holoclip render-b2-b3-blind-full-study --execute --approve-local-preview
+```
+
+Use the same `--job-id`, `--proposal-index`, `--refinement-index`,
+`--candidate-index` and `--target-index` options as the existing PR #266
+playback pack when those differed from defaults.
+
+The default validates source/B2/B3 playback evidence and rehashes the
+current B2/B3 **complete finished MP4s** without writing files. Explicit
+execution creates one new `*.blind-study` folder with:
+- `candidate-1.mp4` and `candidate-2.mp4`: isolated copies of the actual
+  B2/B3 finished full videos, in stable cryptographic slot order. Neither
+  the original finished files nor any upstream receipts are overwritten.
+- `review.html`: a standalone local-only HTML review form playable via
+  `file://`. Ratings are requested separately for natural Japanese speech,
+  coherent context and setup/payoff, along with an optional overall
+  preference. The reviewer can export a JSON file via the browser; no data
+  is sent to any server.
+- `study.json`: the non-qualifying neutral public study receipt. **No**
+  B2/B3-to-slot mapping is included in the reviewer folder.
+
+The role mapping, hashes and upstream playback evidence remain separately
+in `*.blind-map.json` in the parent directory. Keep this **out of the
+reviewer's view** until their assessment is completed. File lengths and
+content differences may still give contextual clues; this is blinded
+assignment, not proof of total evaluator independence.
+
+To avoid writable alias hardlinks that could damage originals, execution
+creates independent copies. Plan for enough free disk space: at most
+1 GiB per finished MP4, up to 2 GiB for this pack. The copies are
+SHA-verified after writing and checked against source files. Incomplete
+outputs or prior destinations fail closed; reruns do not overwrite, merge,
+resume, download, or clean up user-owned files. No FFmpeg encode, yt-dlp,
+inference, automatic editing or publication occurs.
+
+**No human-quality rating is manufactured or trusted merely because a
+review form exists.** A reviewer must actually view and rate the complete
+videos. Exporting a JSON is not a validated independent gold label:
+blinded rating provenance, inter-rater agreement, diverse real source
+holdouts and calibrations remain separate future work. The score fields
+in machine-generated planning evidence remain `null`; automatic winner,
+auto-adoption and production readiness are always blocked.
