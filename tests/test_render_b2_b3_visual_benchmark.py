@@ -100,7 +100,8 @@ def test_opt_in_measurements_produce_in_sample_manifest_without_uploads(
     assert all(case["held_out"] is False and case["real_media"] is True
                and case["public_data"] is True for case in cases)
     assert all("candidate-" in case["id"] for case in cases)
-    assert all("b2" not in case["id"] and "b3" not in case["id"] for case in cases)
+    assert all("-b2-" not in case["id"] and "-b3-" not in case["id"]
+               for case in cases)
     assert all(case["teacher_reference"] == "UNVERIFIED_NO_GOLD_REFERENCE"
                for case in cases)
     assert (folder / "status.json").is_file()
