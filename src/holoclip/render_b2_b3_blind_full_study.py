@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import html
 import os
+import shutil
 from pathlib import Path
 
 from holoclip.render_b2_b3_editorial_evidence import run_editorial_evidence
@@ -125,7 +126,7 @@ def _prepare(kwargs: dict) -> dict:
         "full_finished_media_not_short_excerpt": True,
         "one_shot_rating_form_available_after_execution": True,
         "evaluator_role_mapping_disclosed": False,
-        "existing_videos_modified": False, "reencoded_videos": False,
+        "existing_videos_modified": False, "reencoded_videos": False, "isolated_playback_copies": True,
         "additional_downloads": False, "new_provider_requests": False,
         "human_labels_obtained": False,
         "independent_human_gold_verified": False,
@@ -147,7 +148,7 @@ def run_blind_full_study(
     target_index: int = 0, execute: bool = False,
     approve_local_preview: bool = False,
 ) -> dict:
-    """Default read-only; opt-in creates neutral full-MP4 hardlinks and local HTML."""
+    """Default read-only; opt-in creates isolated full-MP4 copies and local HTML."""
     if (type(execute) is not bool or type(approve_local_preview) is not bool
             or type(target_index) is not int or not 0 <= target_index < 20):
         raise ValueError("BLIND_STUDY_ARGUMENT_INVALID")
@@ -185,10 +186,13 @@ def run_blind_full_study(
         for i, role in enumerate(current["order"], start=1):
             slot = f"candidate-{i}"
             destination = _no_links(target / f"{slot}.mp4")
-            os.link(current["paths"][role], destination)
+            # Never hardlink originals: writing a reviewer alias could otherwise
+            # mutate the owner's completed video through the same inode.
+            with current["paths"][role].open("rb") as source, destination.open("xb") as out:
+                shutil.copyfileobj(source, out, length=1024 * 1024)
             if (_hash(destination) != final_hashes[role]
                     or _hash(current["paths"][role]) != final_hashes[role]):
-                raise ValueError("BLIND_STUDY_INPUT_CHANGED_DURING_LINK")
+                raise ValueError("BLIND_STUDY_INPUT_CHANGED_DURING_COPY")
             mapping[slot] = {
                 "role": role, "filename": destination.name,
                 "sha256": final_hashes[role][0],
