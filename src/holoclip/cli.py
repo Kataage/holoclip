@@ -215,6 +215,7 @@ from holoclip.render_b2_b3_finished_audio_asr import (
 from holoclip.render_b2_b3_audio_review import run_b2_b3_review
 from holoclip.render_b2_b3_local_review_pack import run_local_review_pack
 from holoclip.render_b2_b3_editorial_evidence import run_editorial_evidence
+from holoclip.render_b2_b3_blind_full_study import run_blind_full_study
 from holoclip.render_b2_b3_textual_dependency import (
     prepare_textual_dependency, preview_textual_dependency, infer_textual_dependency,
 )
@@ -1685,6 +1686,45 @@ def render_b2_b3_textual_dependency_command(
         }))
         raise typer.Exit(6) from exc
     typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+
+@app.command("render-b2-b3-blind-full-study")
+def render_b2_b3_blind_full_study_command(
+    queue: Path = typer.Option(DEFAULT_QUEUE, "--queue"),
+    example_store: Path = typer.Option(DEFAULT_EXAMPLE_STORE, "--example-store"),
+    growth_state: Path = typer.Option(DEFAULT_GROWTH_STATE, "--growth-state"),
+    preview_root: Path = typer.Option(DEFAULT_PREVIEW_ROOT, "--preview-root"),
+    transcript_root: Path = typer.Option(DEFAULT_TRANSCRIPT_ROOT, "--transcript-root"),
+    job_id: str | None = typer.Option(None, "--job-id"),
+    proposal_index: int = typer.Option(0, "--proposal-index", min=0, max=1),
+    refinement_index: int = typer.Option(0, "--refinement-index", min=0, max=1),
+    candidate_index: int = typer.Option(0, "--candidate-index", min=0, max=1),
+    target_index: int = typer.Option(0, "--target-index", min=0, max=19),
+    execute: bool = typer.Option(
+        False, "--execute", help="Create a blinded local full-video comparison study.",
+    ),
+    approve_local_preview: bool = typer.Option(
+        False, "--approve-local-preview", help="Require explicit local media-copy approval.",
+    ),
+) -> None:
+    """Create an offline, source-pinned, unlabeled full B2/B3 blind comparison."""
+    try:
+        report = run_blind_full_study(
+            queue=queue, example_store=example_store,
+            growth_state=growth_state, preview_root=preview_root,
+            transcript_root=transcript_root, job_id=job_id,
+            proposal_index=proposal_index, refinement_index=refinement_index,
+            candidate_index=candidate_index, target_index=target_index,
+            execute=execute, approve_local_preview=approve_local_preview,
+        )
+    except (ValueError, TypeError, OSError, UnicodeError, sqlite3.Error):
+        typer.echo(json.dumps({
+            "status": "BLIND_STUDY_BLOCKED", "ready": False,
+            "production_ready": False, "publication_performed": False,
+            "automatic_adoption_allowed": False,
+        }))
+        raise typer.Exit(6)
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
 
 @app.command("render-b2-b3-editorial-evidence")
