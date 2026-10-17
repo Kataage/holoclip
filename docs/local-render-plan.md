@@ -2604,3 +2604,50 @@ automated creative-quality evaluation: `automatic_winner=null`,
 independent human-rated speech/continuity/payoff labels, source-diverse
 holdout checks and calibrated LLM/VLM assessments are still needed
 before automatic ranking or publishing could be contemplated.
+
+
+### Opt-in source-ASR textual dependency hypotheses for B2/B3 (PR #268)
+
+After the original three-clip playback pack has been rendered locally, use
+`uv run holoclip render-b2-b3-textual-dependency` for a **read-only,
+text-free** report. Use the same `--job-id`, `--proposal-index`,
+`--refinement-index`, `--candidate-index`, `--target-index`
+selection flags as the underlying playback pack.
+
+This command reuses PR #267's **independently SHA-verified** three short MP4s
+and current stored local ASR/technical lineage. It looks ONLY at the bounded
+unverified source ASR excerpt sets sampled in B2 and B3's edited-focus
+windows. When at least one excerpt is in both sampled sets and another
+appears in only one, it constructs at most four deterministic pairs
+requiring textual interpretation. The default does not expose raw ASR,
+invoke an AI model, download source media, decode video or write an output.
+
+After independently confirming source-text public-data rights and an
+existing qualified, zero-cost model route, execute explicitly:
+
+```
+HOLOCLIP_DATA_CLASS=public uv run holoclip render-b2-b3-textual-dependency --execute --output data/render-previews/new-textual-dependency.json
+```
+
+On Windows PowerShell, set `$env:HOLOCLIP_DATA_CLASS = "public"` before
+running the command. This will use the **existing** qualified
+`MeshLLMClient` route, at most one JSON model request; blocked quotas or
+missing eligibility do not trigger paid fallbacks.
+
+The model can return only a speculative **POSSIBLE_TEXTUAL_DEPENDENCY**
+between the variant-specific sampled excerpt and a shared excerpt, each
+with exact source-text substring citations, or **INSUFFICIENT_EVIDENCE**.
+An invented quote, extra field, unsupported ID or missing entry rejects
+the entire response and saves nothing. The output contains SHA-256s of
+verified quotations and timestamps but **no verbatim ASR text**. Every
+media and source-ASR lineage field is regenerated before committing the
+create-only report; stale or modified inputs block saving.
+
+This is **not** a finding that text is actually audible, a full-video
+omission, a narrative-role anchor, a human preference, a humor rating or
+a confirmed better edit. Speech naturalness, narrative continuity,
+payoff completion, creative winner and quality metrics remain
+`null`/unqualified. `ready=false`, `production_ready=false`,
+`automatic_adoption_allowed=false` and no publishing are unconditional.
+Independent listening, real complete edits, source-diverse holdout review,
+and calibrated accuracy must precede any automatic creative ranking.
