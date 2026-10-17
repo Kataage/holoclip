@@ -147,7 +147,10 @@ def test_changed_full_video_copy_and_mapping_blocks(tmp_path, monkeypatch):
     target.mkdir()
     _, _, _, mapping2, _, rating2 = _environment(target, monkeypatch)
     changed = json.loads(mapping2.read_text(encoding="utf-8"))
-    changed["role_mapping"]["candidate-1"]["role"] = "b3"
+    current_role = changed["role_mapping"]["candidate-1"]["role"]
+    changed["role_mapping"]["candidate-1"]["role"] = (
+        "b2" if current_role == "b3" else "b3"
+    )
     mapping2.write_text(json.dumps(changed), encoding="utf-8")
     with pytest.raises(ValueError, match="PRIVATE_MAPPING_CHANGED"):
         ingest.ingest_blind_ratings(rating_paths=[rating2], preview_root=target)
