@@ -198,3 +198,22 @@ def test_symlink_submission_is_rejected(tmp_path, monkeypatch):
         ingest.ingest_blind_ratings(
             rating_paths=[linked], preview_root=tmp_path,
         )
+
+
+def test_native_windows_crlf_form_is_accepted_without_weakening_content_check(
+    tmp_path, monkeypatch,
+):
+    _, _, root, _, _, rating = _environment(tmp_path, monkeypatch)
+    form = root / "review.html"
+    html = form.read_bytes()
+    assert b"\r\n" not in html
+    form.write_bytes(html.replace(b"\n", b"\r\n"))
+    report = ingest.ingest_blind_ratings(
+        rating_paths=[rating], preview_root=tmp_path,
+    )
+    assert report["status"] == "BLIND_RATING_SUBMISSIONS_UNVERIFIED_AGGREGATED"
+    form.write_bytes(form.read_bytes() + b"<!-- unexpected edit -->")
+    with pytest.raises(ValueError, match="REVIEW_FORM_CHANGED"):
+        ingest.ingest_blind_ratings(
+            rating_paths=[rating], preview_root=tmp_path,
+        )
