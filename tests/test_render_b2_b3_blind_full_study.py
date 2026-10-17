@@ -17,7 +17,8 @@ def _fixture(tmp_path, monkeypatch):
     b = tmp_path / "real-b3.mp4"
     a.write_bytes(b"finished b2 full local video " * 24)
     b.write_bytes(b"finished b3 full local video " * 27)
-    digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+    def digest(path):
+        return hashlib.sha256(path.read_bytes()).hexdigest()
     state = {
         "status": "SUPPORTED",
         "receipt": tmp_path / "original.review-00.playback.json",
