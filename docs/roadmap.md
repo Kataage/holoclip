@@ -170,6 +170,8 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Explicitly approved, create-only three-clip source/B2/B3 local playback pack at highest-priority source-clock review event, verified full local source cache and revalidated input hashes, no creative judgement or publication
 - [x] Offline SHA-pinned three-clip editorial evidence re-audit with structured speech/continuity/payoff questions and abstentions, no invented creative verdict (human-rated real media and validated model evaluation still pending)
 - [x] Zero-cost-router-only, public-data opt-in source-ASR sampled B2/B3 textual dependency hypotheses with per-quote source validation, redacted receipts and immutable save; not audible truth, creative quality or independent gold
+- [x] Explicitly approved, offline blinded complete B2/B3 finished-video study with anonymous isolated copies and local-only evaluation form; owner videos remain untouched, subjective ratings not fabricated
+- [ ] Collect genuinely independent blinded ratings across distinct held-out source streams; validate label provenance and calibrate human agreement before any edit ranking
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
 - [x] SHA-bound independent A/B signal audit for audio/subtitle/cut snippets: remeasure audio mean/peak and decoded SSIM, no invented human preference or auto-adoption
 - [x] Create-only, bounded original-vs-trial cut seam video A/B preview with timestamp-preserving visual darkening, independent SHA-pinned receipt, and no automatic promotion
