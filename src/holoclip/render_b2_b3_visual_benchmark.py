@@ -169,6 +169,7 @@ def prepare_visual_benchmark(
                     src, dest / f"{slot}-{tag}",
                     asset_id=state["report"]["study_id"] + "-" + slot,
                     start=region["start"], end=region["end"],
+                    dense_times=[_WINDOW / 2],
                 )
                 if (len(window.frames) > _MAX_FRAMES_PER_CASE
                         or not window.contact_sheet_paths):
