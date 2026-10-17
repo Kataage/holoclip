@@ -2815,3 +2815,52 @@ caused the ratings, fixes speech, improves story, or meets any production
 quality gate. No distinct independent raters, watched-full-video evidence,
 held-out streams, score calibration or causal effect have yet been
 verified. If no ratings exist, all human metrics remain absent.
+
+
+### B2/B3 real-video multimodal diagnostic preparation (PR #273)
+
+The existing real-video benchmark already knows how to evaluate measured
+frames/contact sheets and run qualified **zero-cost-only** provider diagnostics.
+This command connects **real finished B2/B3 videos** from an existing verified
+blind review pack to that machinery, without pretending source-ASR alone
+understands the visual scene:
+
+```powershell
+uv run holoclip render-b2-b3-visual-benchmark
+$env:HOLOCLIP_DATA_CLASS="public"
+uv run holoclip render-b2-b3-visual-benchmark --execute --approve-public-media
+```
+
+The default checks both original full-video hashes, existing blinded
+reviewer copies, private mapping, measured durations and the actual
+B2-to-B3 one-cut outward source-clock edit. It only prints a plan.
+Explicit execution rechecks these receipts under the existing job lock
+then samples **three regions per full video**: opening, the edit boundary,
+and closing, each a six-second, physically measured FFmpeg/PySceneDetect
+video window with sampled frame images/contact sheets. There are six
+locally measured cases in total, each with checksums and original-video
+provenance. Uses the existing `video_measurement` pipeline, not another
+home-grown sampling or labeling implementation. Original videos stay
+untouched; no yt-dlp operation or automatic cloud/model call occurs.
+
+The new create-only `*.visual-benchmark` folder contains
+`benchmark.json` (the existing `holoclip-real-provider-v2` manifest)
+and `status.json`, plus measured bounded MP4s and sheets. Interrupted
+or existing output folders are never overwritten. `public_data=true`
+is allowed only after explicit public-media approval and
+`HOLOCLIP_DATA_CLASS=public`; do not use this for private or unlicensed
+material. The six case IDs retain only anonymous candidate slots, not
+an evaluator-visible B2/B3 identity.
+
+The manifest is compatible with the existing provider-benchmark tool:
+`uv run holoclip provider-benchmark run <manifest> --accounts <accounts-json>`
+with existing account/quota configuration; provider calls are never
+implicit and must remain **free-only**. A paid fallback is forbidden.
+The evaluation is a *diagnostic* of windows sampled from existing
+rendered videos. All cases deliberately set `held_out=false`,
+`teacher_reference=UNVERIFIED_NO_GOLD_REFERENCE` and share the same
+underlying clip identity; they do not create new independent gold.
+This prepares genuine visual evidence but does not automatically score
+whole-video humor, Japanese audio accuracy, context completeness or
+editing improvement. A reviewed held-out gold set, genuine independent
+graders, per-capability calibration and real user-host runs remain open.

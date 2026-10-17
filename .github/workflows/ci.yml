@@ -148,4 +148,4 @@ jobs:
         run: python -m pip install -e ".[dev,media]"
       - name: Validate blinded full-media study, rating ingestion and edit association
         run: |
-          python -m pytest -q tests/test_render_b2_b3_blind_full_study.py tests/test_render_b2_b3_blind_rating_ingest.py tests/test_render_b2_b3_blind_edge_association.py
+          python -m pytest -q tests/test_render_b2_b3_blind_full_study.py tests/test_render_b2_b3_blind_rating_ingest.py tests/test_render_b2_b3_blind_edge_association.py tests/test_render_b2_b3_visual_benchmark.py
