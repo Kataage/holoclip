@@ -96,7 +96,7 @@ def _verify_study(state: dict) -> str:
     # The already-shipped writer uses text mode. On native Windows Python,
     # its original newlines may be CRLF. Permit exactly these two immutable
     # byte representations, not arbitrary newline normalization or edits.
-    native_windows_html = expected_html.replace(b"\\n", b"\\r\\n")
+    native_windows_html = expected_html.replace(b"\n", b"\r\n")
     valid_html = (expected_html, native_windows_html)
     if (not html_path.is_file() or html_path.is_symlink()
             or html_path.stat().st_size not in {len(v) for v in valid_html}
