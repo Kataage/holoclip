@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,7 @@ from test_render_b2_b3_blind_edge_association import _study
 
 def _fixture(tmp_path, monkeypatch):
     state, _, _ = _study(tmp_path, monkeypatch)
+    monkeypatch.setattr(visual, "_exclusive_run_lock", lambda *a, **k: nullcontext())
     ctx = state["basis"]["context"]
     ctx["roles"]["b2"]["timeline"].estimated_duration = 20.0
     ctx["roles"]["b3"]["timeline"].estimated_duration = 20.5
