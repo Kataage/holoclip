@@ -209,8 +209,8 @@ def test_native_windows_crlf_form_is_accepted_without_weakening_content_check(
     _, _, root, _, _, rating = _environment(tmp_path, monkeypatch)
     form = root / "review.html"
     html = form.read_bytes()
-    assert b"\r\n" not in html
-    form.write_bytes(html.replace(b"\n", b"\r\n"))
+    normalized = html.replace(b"\r\n", b"\n")
+    form.write_bytes(normalized.replace(b"\n", b"\r\n"))
     report = ingest.ingest_blind_ratings(
         rating_paths=[rating], preview_root=tmp_path,
     )
