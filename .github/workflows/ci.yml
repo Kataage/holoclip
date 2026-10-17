@@ -128,3 +128,24 @@ jobs:
         run: |
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\test-ytdlp-lan-setup-doctor.ps1"
           if ($LASTEXITCODE -ne 0) { throw "Windows LAN setup doctor tests failed: $LASTEXITCODE" }
+
+  windows-blind-review:
+    # Exercise the actual Windows path, JSON and CRLF behavior of the local
+    # blind full-video review pipeline, not only its Linux synthetic tests.
+    # Local fixtures only: no real MP4 download, cloud requests or credentials.
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install offline-test dependencies
+        run: python -m pip install -e ".[dev,media]"
+      - name: Validate blinded full-media study, rating ingestion and edit association
+        run: |
+          python -m pytest -q tests/test_render_b2_b3_blind_full_study.py tests/test_render_b2_b3_blind_rating_ingest.py tests/test_render_b2_b3_blind_edge_association.py

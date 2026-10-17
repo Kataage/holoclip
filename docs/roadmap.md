@@ -172,6 +172,7 @@ losing provenance, and successful upstream stages can be reused after a simulate
 - [x] Zero-cost-router-only, public-data opt-in source-ASR sampled B2/B3 textual dependency hypotheses with per-quote source validation, redacted receipts and immutable save; not audible truth, creative quality or independent gold
 - [x] Explicitly approved, offline blinded complete B2/B3 finished-video study with anonymous isolated copies and local-only evaluation form; owner videos remain untouched, subjective ratings not fabricated
 - [x] Offline, strict-schema ingestion and candidate-anonymous aggregation of one or more saved blinded full-video rating forms, rechecking completed MP4s and study mapping; never self-certifies independent raters or gold
+- [x] Pair unverified anonymous B2/B3 submitted ratings with the exact independently rederived outward-only B3 source-cut extension; per-dimension deltas are observational, never causal improvement or auto-adoption
 - [ ] Collect genuinely independent blinded ratings across distinct held-out source streams; validate label provenance and calibrate human agreement before any edit ranking
 - [x] Independent entirely offline re-audit of saved B2/B3 textual hypothesis receipts against current source-ASR excerpt SHA, playback evidence, quote substring hashes and immutable report; no provider calls or promotion
 - [x] Provenance-guarded offline structural reference from trusted human-made clips and bounded A/B technical receipts, with holdout collision blocking and no cross-domain quality claims
