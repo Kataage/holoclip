@@ -93,9 +93,14 @@ def _verify_study(state: dict) -> str:
         raise ValueError("BLIND_RATING_PRIVATE_MAPPING_CHANGED")
     html_path = _no_links(root / "review.html")
     expected_html = _study_html(state["report"]["study_id"]).encode("utf-8")
+    # The already-shipped writer uses text mode. On native Windows Python,
+    # its original newlines may be CRLF. Permit exactly these two immutable
+    # byte representations, not arbitrary newline normalization or edits.
+    native_windows_html = expected_html.replace(b"\\n", b"\\r\\n")
+    valid_html = (expected_html, native_windows_html)
     if (not html_path.is_file() or html_path.is_symlink()
-            or html_path.stat().st_size != len(expected_html)
-            or html_path.read_bytes() != expected_html):
+            or html_path.stat().st_size not in {len(v) for v in valid_html}
+            or html_path.read_bytes() not in valid_html):
         raise ValueError("BLIND_RATING_REVIEW_FORM_CHANGED")
     return hashlib.sha256(
         (public_sha + private_sha).encode("ascii"),
