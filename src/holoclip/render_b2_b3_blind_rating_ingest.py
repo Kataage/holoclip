@@ -13,7 +13,7 @@ from collections import Counter
 from pathlib import Path
 
 from holoclip.render_b2_b3_blind_full_study import (
-    VERSION as STUDY_VERSION, _prepare, _study_html, _ROLES, _DIMENSIONS,
+    VERSION as STUDY_VERSION, _prepare, _study_html, _DIMENSIONS,
 )
 from holoclip.render_human_edit_context import DEFAULT_GROWTH_STATE, DEFAULT_HUMAN_STORE
 from holoclip.render_plan import _hash, _no_links
